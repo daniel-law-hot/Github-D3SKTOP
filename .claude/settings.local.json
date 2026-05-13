@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(yarn *)",
+      "PowerShell(yarn *)",
+      "PowerShell(nvm *)",
+      "PowerShell(nvm use *)",
+      "PowerShell(Write-Output \"NVM_HOME: $env:NVM_HOME\"; Write-Output \"NVM_SYMLINK: $env:NVM_SYMLINK\"; Write-Output \"--- C:\\\\nvm4w ---\"; if \\(Test-Path C:\\\\nvm4w\\) { Get-ChildItem C:\\\\nvm4w } else { Write-Output \"Does not exist\" }; Write-Output \"--- C:\\\\nvm4w\\\\nodejs link ---\"; if \\(Test-Path C:\\\\nvm4w\\\\nodejs\\) { $item = Get-Item C:\\\\nvm4w\\\\nodejs; \"Target: $\\($item.Target\\)\"; \"LinkType: $\\($item.LinkType\\)\" } else { Write-Output \"no nodejs link\" }; Write-Output \"--- nvm root ---\"; Get-ChildItem C:\\\\Users\\\\Daniel.Law\\\\AppData\\\\Local\\\\nvm -ErrorAction SilentlyContinue | Select-Object Name)",
+      "PowerShell(npm *)",
+      "PowerShell(C:\\\\nvm4w\\\\nodejs\\\\npm.cmd -v)",
+      "PowerShell(C:\\\\nvm4w\\\\nodejs\\\\npm.cmd install -g yarn 2>&1)",
+      "PowerShell(C:\\\\nvm4w\\\\nodejs\\\\yarn.cmd -v)",
+      "PowerShell(C:\\\\nvm4w\\\\nodejs\\\\yarn.cmd install 2>&1)",
+      "PowerShell(C:\\\\nvm4w\\\\nodejs\\\\npm.cmd config set msvs_version 2017; C:\\\\nvm4w\\\\nodejs\\\\npm.cmd config get msvs_version)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "PowerShell(C:\\\\nvm4w\\\\nodejs\\\\npm.cmd install -g node-gyp@latest 2>&1)",
+      "PowerShell(C:\\\\nvm4w\\\\nodejs\\\\yarn.cmd build:dev 2>&1)",
+      "PowerShell(C:\\\\nvm4w\\\\nodejs\\\\yarn.cmd postinstall 2>&1)",
+      "Bash(git -C \"C:/git/github-desktop\" remote -v)",
+      "Bash(git -C \"C:/git/github-desktop\" status -s)",
+      "Bash(git -C \"C:/git/github-desktop\" log --oneline -3)",
+      "Bash(git -C \"C:/git/github-desktop\" branch -a)",
+      "Bash(git fetch *)",
+      "Bash(git branch *)",
+      "Bash(git push *)"
+    ]
+  }
+}
