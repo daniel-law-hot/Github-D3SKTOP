@@ -203,12 +203,6 @@ interface ICommitMessageProps {
   readonly submitButtonAriaDescribedBy?: string
 
   /**
-   * Whether there are any hooks in the repository that could be
-   * skipped during commit with the --no-verify flag
-   */
-  readonly hasCommitHooks: boolean
-
-  /**
    * Whether or not to skip blocking commit hooks when creating commits
    * by means of passing the `--no-verify` flag to git commit
    */
@@ -1067,7 +1061,7 @@ export class CommitMessage extends React.Component<
 
     const items: IMenuItem[] = []
 
-    if (enableHooksEnvironment() && this.props.hasCommitHooks) {
+    if (enableHooksEnvironment()) {
       items.push({
         type: 'checkbox',
         checked: this.props.skipCommitHooks,
