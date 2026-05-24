@@ -50,6 +50,8 @@ import { DeleteBranch, DeleteRemoteBranch } from './delete-branch'
 import { CloningRepositoryView } from './cloning-repository'
 import {
   Toolbar,
+  ToolbarButton,
+  ToolbarButtonStyle,
   ToolbarDropdown,
   DropdownState,
   PushPullButton,
@@ -517,6 +519,8 @@ export class App extends React.Component<IAppProps, IAppState> {
         return this.openCurrentRepositoryInExternalEditor()
       case 'open-with-external-editor':
         return this.showOpenWithExternalEditor()
+      case 'open-in-visual-studio':
+        return this.openCurrentRepositoryInVisualStudio()
       case 'select-all':
         return this.selectAll()
       case 'show-stashed-changes':
@@ -1325,6 +1329,15 @@ export class App extends React.Component<IAppProps, IAppState> {
     }
 
     this.openInExternalEditor(repository)
+  }
+
+  private openCurrentRepositoryInVisualStudio = () => {
+    const repository = this.getRepository()
+    if (!(repository instanceof Repository)) {
+      return
+    }
+
+    this.props.dispatcher.openInVisualStudio(repository.path)
   }
 
   /**
@@ -3463,7 +3476,30 @@ export class App extends React.Component<IAppProps, IAppState> {
         </div>
         {this.renderBranchToolbarButton()}
         {this.renderPushPullToolbarButton()}
+        {this.renderOpenInVisualStudioToolbarButton()}
       </Toolbar>
+    )
+  }
+
+  private renderOpenInVisualStudioToolbarButton() {
+    if (!__WIN32__) {
+      return null
+    }
+
+    const selection = this.state.selectedState
+    if (!selection || selection.type !== SelectionType.Repository) {
+      return null
+    }
+
+    return (
+      <ToolbarButton
+        className="open-in-visual-studio-button"
+        title="Open in Visual Studio"
+        description="Open solution in Visual Studio"
+        icon={octicons.fileCode}
+        style={ToolbarButtonStyle.Subtitle}
+        onClick={this.openCurrentRepositoryInVisualStudio}
+      />
     )
   }
 

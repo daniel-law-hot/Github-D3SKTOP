@@ -36,6 +36,7 @@ export type MenuEvent =
   | 'uninstall-windows-cli'
   | 'open-external-editor'
   | 'open-with-external-editor'
+  | 'open-in-visual-studio'
   | 'select-all'
   | 'show-stashed-changes'
   | 'hide-stashed-changes'

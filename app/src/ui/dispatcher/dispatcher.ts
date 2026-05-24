@@ -1535,6 +1535,15 @@ export class Dispatcher {
   }
 
   /**
+   * Opens the given repository path in Visual Studio. If a solution file (.sln)
+   * is found beneath the repository it is opened directly, otherwise devenv is
+   * launched with the repository folder.
+   */
+  public async openInVisualStudio(repositoryPath: string): Promise<void> {
+    return this.appStore._openInVisualStudio(repositoryPath)
+  }
+
+  /**
    * Opens a path in a selected external editor without changing preferences.
    */
   public async openInSelectedExternalEditor(

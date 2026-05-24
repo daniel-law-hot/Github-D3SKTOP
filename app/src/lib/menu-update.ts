@@ -131,6 +131,7 @@ const allMenuIds: ReadonlyArray<MenuIDs> = [
   'show-repository-settings',
   'open-external-editor',
   'open-with-external-editor',
+  'open-in-visual-studio',
   'remove-repository',
   'new-repository',
   'add-local-repository',
@@ -246,6 +247,7 @@ function getRepositoryMenuBuilder(state: IAppState): MenuStateBuilder {
     'show-branches-list',
     'open-external-editor',
     'open-with-external-editor',
+    'open-in-visual-studio',
     'compare-to-branch',
     'toggle-changes-filter',
   ]
@@ -337,6 +339,7 @@ function getRepositoryMenuBuilder(state: IAppState): MenuStateBuilder {
     ) {
       menuStateBuilder.disable('open-external-editor')
       menuStateBuilder.disable('open-with-external-editor')
+      menuStateBuilder.disable('open-in-visual-studio')
     }
   } else {
     for (const id of repositoryScopedIDs) {

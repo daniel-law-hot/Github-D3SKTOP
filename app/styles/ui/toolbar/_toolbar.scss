@@ -47,6 +47,15 @@
         width: 100%;
       }
     }
+    &.open-in-visual-studio-button {
+      flex: 0 0 230px;
+      width: 230px;
+      margin-left: auto;
+
+      & > button {
+        border-left: 1px solid var(--toolbar-button-border-color);
+      }
+    }
     &.branch-toolbar-button {
       width: 230px;
 

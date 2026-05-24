@@ -366,6 +366,14 @@ export function buildDefaultMenu({
         accelerator: 'CmdOrCtrl+Shift+Alt+A',
         click: emit('open-with-external-editor'),
       },
+      {
+        label: __DARWIN__
+          ? 'Open in Visual Studio'
+          : 'Open in &Visual Studio',
+        id: 'open-in-visual-studio',
+        click: emit('open-in-visual-studio'),
+        visible: __WIN32__,
+      },
       separator,
       {
         id: 'create-issue-in-repository-on-github',

@@ -160,6 +160,11 @@ import {
   launchCustomExternalEditor,
   launchExternalEditor,
 } from '../editors'
+import {
+  findSolutionFile,
+  getLatestVisualStudio,
+  launchVisualStudio,
+} from '../visual-studio'
 import { assertNever, fatalError, forceUnwrap } from '../fatal-error'
 
 import { formatCommitMessage } from '../format-commit-message'
@@ -6459,6 +6464,33 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
         await launchExternalEditor(fullPath, match)
       }
+    } catch (error) {
+      this.emitError(error)
+    }
+  }
+
+  /** Open the repository's solution (or folder if none) in Visual Studio. */
+  public async _openInVisualStudio(repositoryPath: string): Promise<void> {
+    if (!__WIN32__) {
+      this.emitError(
+        new Error('Visual Studio is only supported on Windows.')
+      )
+      return
+    }
+
+    try {
+      const install = await getLatestVisualStudio()
+      if (install === null) {
+        this.emitError(
+          new Error(
+            'No Visual Studio installation was found. Install Visual Studio 2017 or newer and try again.'
+          )
+        )
+        return
+      }
+
+      const solution = await findSolutionFile(repositoryPath)
+      await launchVisualStudio(install, solution ?? repositoryPath)
     } catch (error) {
       this.emitError(error)
     }
