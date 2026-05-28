@@ -38,7 +38,7 @@ export class UpdateAvailable extends React.Component<IUpdateAvailableProps> {
       <Banner
         id="update-available"
         className={this.props.prioritizeUpdate ? 'priority' : undefined}
-        dismissable={!this.props.prioritizeUpdate}
+        dismissable={true}
         onDismissed={this.onDismissed}
       >
         {this.renderIcon()}
@@ -50,6 +50,16 @@ export class UpdateAvailable extends React.Component<IUpdateAvailableProps> {
   private onDismissed = () => {
     if (this.props.isUpdateShowcaseVisible) {
       return this.dismissUpdateShowCaseVisibility()
+    }
+
+    // For an actual pending update (priority or otherwise), dismissing the
+    // banner is treated as "apply the update now" — same as clicking the
+    // Restart GitHub Desktop link. Without this the custom updater would
+    // never run unless the user clicked the inline link, since our updater
+    // doesn't auto-apply on next launch the way Squirrel did.
+    if (updateStore.state.status === UpdateStatus.UpdateReady) {
+      this.updateNow()
+      return
     }
 
     this.props.onDismissed()
@@ -112,15 +122,7 @@ export class UpdateAvailable extends React.Component<IUpdateAvailableProps> {
     if (this.props.prioritizeUpdate) {
       return (
         <span onSubmit={this.updateNow}>
-          This version of GitHub Desktop is missing{' '}
-          {this.props.prioritizeUpdateInfoUrl ? (
-            <LinkButton uri={this.props.prioritizeUpdateInfoUrl}>
-              important updates
-            </LinkButton>
-          ) : (
-            'important updates'
-          )}
-          . Please{' '}
+          This version of GitHub Desktop is missing important updates. Please{' '}
           <LinkButton onClick={this.updateNow}>
             restart GitHub Desktop
           </LinkButton>{' '}

@@ -109,6 +109,15 @@ function packageWindows() {
     setupMsi: getWindowsInstallerName(),
   }
 
+  // electron-winstaller's nuspec template only includes a hard-coded whitelist
+  // (*.dll, *.bin, *.pak, etc.) — updater.exe doesn't match any pattern and
+  // gets silently dropped from the installer. Pass it explicitly via
+  // additionalFiles so it ends up next to D3SKTOP.exe. The `@types/electron-
+  // winstaller` definitions are outdated and don't expose this option, so cast.
+  ;(options as electronInstaller.Options & { additionalFiles: unknown }).additionalFiles = [
+    { src: 'updater.exe', target: 'lib\\net45\\updater.exe' },
+  ]
+
   if (shouldMakeDelta()) {
     const url = new URL(getUpdatesURL())
     // Make sure Squirrel.Windows isn't affected by partially or completely
