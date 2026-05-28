@@ -61,9 +61,9 @@ jobs:
         with:
           name: windows-${{ matrix.arch }}
           path: |
-            dist/GitHubDesktop-win32-${{ matrix.arch }}.zip
-            dist/GitHubDesktopSetup-${{ matrix.arch }}.exe
-            dist/GitHubDesktopSetup-${{ matrix.arch }}.msi
+            dist/D3SKTOP-win32-${{ matrix.arch }}.zip
+            dist/D3SKTOPSetup-${{ matrix.arch }}.exe
+            dist/D3SKTOPSetup-${{ matrix.arch }}.msi
             dist/updater.exe
           if-no-files-found: error
 
@@ -89,8 +89,8 @@ jobs:
           name: ${{ github.event.inputs.tag || github.ref_name }}
           generate_release_notes: true
           files: |
-            artifacts/**/GitHubDesktop-win32-*.zip
-            artifacts/**/GitHubDesktopSetup-*.exe
-            artifacts/**/GitHubDesktopSetup-*.msi
+            artifacts/**/D3SKTOP-win32-*.zip
+            artifacts/**/D3SKTOPSetup-*.exe
+            artifacts/**/D3SKTOPSetup-*.msi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

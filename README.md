@@ -1,8 +1,62 @@
-# [GitHub Desktop](https://desktop.github.com)
+# GitHub D3SKTOP
+
+> **This is a fork of [GitHub Desktop](https://desktop.github.com/)** maintained at
+> [daniel-law-hot/Github-D3SKTOP](https://github.com/daniel-law-hot/Github-D3SKTOP).
+> It installs side-by-side with the official GitHub Desktop, tracks its own
+> release feed, and adds a handful of helpers tuned for our workflow.
 
 [GitHub Desktop](https://desktop.github.com/) is an open-source [Electron](https://www.electronjs.org/)-based
 GitHub app. It is written in [TypeScript](https://www.typescriptlang.org) and
 uses [React](https://reactjs.org/).
+
+## D3SKTOP fork
+
+### What's different from upstream
+
+- **Side-by-side install** — installs to `%LOCALAPPDATA%\D3SKTOP\` and runs as `D3SKTOP.exe`, so it does not overwrite an existing GitHub Desktop installation.
+- **Fork-tracked auto-updates** — the in-app "Update available" prompt polls this fork's [GitHub Releases](https://github.com/daniel-law-hot/Github-D3SKTOP/releases) instead of GitHub's private update feed. New releases tagged `v1.2026.x` are detected, downloaded, and applied automatically. See [`app/src/main-process/github-release-updater.ts`](app/src/main-process/github-release-updater.ts) and the bundled `updater.exe` ([`updater/src/main.ts`](updater/src/main.ts)).
+- **CalVer versioning** — releases follow `MAJOR.YEAR.PATCH` (e.g. `1.2026.3`) rather than upstream's `3.x.y`.
+- **Open in Visual Studio** — extra helper button on the repository page that launches the current repo in Visual Studio when a `.sln` is found.
+
+### Installation
+
+1. Download the latest `D3SKTOPSetup-x64.exe` from [Releases](https://github.com/daniel-law-hot/Github-D3SKTOP/releases/latest).
+2. Run it. Windows SmartScreen will warn that the publisher is unknown (the fork's builds are currently unsigned) — click **More info** → **Run anyway**.
+3. The app installs to `%LOCALAPPDATA%\D3SKTOP\app-<version>\D3SKTOP.exe` and creates a Start menu shortcut titled **GitHub D3SKTOP**.
+
+### How updates work
+
+While the app is running it polls `api.github.com/repos/daniel-law-hot/Github-D3SKTOP/releases/latest`. When a tag newer than the installed version appears, the existing "Update available" banner shows up. Clicking **Restart and Update** does the following:
+
+1. The app downloads the release's `D3SKTOP-win32-x64.zip` asset to a temp folder.
+2. It hands off to the bundled `updater.exe`, which waits for the main app to exit, extracts the new zip over the install folder (with a `.bak` snapshot for rollback), and relaunches the new build.
+3. `updater.exe` cleans up after itself.
+
+No admin rights required, no Squirrel update feed needed.
+
+### Building from source
+
+```powershell
+yarn install
+yarn build:updater     # produces dist/updater.exe (~57 MB)
+yarn build:prod        # bundles the Electron app to dist/D3SKTOP-win32-x64/
+yarn package           # produces dist/D3SKTOPSetup-x64.exe + .msi + portable .zip
+```
+
+The full toolchain matches upstream — see [`docs/contributing/setup.md`](docs/contributing/setup.md) for Node/Yarn versions and required Windows build tools. The fork adds a single root-level workspace at [`updater/`](updater/) that builds a standalone Node-packaged updater binary.
+
+### Cutting a release
+
+1. Bump `app/package.json` "version" to the next `1.2026.x`.
+2. Commit and push, then tag: `git tag v1.2026.x && git push origin v1.2026.x`.
+3. The [`Publish Release` workflow](.github/workflows/publish-release.yml) builds the artifacts and creates a GitHub Release with the installer + portable zip attached.
+4. Existing installs of the previous version will see the update within ~4 hours (or immediately via *File → Check for Updates*).
+
+---
+
+Below this line is the original upstream README, unmodified.
+
+---
 
 <picture>
   <source
