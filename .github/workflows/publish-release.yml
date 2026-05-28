@@ -1,0 +1,96 @@
+name: Publish Release
+
+# Triggered when a tag like `v3.5.11` is pushed to the fork. Builds the
+# Windows installer + portable zip and attaches them to a GitHub Release
+# at the same tag. The fork's in-app updater (see
+# app/src/main-process/github-release-updater.ts) polls these releases.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish (e.g. v3.5.11)
+        required: true
+        type: string
+
+env:
+  NODE_VERSION: 24.15.0
+
+jobs:
+  build:
+    name: Build Windows ${{ matrix.arch }}
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64]
+    env:
+      RELEASE_CHANNEL: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          submodules: recursive
+
+      - uses: ./.github/actions/setup-ci-environment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          arch: ${{ matrix.arch }}
+
+      - name: Build production app
+        run: yarn build:prod
+        env:
+          npm_config_arch: ${{ matrix.arch }}
+          TARGET_ARCH: ${{ matrix.arch }}
+
+      - name: Build updater.exe
+        run: yarn build:updater
+
+      - name: Package production app
+        run: yarn package
+        env:
+          npm_config_arch: ${{ matrix.arch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: |
+            dist/GitHubDesktop-win32-${{ matrix.arch }}.zip
+            dist/GitHubDesktopSetup-${{ matrix.arch }}.exe
+            dist/GitHubDesktopSetup-${{ matrix.arch }}.msi
+            dist/updater.exe
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: ls -lR artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            artifacts/**/GitHubDesktop-win32-*.zip
+            artifacts/**/GitHubDesktopSetup-*.exe
+            artifacts/**/GitHubDesktopSetup-*.msi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -144,6 +144,13 @@ export function getUpdatesURL() {
   return `https://central.github.com/api/deployments/desktop/desktop/${architecturePath}latest?version=${version}&env=${getChannel()}`
 }
 
+// The "<owner>/<repo>" slug we poll for releases in the fork. Overridable so
+// downstream forks (or test builds) can point at a different repo without
+// editing source.
+export function getReleaseRepo() {
+  return process.env.DESKTOP_RELEASE_REPO ?? 'daniel-law-hot/Github-D3SKTOP'
+}
+
 export function shouldMakeDelta() {
   // Only production and beta channels include deltas. Test releases aren't
   // necessarily sequential so deltas wouldn't make sense.

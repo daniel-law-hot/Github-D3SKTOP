@@ -29,6 +29,7 @@ import {
 import { addTrustedIPCSender } from './trusted-ipc-sender'
 import { getUpdaterGUID } from '../lib/get-updater-guid'
 import { CLIAction } from '../lib/cli-action'
+import { GitHubReleaseUpdater } from './github-release-updater'
 
 export class AppWindow {
   private window: Electron.BrowserWindow
@@ -37,6 +38,13 @@ export class AppWindow {
   private _loadTime: number | null = null
   private _rendererReadyTime: number | null = null
   private isDownloadingUpdate: boolean = false
+
+  // On Win32 we replace Electron/Squirrel's autoUpdater with a GitHub-Releases-
+  // backed updater that hands off to a bundled updater.exe for the file swap.
+  // On other platforms this stays null and we use Electron's autoUpdater.
+  private readonly githubUpdater: GitHubReleaseUpdater | null = __WIN32__
+    ? new GitHubReleaseUpdater()
+    : null
 
   private minWidth = 960
   private minHeight = 660
@@ -403,12 +411,14 @@ export class AppWindow {
   }
 
   public setupAutoUpdater() {
-    autoUpdater.on('error', (error: Error) => {
+    const source = this.githubUpdater ?? autoUpdater
+
+    source.on('error', (error: Error) => {
       this.isDownloadingUpdate = false
       ipcWebContents.send(this.window.webContents, 'auto-updater-error', error)
     })
 
-    autoUpdater.on('checking-for-update', () => {
+    source.on('checking-for-update', () => {
       this.isDownloadingUpdate = false
       ipcWebContents.send(
         this.window.webContents,
@@ -416,7 +426,7 @@ export class AppWindow {
       )
     })
 
-    autoUpdater.on('update-available', () => {
+    source.on('update-available', () => {
       this.isDownloadingUpdate = true
       ipcWebContents.send(
         this.window.webContents,
@@ -424,7 +434,7 @@ export class AppWindow {
       )
     })
 
-    autoUpdater.on('update-not-available', () => {
+    source.on('update-not-available', () => {
       this.isDownloadingUpdate = false
       ipcWebContents.send(
         this.window.webContents,
@@ -432,7 +442,7 @@ export class AppWindow {
       )
     })
 
-    autoUpdater.on('update-downloaded', () => {
+    source.on('update-downloaded', () => {
       this.isDownloadingUpdate = false
       ipcWebContents.send(
         this.window.webContents,
@@ -443,8 +453,14 @@ export class AppWindow {
 
   public async checkForUpdates(url: string) {
     try {
-      autoUpdater.setFeedURL({ url: await trySetUpdaterGuid(url) })
-      autoUpdater.checkForUpdates()
+      if (this.githubUpdater) {
+        // URL is ignored on Win32 — we poll GitHub Releases for the repo
+        // baked in at build time via __RELEASE_REPO__.
+        await this.githubUpdater.checkForUpdates()
+      } else {
+        autoUpdater.setFeedURL({ url: await trySetUpdaterGuid(url) })
+        autoUpdater.checkForUpdates()
+      }
     } catch (e) {
       return e
     }
@@ -452,7 +468,11 @@ export class AppWindow {
   }
 
   public quitAndInstallUpdate() {
-    autoUpdater.quitAndInstall()
+    if (this.githubUpdater) {
+      this.githubUpdater.quitAndInstall()
+    } else {
+      autoUpdater.quitAndInstall()
+    }
   }
 
   public minimizeWindow() {

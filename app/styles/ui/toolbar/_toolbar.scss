@@ -48,9 +48,16 @@
       }
     }
     &.open-in-visual-studio-button {
-      flex: 0 0 230px;
-      width: 230px;
-      margin-left: auto;
+      flex: 0 0 200px;
+      width: 200px;
+
+      & > button {
+        border-left: 1px solid var(--toolbar-button-border-color);
+      }
+    }
+    &.open-in-visual-studio-arrow-button {
+      flex: 0 0 30px;
+      width: 30px;
 
       & > button {
         border-left: 1px solid var(--toolbar-button-border-color);
@@ -76,6 +83,12 @@
         flex-shrink: 0;
       }
     }
+  }
+
+  .open-in-visual-studio-group {
+    display: flex;
+    flex-direction: row;
+    margin-left: auto;
   }
 }
 

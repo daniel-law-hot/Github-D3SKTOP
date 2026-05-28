@@ -1340,6 +1340,31 @@ export class App extends React.Component<IAppProps, IAppState> {
     this.props.dispatcher.openInVisualStudio(repository.path)
   }
 
+  private openCurrentRepositoryInSsms = () => {
+    const repository = this.getRepository()
+    if (!(repository instanceof Repository)) {
+      return
+    }
+
+    this.props.dispatcher.openInSsms(repository.path)
+  }
+
+  private showVisualStudioOpenMenu = (
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    event.preventDefault()
+    showContextualMenu([
+      {
+        label: 'Open in Visual Studio',
+        action: this.openCurrentRepositoryInVisualStudio,
+      },
+      {
+        label: 'Open in SQL Server Management Studio',
+        action: this.openCurrentRepositoryInSsms,
+      },
+    ])
+  }
+
   /**
    * Conditionally renders a menu bar. The menu bar is currently only rendered
    * on Windows.
@@ -3491,14 +3516,25 @@ export class App extends React.Component<IAppProps, IAppState> {
     }
 
     return (
-      <ToolbarButton
-        className="open-in-visual-studio-button"
-        title="Open in Visual Studio"
-        description="Open solution in Visual Studio"
-        icon={octicons.fileCode}
-        style={ToolbarButtonStyle.Subtitle}
-        onClick={this.openCurrentRepositoryInVisualStudio}
-      />
+      <div className="open-in-visual-studio-group">
+        <ToolbarButton
+          className="open-in-visual-studio-button"
+          title="Open in Visual Studio"
+          description="Open solution in Visual Studio"
+          icon={octicons.fileCode}
+          style={ToolbarButtonStyle.Subtitle}
+          onClick={this.openCurrentRepositoryInVisualStudio}
+          onContextMenu={this.showVisualStudioOpenMenu}
+        />
+        <ToolbarButton
+          className="open-in-visual-studio-arrow-button"
+          icon={octicons.triangleDown}
+          tooltip="Choose IDE (Visual Studio or SSMS)"
+          ariaLabel="Choose IDE for opening the repository"
+          ariaHaspopup="menu"
+          onClick={this.showVisualStudioOpenMenu}
+        />
+      </div>
     )
   }
 

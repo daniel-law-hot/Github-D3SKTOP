@@ -1543,6 +1543,15 @@ export class Dispatcher {
   }
 
   /**
+   * Opens the given repository path in SQL Server Management Studio. If a
+   * .ssmssln / .ssmssqlproj is found beneath the repository it is opened
+   * directly, otherwise SSMS launches with its connect dialog.
+   */
+  public async openInSsms(repositoryPath: string): Promise<void> {
+    return this.appStore._openInSsms(repositoryPath)
+  }
+
+  /**
    * Opens a path in a selected external editor without changing preferences.
    */
   public async openInSelectedExternalEditor(

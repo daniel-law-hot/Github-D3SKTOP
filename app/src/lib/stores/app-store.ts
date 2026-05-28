@@ -163,7 +163,10 @@ import {
 } from '../editors'
 import {
   findSolutionFile,
+  findSsmsSolutionFile,
+  getLatestSsms,
   getLatestVisualStudio,
+  launchSsms,
   launchVisualStudio,
 } from '../visual-studio'
 import { assertNever, fatalError, forceUnwrap } from '../fatal-error'
@@ -6497,6 +6500,37 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
       const solution = await findSolutionFile(repositoryPath)
       await launchVisualStudio(install, solution ?? repositoryPath)
+    } catch (error) {
+      this.emitError(error)
+    }
+  }
+
+  /**
+   * Open the repository in SQL Server Management Studio. If a .ssmssln /
+   * .ssmssqlproj exists it's opened directly; otherwise SSMS launches with
+   * its connect dialog (SSMS has no folder/workspace concept).
+   */
+  public async _openInSsms(repositoryPath: string): Promise<void> {
+    if (!__WIN32__) {
+      this.emitError(
+        new Error('SQL Server Management Studio is only supported on Windows.')
+      )
+      return
+    }
+
+    try {
+      const install = await getLatestSsms()
+      if (install === null) {
+        this.emitError(
+          new Error(
+            'No SQL Server Management Studio installation was found. Install SSMS 18 or newer and try again.'
+          )
+        )
+        return
+      }
+
+      const solution = await findSsmsSolutionFile(repositoryPath)
+      await launchSsms(install, solution ?? undefined)
     } catch (error) {
       this.emitError(error)
     }

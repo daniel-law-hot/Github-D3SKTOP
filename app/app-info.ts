@@ -1,5 +1,5 @@
 import { getSHA } from './git-info'
-import { getUpdatesURL, getChannel } from '../script/dist-info'
+import { getUpdatesURL, getChannel, getReleaseRepo } from '../script/dist-info'
 import { version, productName } from './package.json'
 
 const devClientId = '3a723b10ac5575cc5bb9'
@@ -26,6 +26,7 @@ export function getReplacements() {
     __DEV_SECRETS__: isDevBuild || !process.env.DESKTOP_OAUTH_CLIENT_SECRET,
     __RELEASE_CHANNEL__: s(channel),
     __UPDATES_URL__: s(process.env.DESKTOP_E2E_UPDATES_URL ?? getUpdatesURL()),
+    __RELEASE_REPO__: s(getReleaseRepo()),
     __SHA__: s(getSHA()),
     'process.platform': s(process.platform),
     'process.env.NODE_ENV': s(process.env.NODE_ENV || 'development'),

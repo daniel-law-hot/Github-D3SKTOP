@@ -1,0 +1,16 @@
+{
+  "name": "gd-fork-updater",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Standalone updater binary for the GitHub Desktop fork — bundled into updater.exe via @yao-pkg/pkg.",
+  "main": "build/main.js",
+  "bin": "build/main.js",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rimraf build"
+  },
+  "pkg": {
+    "targets": ["node22-win-x64"],
+    "outputPath": "../dist"
+  }
+}

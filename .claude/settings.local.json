@@ -23,7 +23,9 @@
       "Bash(git -C \"C:/git/github-desktop\" branch -a)",
       "Bash(git fetch *)",
       "Bash(git branch *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(npx --offline tsc -p tsconfig.json --noEmit --pretty false)",
+      "Bash(npx tsc *)"
     ]
   }
 }

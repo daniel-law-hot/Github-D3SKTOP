@@ -51,6 +51,12 @@ declare const __RELEASE_CHANNEL__:
 declare const __UPDATES_URL__: string
 
 /**
+ * "<owner>/<repo>" slug whose GitHub Releases the fork's custom updater
+ * polls. Embedded at build time.
+ */
+declare const __RELEASE_REPO__: string
+
+/**
  * The currently executing process kind, this is specific to desktop
  * and identifies the processes that we have.
  */

@@ -19,7 +19,7 @@ import {
   getIconDirectory,
 } from './dist-info'
 import { isGitHubActions } from './build-platforms'
-import { existsSync, rmSync, writeFileSync } from 'fs'
+import { copyFileSync, existsSync, rmSync, writeFileSync } from 'fs'
 import { getVersion } from '../app/package-info'
 import { rename } from 'fs/promises'
 import { join } from 'path'
@@ -67,6 +67,18 @@ function packageWindows() {
     console.error(`expected setup icon not found at location: ${iconSource}`)
     process.exit(1)
   }
+
+  // Drop the bundled updater.exe (built by `yarn build:updater`) into the
+  // packaged app folder so it ships alongside GitHubDesktop.exe and is
+  // available at runtime for self-updating.
+  const updaterSource = join(getDistRoot(), 'updater.exe')
+  if (!existsSync(updaterSource)) {
+    console.error(
+      `expected updater.exe at ${updaterSource}. Run \`yarn build:updater\` before packaging.`
+    )
+    process.exit(1)
+  }
+  copyFileSync(updaterSource, join(distPath, 'updater.exe'))
 
   const splashScreenPath = path.resolve(
     __dirname,
@@ -144,6 +156,23 @@ function packageWindows() {
         console.log(`Renaming ${from} to ${to}`)
         await rename(from, to)
       }
+    })
+    .then(() => {
+      // Emit a portable zip of the packaged app folder so the fork's custom
+      // updater has something to download from GitHub Releases. tar.exe (built
+      // into Windows 10+) handles .zip with `-a -cf`.
+      const arch = getDistArchitecture()
+      const zipName = `${getWindowsIdentifierName()}-win32-${arch}.zip`
+      const zipPath = join(outputDir, zipName)
+      if (existsSync(zipPath)) {
+        rmSync(zipPath)
+      }
+      console.log(`Creating portable zip ${zipName}…`)
+      cp.execFileSync(
+        'tar.exe',
+        ['-a', '-cf', zipPath, '-C', distPath, '.'],
+        { stdio: 'inherit' }
+      )
     })
     .catch(e => {
       console.error(`Error packaging: ${e}`)
