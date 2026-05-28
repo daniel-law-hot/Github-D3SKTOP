@@ -358,7 +358,10 @@ app.on('ready', () => {
     })
   )
 
-  ipcMain.on('update-accounts', (_, accounts) => updateAccounts(accounts))
+  ipcMain.on('update-accounts', (_, accounts) => {
+    updateAccounts(accounts)
+    mainWindow?.updateUpdaterAccounts(accounts)
+  })
 
   ipcMain.on('update-preferred-app-menu-item-labels', (_, labels) => {
     // The current application menu is mutable and we frequently

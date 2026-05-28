@@ -14,6 +14,8 @@ import { spawn } from 'child_process'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import { gt as semverGt, valid as semverValid } from 'semver'
+import { EndpointToken } from '../lib/endpoint-token'
+import { getDotComAPIEndpoint } from '../lib/api'
 
 /**
  * Drop-in replacement for Electron's `autoUpdater` that tracks GitHub
@@ -34,6 +36,19 @@ export class GitHubReleaseUpdater extends EventEmitter {
   private downloadInProgress = false
   private downloadedZipPath: string | null = null
   private downloadedVersion: string | null = null
+  private dotComToken: string | null = null
+
+  /**
+   * Push the current set of signed-in accounts so the updater can use the
+   * dotcom token for API requests (raises the rate limit from 60 to 5,000
+   * requests/hour and unlocks private repos). Called from main.ts whenever
+   * the renderer fires `update-accounts`.
+   */
+  public setAccounts(accounts: ReadonlyArray<EndpointToken>): void {
+    const dotComEndpoint = getDotComAPIEndpoint()
+    const dotCom = accounts.find(a => a.endpoint === dotComEndpoint)
+    this.dotComToken = dotCom?.token ?? null
+  }
 
   public async checkForUpdates(): Promise<void> {
     if (this.checking || this.downloadInProgress) {
@@ -156,22 +171,37 @@ export class GitHubReleaseUpdater extends EventEmitter {
     setTimeout(() => app.quit(), 250)
   }
 
+  private buildHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': `GitHubDesktop/${app.getVersion()} (Windows)`,
+      'X-GitHub-Api-Version': '2022-11-28',
+    }
+    if (this.dotComToken) {
+      headers.Authorization = `token ${this.dotComToken}`
+    }
+    return headers
+  }
+
   private async fetchLatestRelease(): Promise<GitHubRelease> {
     const repo = __RELEASE_REPO__
     const url = `https://api.github.com/repos/${repo}/releases/latest`
 
-    log.info(`GitHubReleaseUpdater: GET ${url}`)
-    const res = await fetch(url, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': `GitHubDesktop/${app.getVersion()} (Windows)`,
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    })
+    log.info(
+      `GitHubReleaseUpdater: GET ${url} (${
+        this.dotComToken ? 'authenticated' : 'unauthenticated'
+      })`
+    )
+    const res = await fetch(url, { headers: this.buildHeaders() })
 
     if (!res.ok) {
+      const rateRemaining = res.headers.get('x-ratelimit-remaining')
+      const hint =
+        res.status === 403 && rateRemaining === '0'
+          ? ' (rate-limited; sign into GitHub.com in the app to authenticate update checks and raise the limit)'
+          : ''
       throw new Error(
-        `GitHub Releases API returned ${res.status} ${res.statusText}`
+        `GitHub Releases API returned ${res.status} ${res.statusText}${hint}`
       )
     }
 
@@ -196,10 +226,10 @@ export class GitHubReleaseUpdater extends EventEmitter {
       }
 
       log.info(`GitHubReleaseUpdater: downloading ${url} -> ${zipPath}`)
+      // Asset URLs redirect to a presigned S3 URL — only send our auth on the
+      // first hop, not the redirect (S3 rejects unknown Authorization headers).
       const res = await fetch(url, {
-        headers: {
-          'User-Agent': `GitHubDesktop/${app.getVersion()} (Windows)`,
-        },
+        headers: { 'User-Agent': `GitHubDesktop/${app.getVersion()} (Windows)` },
         redirect: 'follow',
       })
 

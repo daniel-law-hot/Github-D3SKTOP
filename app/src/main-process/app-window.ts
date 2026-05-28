@@ -30,6 +30,7 @@ import { addTrustedIPCSender } from './trusted-ipc-sender'
 import { getUpdaterGUID } from '../lib/get-updater-guid'
 import { CLIAction } from '../lib/cli-action'
 import { GitHubReleaseUpdater } from './github-release-updater'
+import { EndpointToken } from '../lib/endpoint-token'
 
 export class AppWindow {
   private window: Electron.BrowserWindow
@@ -473,6 +474,15 @@ export class AppWindow {
     } else {
       autoUpdater.quitAndInstall()
     }
+  }
+
+  /**
+   * Forward the renderer's account list to the GitHub-Releases updater so it
+   * can authenticate API requests with the dotcom token (raises the rate
+   * limit from 60/hr to 5,000/hr and enables checks against private repos).
+   */
+  public updateUpdaterAccounts(accounts: ReadonlyArray<EndpointToken>) {
+    this.githubUpdater?.setAccounts(accounts)
   }
 
   public minimizeWindow() {
