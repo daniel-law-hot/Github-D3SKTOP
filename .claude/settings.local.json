@@ -25,7 +25,8 @@
       "Bash(git branch *)",
       "Bash(git push *)",
       "Bash(npx --offline tsc -p tsconfig.json --noEmit --pretty false)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Read(//c/Users/Daniel.Law/AppData/Roaming/**)"
     ]
   }
 }

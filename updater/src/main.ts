@@ -90,7 +90,9 @@ async function waitForPidExit(pid: number, timeoutMs: number): Promise<boolean> 
 
 async function forceKill(pid: number): Promise<void> {
   try {
-    await execFileAsync('taskkill.exe', ['/F', '/PID', String(pid)])
+    await execFileAsync('taskkill.exe', ['/F', '/PID', String(pid)], {
+      windowsHide: true,
+    })
   } catch (e) {
     log(`taskkill failed (process may already be gone): ${String(e)}`)
   }
@@ -100,8 +102,11 @@ async function extractZipTo(zipPath: string, destDir: string): Promise<void> {
   fs.mkdirSync(destDir, { recursive: true })
   // tar.exe ships with Windows 10 1803+ and handles .zip files natively.
   // It's faster and more reliable than PowerShell's Expand-Archive, and
-  // doesn't trip ExecutionPolicy.
-  await execFileAsync('tar.exe', ['-xf', zipPath, '-C', destDir])
+  // doesn't trip ExecutionPolicy. windowsHide keeps tar's console window from
+  // flashing up over the user's desktop during the update.
+  await execFileAsync('tar.exe', ['-xf', zipPath, '-C', destDir], {
+    windowsHide: true,
+  })
 }
 
 function listEntries(dir: string): fs.Dirent[] {
@@ -120,7 +125,9 @@ async function withRetry<T>(
     } catch (e) {
       lastErr = e
       log(`${label} attempt ${i + 1}/${attempts} failed: ${String(e)}`)
-      await sleep(500 * (i + 1))
+      // Linear-ish backoff; locked files (EBUSY/EPERM/EACCES) usually free up
+      // within a couple of seconds once helper processes exit.
+      await sleep(750 * (i + 1))
     }
   }
   throw lastErr
@@ -142,38 +149,23 @@ async function copyTree(src: string, dest: string): Promise<void> {
       }
       fs.symlinkSync(linkTarget, to)
     } else {
-      await withRetry(`copyFile ${to}`, 5, () => {
-        fs.copyFileSync(from, to)
+      await withRetry(`copyFile ${to}`, 8, () => {
+        // Overwriting a file that's mapped as an image (a running .exe/.dll)
+        // can fail; removing it first sometimes succeeds where a plain
+        // overwrite doesn't, so try unlink then copy.
+        try {
+          fs.copyFileSync(from, to)
+        } catch (e) {
+          try {
+            fs.unlinkSync(to)
+          } catch {
+            /* fall through to rethrow original */
+          }
+          fs.copyFileSync(from, to)
+          void e
+        }
       })
     }
-  }
-}
-
-async function backupTarget(target: string, backup: string): Promise<void> {
-  if (fs.existsSync(backup)) {
-    fs.rmSync(backup, { recursive: true, force: true })
-  }
-  if (!fs.existsSync(target)) {
-    return
-  }
-  // Use rename for atomic move within the same volume — much faster than copy.
-  await withRetry(`rename ${target} -> ${backup}`, 5, () => {
-    fs.renameSync(target, backup)
-  })
-}
-
-async function restoreBackup(target: string, backup: string): Promise<void> {
-  if (!fs.existsSync(backup)) {
-    return
-  }
-  try {
-    if (fs.existsSync(target)) {
-      fs.rmSync(target, { recursive: true, force: true })
-    }
-    fs.renameSync(backup, target)
-    log(`restored backup from ${backup}`)
-  } catch (e) {
-    log(`failed to restore backup: ${String(e)}`)
   }
 }
 
@@ -215,6 +207,16 @@ async function main(): Promise<void> {
     process.exit(2)
   }
 
+  // Never run with the install directory (or anything we're about to modify)
+  // as our current directory — Windows locks a process's cwd, which would
+  // block overwriting/renaming. pkg binaries default cwd to wherever they
+  // were launched from, so move somewhere neutral.
+  try {
+    process.chdir(os.tmpdir())
+  } catch {
+    /* best-effort */
+  }
+
   initLog(args)
   log(
     `updater started; pid=${args.pid} zip=${args.zip} target=${args.target} relaunch=${args.relaunch}`
@@ -224,9 +226,13 @@ async function main(): Promise<void> {
   if (!exited) {
     log(`parent PID ${args.pid} still alive after 60s; force-killing`)
     await forceKill(args.pid)
-    // Give Windows a moment to release handles
-    await sleep(2000)
   }
+
+  // Even once the main PID is gone, Electron's helper processes (GPU,
+  // crashpad handler, utility) can keep file/directory handles open for a
+  // moment. Wait for them to drain so the install folder isn't locked.
+  log('waiting for file handles to settle…')
+  await sleep(3000)
 
   if (!fs.existsSync(args.zip)) {
     log(`zip not found at ${args.zip}; aborting`)
@@ -254,28 +260,26 @@ async function main(): Promise<void> {
     log(`flattening single top-level directory: ${stagedEntries[0].name}`)
   }
 
-  const backupDir = `${args.target}.bak`
-  try {
-    log(`backing up ${args.target} -> ${backupDir}`)
-    await backupTarget(args.target, backupDir)
-  } catch (e) {
-    log(`backup failed: ${String(e)}; aborting`)
-    fs.rmSync(stagingDir, { recursive: true, force: true })
-    process.exit(5)
-  }
-
+  // Overwrite the install folder in place. We deliberately do NOT rename the
+  // target directory to a .bak first: on Windows that rename routinely fails
+  // with EBUSY when any lingering handle (Electron helper, AV scanner,
+  // Explorer preview) is still attached to the folder. Writing files into the
+  // existing directory is far more tolerant — individual locked files just
+  // get retried. The freshly extracted payload in `stagingDir` is our
+  // rollback source if anything goes wrong.
   try {
     log(`copying payload into ${args.target}`)
     await copyTree(payloadRoot, args.target)
   } catch (e) {
-    log(`copy failed: ${String(e)}; rolling back`)
-    await restoreBackup(args.target, backupDir)
+    log(
+      `copy failed: ${String(e)}; the install may be partially updated. ` +
+        `Re-running the installer will repair it.`
+    )
     fs.rmSync(stagingDir, { recursive: true, force: true })
     process.exit(6)
   }
 
-  // Success — clean up backup and staging.
-  fs.rmSync(backupDir, { recursive: true, force: true })
+  // Success — clean up staging.
   fs.rmSync(stagingDir, { recursive: true, force: true })
   try {
     fs.rmSync(args.zip, { force: true })

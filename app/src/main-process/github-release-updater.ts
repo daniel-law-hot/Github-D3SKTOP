@@ -162,6 +162,11 @@ export class GitHubReleaseUpdater extends EventEmitter {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,
+        // Critical: run the updater from a directory OUTSIDE the install
+        // folder. A process's current directory is locked by Windows, so if
+        // the updater inherited our cwd (the install dir) it could never
+        // rename that folder — the rename fails with EBUSY.
+        cwd: workDir,
       }
     )
     child.unref()
