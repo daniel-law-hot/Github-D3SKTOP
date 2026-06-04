@@ -18,7 +18,10 @@ import {
   IValidBranch,
 } from '../../models/tip'
 import { assertNever } from '../../lib/fatal-error'
-import { renderBranchNameExistsOnRemoteWarning } from '../lib/branch-name-warnings'
+import {
+  renderBranchNameExistsOnRemoteWarning,
+  renderBranchNameFormatWarning,
+} from '../lib/branch-name-warnings'
 import { getStartPoint } from '../../lib/create-branch'
 import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
 import { startTimer } from '../lib/timing'
@@ -253,6 +256,8 @@ export class CreateBranch extends React.Component<
             this.state.branchName,
             this.props.allBranches
           )}
+
+          {renderBranchNameFormatWarning(this.state.branchName)}
 
           {this.renderBranchSelection()}
         </DialogContent>

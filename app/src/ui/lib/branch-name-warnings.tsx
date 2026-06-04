@@ -22,6 +22,31 @@ export function renderBranchHasRemoteWarning(branch: Branch) {
   }
 }
 
+/**
+ * Recommended branch naming convention: `feature/{vso number}-{description}`
+ * e.g. `feature/12345-fix-login-redirect`.
+ *
+ * This is only a warning and is not enforced.
+ */
+const branchNameFormatRegex = /^feature\/\d+-[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+export function renderBranchNameFormatWarning(branchName: string) {
+  if (branchName.length === 0 || branchNameFormatRegex.test(branchName)) {
+    return null
+  }
+
+  return (
+    <Row className="warning-helper-text">
+      <Octicon symbol={octicons.alert} />
+      <p>
+        Branch name doesn't match the recommended format.
+        <br />
+        (e.g. <Ref>feature/12345-fix-login-redirect</Ref>)
+      </p>
+    </Row>
+  )
+}
+
 export function renderBranchNameExistsOnRemoteWarning(
   sanitizedName: string,
   branches: ReadonlyArray<Branch>

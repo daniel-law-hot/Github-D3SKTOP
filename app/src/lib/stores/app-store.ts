@@ -248,6 +248,7 @@ import { RetryAction, RetryActionType } from '../../models/retry-actions'
 import {
   Default as DefaultShell,
   findShellOrDefault,
+  launchClaude,
   launchCustomShell,
   launchShell,
   parse as parseShell,
@@ -6440,6 +6441,28 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
   }
 
+  /**
+   * Open a terminal at the repository root and run the Claude CLI in it, using
+   * the user's configured shell.
+   */
+  public async _openInClaude(repositoryPath: string): Promise<void> {
+    if (!__WIN32__) {
+      this.emitError(
+        new Error('Open with Claude is currently only supported on Windows.')
+      )
+      return
+    }
+
+    this.statsStore.increment('openShellCount')
+
+    try {
+      const match = await findShellOrDefault(this.selectedShell)
+      await launchClaude(match, repositoryPath, error => this._pushError(error))
+    } catch (error) {
+      this.emitError(error)
+    }
+  }
+
   /** Takes a URL and opens it using the system default application */
   public _openInBrowser(url: string): Promise<boolean> {
     return shell.openExternal(url)
@@ -6481,9 +6504,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   /** Open the repository's solution (or folder if none) in Visual Studio. */
   public async _openInVisualStudio(repositoryPath: string): Promise<void> {
     if (!__WIN32__) {
-      this.emitError(
-        new Error('Visual Studio is only supported on Windows.')
-      )
+      this.emitError(new Error('Visual Studio is only supported on Windows.'))
       return
     }
 

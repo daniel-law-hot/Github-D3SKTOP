@@ -369,7 +369,7 @@ export function buildDefaultMenu({
       {
         label: __DARWIN__
           ? 'Open in Visual Studio'
-          : 'Open in &Visual Studio',
+          : 'Open in Visual S&tudio',
         id: 'open-in-visual-studio',
         click: emit('open-in-visual-studio'),
         visible: __WIN32__,

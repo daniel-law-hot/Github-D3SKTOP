@@ -1349,6 +1349,15 @@ export class App extends React.Component<IAppProps, IAppState> {
     this.props.dispatcher.openInSsms(repository.path)
   }
 
+  private openCurrentRepositoryInClaude = () => {
+    const repository = this.getRepository()
+    if (!(repository instanceof Repository)) {
+      return
+    }
+
+    this.props.dispatcher.openInClaude(repository.path)
+  }
+
   private showVisualStudioOpenMenu = (
     event: React.MouseEvent<HTMLButtonElement>
   ) => {
@@ -3500,8 +3509,31 @@ export class App extends React.Component<IAppProps, IAppState> {
         </div>
         {this.renderBranchToolbarButton()}
         {this.renderPushPullToolbarButton()}
+        {this.renderOpenWithClaudeToolbarButton()}
         {this.renderOpenInVisualStudioToolbarButton()}
       </Toolbar>
+    )
+  }
+
+  private renderOpenWithClaudeToolbarButton() {
+    if (!__WIN32__) {
+      return null
+    }
+
+    const selection = this.state.selectedState
+    if (!selection || selection.type !== SelectionType.Repository) {
+      return null
+    }
+
+    return (
+      <ToolbarButton
+        className="open-with-claude-button"
+        title="Open with Claude"
+        description="Run Claude in a terminal at the repository root"
+        icon={octicons.terminal}
+        style={ToolbarButtonStyle.Subtitle}
+        onClick={this.openCurrentRepositoryInClaude}
+      />
     )
   }
 

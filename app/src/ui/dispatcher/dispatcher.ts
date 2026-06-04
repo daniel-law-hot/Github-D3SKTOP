@@ -1543,6 +1543,14 @@ export class Dispatcher {
   }
 
   /**
+   * Opens a terminal at the repository root and runs the Claude CLI in it,
+   * using the user's configured shell.
+   */
+  public async openInClaude(repositoryPath: string): Promise<void> {
+    return this.appStore._openInClaude(repositoryPath)
+  }
+
+  /**
    * Opens the given repository path in SQL Server Management Studio. If a
    * .ssmssln / .ssmssqlproj is found beneath the repository it is opened
    * directly, otherwise SSMS launches with its connect dialog.

@@ -26,7 +26,10 @@
       "Bash(git push *)",
       "Bash(npx --offline tsc -p tsconfig.json --noEmit --pretty false)",
       "Bash(npx tsc *)",
-      "Read(//c/Users/Daniel.Law/AppData/Roaming/**)"
+      "Read(//c/Users/Daniel.Law/AppData/Roaming/**)",
+      "Bash(npx --version)",
+      "PowerShell(node --version; $tsc = Join-Path \\(Get-Location\\) \"node_modules\\\\.bin\\\\tsc.cmd\"; if \\(Test-Path $tsc\\) { \"tsc found\" } else { \"no tsc\" })",
+      "PowerShell(Get-Command *)"
     ]
   }
 }

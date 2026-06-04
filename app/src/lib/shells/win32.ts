@@ -544,6 +544,69 @@ export function launch(
   }
 }
 
+/**
+ * Launch the given shell at `path` and immediately run the `claude` CLI,
+ * keeping the window open afterwards.
+ *
+ * Only a handful of shells expose a clean way to run a startup command and
+ * stay open (cmd, PowerShell, PowerShell Core, Windows Terminal). For anything
+ * else (Git Bash, Cygwin, WSL, Hyper, Alacritty, Warp, Fluent Terminal, …) we
+ * fall back to Command Prompt running `claude` so the core behaviour — a
+ * terminal at the repository root running Claude — always works.
+ */
+export function launchClaude(
+  foundShell: FoundShell<Shell>,
+  path: string
+): ChildProcess {
+  const shell = foundShell.shell
+  const shellPath = `"${foundShell.path}"`
+  const claudeCommand = 'claude'
+
+  switch (shell) {
+    case Shell.PowerShell:
+      return spawn(
+        'START',
+        ['"Open with Claude"', shellPath, '-NoExit', '-Command', claudeCommand],
+        { shell: true, cwd: path }
+      )
+    case Shell.PowerShellCore:
+      return spawn(
+        'START',
+        [
+          '"Open with Claude"',
+          shellPath,
+          '-WorkingDirectory',
+          `"${path}"`,
+          '-NoExit',
+          '-Command',
+          claudeCommand,
+        ],
+        { shell: true, cwd: path }
+      )
+    case Shell.WindowsTerminal:
+      // wt opens a new tab in `path` running cmd, which in turn runs claude and
+      // stays open thanks to /K.
+      return spawn(shellPath, ['-d', `"${path}"`, 'cmd', '/K', claudeCommand], {
+        shell: true,
+        cwd: path,
+      })
+    case Shell.Cmd:
+      return spawn(
+        'START',
+        ['"Open with Claude"', shellPath, '/K', claudeCommand],
+        { shell: true, cwd: path }
+      )
+    default:
+      // Universal fallback: open Command Prompt in the repository and run
+      // claude, keeping the window open.
+      return spawn(
+        'START',
+        ['"Open with Claude"', 'cmd.exe', '/K', claudeCommand],
+        { shell: true, cwd: path }
+      )
+  }
+}
+
 export function launchCustomShell(
   customShell: ICustomIntegration,
   path: string

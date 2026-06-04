@@ -47,6 +47,18 @@
         width: 100%;
       }
     }
+    &.open-with-claude-button {
+      flex: 0 0 200px;
+      width: 200px;
+
+      // Float this button (and the Visual Studio group to its right) to the
+      // right-hand edge of the toolbar as a single adjacent block.
+      margin-left: auto;
+
+      & > button {
+        border-left: 1px solid var(--toolbar-button-border-color);
+      }
+    }
     &.open-in-visual-studio-button {
       flex: 0 0 200px;
       width: 200px;
@@ -61,6 +73,17 @@
 
       & > button {
         border-left: 1px solid var(--toolbar-button-border-color);
+
+        // This button only contains the dropdown arrow icon (no text), so
+        // center it in the rectangle and drop the icon's trailing margin
+        // (which is only meant to space the icon from button text).
+        justify-content: center;
+        padding-left: 0;
+        padding-right: 0;
+
+        .icon {
+          margin-right: 0;
+        }
       }
     }
     &.branch-toolbar-button {
@@ -88,7 +111,8 @@
   .open-in-visual-studio-group {
     display: flex;
     flex-direction: row;
-    margin-left: auto;
+    // The right-float anchor lives on .open-with-claude-button, which renders
+    // immediately before this group, so this group sits flush against it.
   }
 }
 

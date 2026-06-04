@@ -121,6 +121,35 @@ export async function launchShell(
   }
 }
 
+/**
+ * Launch the given shell at `path` and run the `claude` CLI in it.
+ *
+ * Currently only supported on Windows (the toolbar entry that drives this is
+ * Windows-only). The command-injection details live in the win32 launcher.
+ */
+export async function launchClaude(
+  shell: AnyFoundShell,
+  path: string,
+  onError: (error: Error) => void
+): Promise<void> {
+  if (!__WIN32__) {
+    return Promise.reject(
+      `Opening with Claude is currently only supported on Windows.`
+    )
+  }
+
+  const exists = await pathExists(shell.path)
+  if (!exists) {
+    const label = __DARWIN__ ? 'Settings' : 'Options'
+    throw new ShellError(
+      `Could not find executable for '${shell.shell}' at path '${shell.path}'.  Please open ${label} and select an available shell.`
+    )
+  }
+
+  const cp = Win32.launchClaude(shell as FoundShell<Win32.Shell>, path)
+  addErrorTracing(shell.shell, cp, onError)
+}
+
 /** Launch custom shell at the path. */
 export async function launchCustomShell(
   customShell: ICustomIntegration,
