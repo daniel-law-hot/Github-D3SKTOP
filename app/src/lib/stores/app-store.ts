@@ -521,6 +521,9 @@ export const showChangesFilterDefault = true
 export const showChangesAsTreeKey = 'changes-list-view-mode-tree'
 export const showChangesAsTreeDefault = false
 
+export const changesTreeFilesFirstKey = 'changes-tree-files-first'
+export const changesTreeFilesFirstDefault = false
+
 export class AppStore extends TypedBaseStore<IAppState> {
   private readonly gitStoreCache: GitStoreCache
 
@@ -680,6 +683,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   private showChangesFilter: boolean = false
   private showChangesAsTree: boolean = false
+  private changesTreeFilesFirst: boolean = false
 
   private selectedCopilotModels: CopilotModelSelections = {}
   private copilotModels: ReadonlyArray<ModelInfo> | null = null
@@ -1196,6 +1200,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         this.commitMessageGenerationButtonClicked,
       showChangesFilter: this.showChangesFilter,
       showChangesAsTree: this.showChangesAsTree,
+      changesTreeFilesFirst: this.changesTreeFilesFirst,
       selectedCopilotModels: this.selectedCopilotModels,
       copilotModels: this.copilotModels,
       copilotAvailable: this.copilotStore.isAvailable,
@@ -2465,6 +2470,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.showChangesAsTree = getBoolean(
       showChangesAsTreeKey,
       showChangesAsTreeDefault
+    )
+
+    this.changesTreeFilesFirst = getBoolean(
+      changesTreeFilesFirstKey,
+      changesTreeFilesFirstDefault
     )
 
     this.selectedCopilotModels = this.loadCopilotModelSelections()
@@ -9510,6 +9520,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
   public _toggleChangesListViewMode() {
     this.showChangesAsTree = !this.showChangesAsTree
     setBoolean(showChangesAsTreeKey, this.showChangesAsTree)
+    this.emitUpdate()
+  }
+
+  public _toggleChangesTreeSortOrder() {
+    this.changesTreeFilesFirst = !this.changesTreeFilesFirst
+    setBoolean(changesTreeFilesFirstKey, this.changesTreeFilesFirst)
     this.emitUpdate()
   }
 }

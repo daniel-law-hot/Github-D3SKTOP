@@ -121,6 +121,9 @@ interface IRepositoryViewProps {
   /** Whether to show the changed files as a folder tree instead of a flat list */
   readonly showChangesAsTree: boolean
 
+  /** Whether a folder's own files are listed before its subfolders in tree view */
+  readonly changesTreeFilesFirst: boolean
+
   /**
    * Whether or not to skip blocking commit hooks when creating commits
    * by means of passing the `--no-verify` flag to git commit
@@ -333,6 +336,7 @@ export class RepositoryView extends React.Component<
         showCommitLengthWarning={this.props.showCommitLengthWarning}
         showChangesFilter={this.props.showChangesFilter}
         showChangesAsTree={this.props.showChangesAsTree}
+        changesTreeFilesFirst={this.props.changesTreeFilesFirst}
         skipCommitHooks={this.props.skipCommitHooks}
         signOffCommits={this.props.signOffCommits}
         allowEmptyCommit={this.props.allowEmptyCommit}

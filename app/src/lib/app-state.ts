@@ -403,6 +403,12 @@ export interface IAppState {
   readonly showChangesAsTree: boolean
 
   /**
+   * In the changed files tree view, whether a folder's own files are listed
+   * before its subfolders (`true`) or after them (`false`, the default).
+   */
+  readonly changesTreeFilesFirst: boolean
+
+  /**
    * Per-feature Copilot model selections. An absent key means the default
    * model will be used for that feature.
    */

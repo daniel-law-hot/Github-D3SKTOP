@@ -16,6 +16,8 @@ interface IChangedFileProps {
   readonly availableWidth: number
   /** Indentation, in pixels, applied to the start of the row (tree view). */
   readonly indentation?: number
+  /** Render only the file name rather than the full path (tree view). */
+  readonly pathAsBaseName?: boolean
   readonly disableSelection: boolean
   readonly checkboxTooltip?: string
   readonly focused: boolean
@@ -49,6 +51,7 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
       file,
       availableWidth,
       indentation = 0,
+      pathAsBaseName,
       disableSelection,
       checkboxTooltip,
       focused,
@@ -105,6 +108,7 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
           availableWidth={availablePathWidth}
           ariaHidden={true}
           matches={matches}
+          pathAsBaseName={pathAsBaseName}
         />
 
         <AriaLiveContainer message={pathScreenReaderMessage} />

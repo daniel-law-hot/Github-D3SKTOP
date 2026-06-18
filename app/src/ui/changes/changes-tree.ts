@@ -168,17 +168,19 @@ function collectFiles(
  * Flatten the tree into the ordered list of rows that should be displayed,
  * skipping the descendants of any folder whose path is in `collapsedFolders`.
  *
- * Within each folder, child folders are listed before files. Each folder row
- * carries the full set of descendant files so the UI can render a tri-state
- * include checkbox and toggle the whole subtree at once.
+ * By default a folder's subfolders are listed before its own files. When
+ * `filesFirst` is `true`, the folder's own files are listed first instead.
+ * Each folder row carries the full set of descendant files so the UI can
+ * render a tri-state include checkbox and toggle the whole subtree at once.
  */
 export function flattenChangesTree(
   root: IChangesFolderNode,
-  collapsedFolders: ReadonlySet<string>
+  collapsedFolders: ReadonlySet<string>,
+  filesFirst: boolean = false
 ): ReadonlyArray<ChangesTreeNode> {
   const rows: Array<ChangesTreeNode> = []
 
-  const walk = (folder: IChangesFolderNode, depth: number) => {
+  const emitFolders = (folder: IChangesFolderNode, depth: number) => {
     for (const child of folder.folders) {
       rows.push({
         kind: 'folder',
@@ -193,9 +195,21 @@ export function flattenChangesTree(
         walk(child, depth + 1)
       }
     }
+  }
 
+  const emitFiles = (folder: IChangesFolderNode, depth: number) => {
     for (const file of folder.files) {
       rows.push({ kind: 'file', id: file.id, depth, change: file })
+    }
+  }
+
+  const walk = (folder: IChangesFolderNode, depth: number) => {
+    if (filesFirst) {
+      emitFiles(folder, depth)
+      emitFolders(folder, depth)
+    } else {
+      emitFolders(folder, depth)
+      emitFiles(folder, depth)
     }
   }
 

@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { basename } from 'path'
 
 import { AppFileStatus, AppFileStatusKind } from '../../models/status'
 import { Octicon } from '../octicons'
@@ -19,6 +20,13 @@ interface IPathLabelProps {
 
   /** The characters in the file path to highlight */
   readonly matches?: IMatches
+
+  /**
+   * Render only the file name rather than the full path. Used by the changed
+   * files tree view, where the containing folders are already shown as rows so
+   * repeating the directory in each file would be redundant.
+   */
+  readonly pathAsBaseName?: boolean
 }
 
 /** The pixel width reserved to give the resize arrow padding on either side. */
@@ -37,7 +45,9 @@ export class PathLabel extends React.Component<IPathLabelProps, {}> {
       className: 'path-label-component',
     }
 
-    const { status, matches } = this.props
+    const { status, matches, pathAsBaseName } = this.props
+
+    const display = (path: string) => (pathAsBaseName ? basename(path) : path)
 
     const availableWidth = this.props.availableWidth
     if (
@@ -49,10 +59,13 @@ export class PathLabel extends React.Component<IPathLabelProps, {}> {
         : undefined
       return (
         <span {...props} aria-hidden={this.props.ariaHidden}>
-          <PathText path={status.oldPath} availableWidth={segmentWidth} />
+          <PathText
+            path={display(status.oldPath)}
+            availableWidth={segmentWidth}
+          />
           <Octicon className="rename-arrow" symbol={octicons.arrowRight} />
           <PathText
-            path={this.props.path}
+            path={display(this.props.path)}
             availableWidth={segmentWidth}
             matches={matches}
           />
@@ -62,7 +75,7 @@ export class PathLabel extends React.Component<IPathLabelProps, {}> {
       return (
         <span {...props} aria-hidden={this.props.ariaHidden}>
           <PathText
-            path={this.props.path}
+            path={display(this.props.path)}
             matches={matches}
             availableWidth={availableWidth}
           />

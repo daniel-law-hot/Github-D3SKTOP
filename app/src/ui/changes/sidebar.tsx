@@ -99,6 +99,9 @@ interface IChangesSidebarProps {
   /** Whether to show the changed files as a folder tree instead of a flat list */
   readonly showChangesAsTree: boolean
 
+  /** Whether a folder's own files are listed before its subfolders in tree view */
+  readonly changesTreeFilesFirst: boolean
+
   /**
    * Whether or not to skip blocking commit hooks when creating commits
    * by means of passing the `--no-verify` flag to git commit
@@ -482,6 +485,7 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
           fileListFilter={this.props.changes.fileListFilter}
           showChangesFilter={this.props.showChangesFilter}
           showChangesAsTree={this.props.showChangesAsTree}
+          changesTreeFilesFirst={this.props.changesTreeFilesFirst}
           skipCommitHooks={this.props.skipCommitHooks}
           signOffCommits={this.props.signOffCommits}
           allowEmptyCommit={this.props.allowEmptyCommit}

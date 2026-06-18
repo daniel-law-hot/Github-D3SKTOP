@@ -3651,6 +3651,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           pullRequestSuggestedNextAction={state.pullRequestSuggestedNextAction}
           showChangesFilter={state.showChangesFilter}
           showChangesAsTree={state.showChangesAsTree}
+          changesTreeFilesFirst={state.changesTreeFilesFirst}
           shouldShowGenerateCommitMessageCallOut={
             !this.state.commitMessageGenerationButtonClicked
           }

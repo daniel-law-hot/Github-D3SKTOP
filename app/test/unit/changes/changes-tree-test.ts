@@ -133,6 +133,32 @@ describe('changes-tree', () => {
       assert.ok(srcFolder && srcFolder.kind === 'folder')
       assert.strictEqual(srcFolder.files.length, 2)
     })
+
+    it('lists files before subfolders when filesFirst is set', () => {
+      const tree = buildChangesTree(
+        ['src/index.ts', 'src/lib/util.ts'].map(createTestFile)
+      )
+      const rows = flattenChangesTree(tree, new Set(), true)
+      assert.deepStrictEqual(rows.map(describeRow), [
+        '[src]',
+        '  src/index.ts',
+        '  [src/lib]',
+        '    src/lib/util.ts',
+      ])
+    })
+
+    it('lists subfolders before files by default (filesFirst off)', () => {
+      const tree = buildChangesTree(
+        ['src/index.ts', 'src/lib/util.ts'].map(createTestFile)
+      )
+      const rows = flattenChangesTree(tree, new Set(), false)
+      assert.deepStrictEqual(rows.map(describeRow), [
+        '[src]',
+        '  [src/lib]',
+        '    src/lib/util.ts',
+        '  src/index.ts',
+      ])
+    })
   })
 
   describe('compactChangesTree', () => {

@@ -99,8 +99,12 @@ export interface IChangesListItem extends IFilterListItem {
   readonly treeNode?: ChangesTreeNode
 }
 
-/** The indentation, in pixels, applied per level of tree nesting. */
-const TreeIndentPerLevel = 12
+/**
+ * The indentation, in pixels, applied per level of tree nesting. Equal to one
+ * column/cell width so child rows align under their parent's expander. Keep in
+ * sync with `--tree-cell-width` in _file-list.scss.
+ */
+const TreeIndentPerLevel = 20
 
 const RowHeight = 29
 const StashIcon: OcticonSymbolVariant = {
@@ -246,6 +250,9 @@ interface IFilterChangesListProps {
 
   /** Whether to show the changed files as a folder tree instead of a flat list */
   readonly showChangesAsTree: boolean
+
+  /** Whether a folder's own files are listed before its subfolders in tree view */
+  readonly changesTreeFilesFirst: boolean
 
   /**
    * Whether or not to skip blocking commit hooks when creating commits
@@ -414,7 +421,17 @@ export class FilterChangesList extends React.Component<
       (nextProps.fileListFilter !== this.props.fileListFilter ||
         nextProps.showChangesFilter !== this.props.showChangesFilter)
 
-    if (filesChanged || selectionChanged || viewModeChanged || filterChanged) {
+    const sortOrderChanged =
+      nextProps.showChangesAsTree &&
+      nextProps.changesTreeFilesFirst !== this.props.changesTreeFilesFirst
+
+    if (
+      filesChanged ||
+      selectionChanged ||
+      viewModeChanged ||
+      filterChanged ||
+      sortOrderChanged
+    ) {
       // Reset the collapsed state when toggling between views so the tree
       // always starts fully expanded.
       const collapsedFolders = viewModeChanged
@@ -461,7 +478,8 @@ export class FilterChangesList extends React.Component<
       const files = this.getTreeFilteredFiles(props)
       const nodes = flattenChangesTree(
         compactChangesTree(buildChangesTree(files)),
-        collapsedFolders
+        collapsedFolders,
+        props.changesTreeFilesFirst
       )
 
       const items: ReadonlyArray<IChangesListItem> = nodes.map(node =>
@@ -635,6 +653,7 @@ export class FilterChangesList extends React.Component<
         onIncludeChanged={onIncludeChanged}
         availableWidth={availableWidth}
         indentation={indentation}
+        pathAsBaseName={this.props.showChangesAsTree}
         disableSelection={disableSelection}
         checkboxTooltip={checkboxTooltip}
         focused={this.state.focusedRow === changeListItem.id}
@@ -1521,6 +1540,11 @@ export class FilterChangesList extends React.Component<
       ? 'Show changes as a list'
       : 'Show changes as a tree'
 
+    const filesFirst = this.props.changesTreeFilesFirst
+    const sortToggleLabel = filesFirst
+      ? 'Showing files before subfolders (click to show subfolders first)'
+      : 'Showing subfolders before files (click to show files first)'
+
     return (
       <div className="checkbox-container">
         <Checkbox
@@ -1532,6 +1556,19 @@ export class FilterChangesList extends React.Component<
           className="changes-list-check-all"
           label={checkAllLabel}
         />
+        {showingTree && (
+          <Button
+            className="changes-list-view-toggle"
+            onClick={this.onToggleSortOrder}
+            tooltip={sortToggleLabel}
+            ariaLabel={sortToggleLabel}
+            ariaPressed={filesFirst}
+          >
+            <Octicon
+              symbol={filesFirst ? octicons.arrowUp : octicons.arrowDown}
+            />
+          </Button>
+        )}
         <Button
           className="changes-list-view-toggle"
           onClick={this.onToggleViewMode}
@@ -1551,6 +1588,10 @@ export class FilterChangesList extends React.Component<
 
   private onToggleViewMode = () => {
     this.props.dispatcher.toggleChangesListViewMode()
+  }
+
+  private onToggleSortOrder = () => {
+    this.props.dispatcher.toggleChangesTreeSortOrder()
   }
 
   private renderFilterBox = () => {
@@ -1650,6 +1691,7 @@ export class FilterChangesList extends React.Component<
               focusedRow: this.state.focusedRow,
               showChangesFilter: this.props.showChangesFilter,
               showChangesAsTree: this.props.showChangesAsTree,
+              changesTreeFilesFirst: this.props.changesTreeFilesFirst,
               collapsedFolders: this.state.collapsedFolders,
               filterNewFiles: this.props.fileListFilter.isNewFile,
               filterModifiedFiles: this.props.fileListFilter.isModifiedFile,

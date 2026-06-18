@@ -6,6 +6,11 @@
   // as the available vertical space is computed as zero
   height: 100%;
 
+  // Width of a single column / one level of tree indentation. The checkbox,
+  // expander and folder icon all use this so rows align on a grid. Keep in
+  // sync with TreeIndentPerLevel in filter-changes-list.tsx.
+  --tree-cell-width: 20px;
+
   .list-item {
     border-bottom: var(--base-border);
   }
@@ -33,7 +38,7 @@
 
     .checkbox-component {
       flex-shrink: 0;
-      width: 20px;
+      width: var(--tree-cell-width);
     }
 
     input,
@@ -52,6 +57,12 @@
   }
 
   // A folder row in the changed files tree view.
+  //
+  // The checkbox, expander (chevron) and folder icon are all rendered as
+  // equal-width cells (--tree-cell-width) so that rows line up on a tidy grid.
+  // Each level of nesting is inset by exactly one cell width (applied as an
+  // inline margin in filter-changes-list.tsx, kept in sync with this value),
+  // so a child's checkbox sits directly under its parent's expander.
   .folder {
     display: flex;
     align-items: center;
@@ -62,19 +73,24 @@
 
     .checkbox-component {
       flex-shrink: 0;
-      width: 20px;
+      // Slightly narrower than a full cell so the expander/icon nudge left and
+      // line up with the file rows' checkboxes.
+      width: 16.5px;
     }
 
-    .folder-chevron {
+    // Left-align the expander and icon to match the (left-aligned) checkbox,
+    // so every cell's glyph shares the same left edge and a child row's
+    // checkbox lines up under its parent's expander.
+    .folder-chevron,
+    .folder-icon {
       flex-shrink: 0;
-      margin-right: var(--spacing-quarter);
-      // Chevrons are wider than they are tall; nudge to align with the icon.
-      width: 12px;
+      width: var(--tree-cell-width);
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
     }
 
     .folder-icon {
-      flex-shrink: 0;
-      margin-right: var(--spacing-half);
       color: var(--text-secondary-color);
     }
 
@@ -82,6 +98,7 @@
       @include ellipsis;
       flex-grow: 1;
       min-width: 0;
+      margin-left: 3px;
     }
 
     .octicon {

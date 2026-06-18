@@ -4170,6 +4170,14 @@ export class Dispatcher {
     this.appStore._toggleChangesListViewMode()
   }
 
+  /**
+   * Toggle whether a folder's own files are listed before or after its
+   * subfolders in the changed files tree view.
+   */
+  public toggleChangesTreeSortOrder() {
+    this.appStore._toggleChangesTreeSortOrder()
+  }
+
   /** Set the selected Copilot model for a specific feature. */
   public setSelectedCopilotModel(
     feature: CopilotFeature,
