@@ -3650,6 +3650,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           onCherryPick={this.startCherryPickWithoutBranch}
           pullRequestSuggestedNextAction={state.pullRequestSuggestedNextAction}
           showChangesFilter={state.showChangesFilter}
+          showChangesAsTree={state.showChangesAsTree}
           shouldShowGenerateCommitMessageCallOut={
             !this.state.commitMessageGenerationButtonClicked
           }

@@ -1,22 +1,21 @@
 import { IFileListFilterState } from '../../lib/app-state'
 import { IChangesListItem } from './filter-changes-list'
+import { WorkingDirectoryFileChange } from '../../models/status'
 import memoizeOne from 'memoize-one'
 
 /**
- * Apply filter options to determine if a file should be shown
- * Uses AND logic - file must satisfy ALL active filters
- * Note: This is applied after the filterText has been applied
+ * Apply filter options to determine if a file change should be shown.
+ * Uses AND logic - the change must satisfy ALL active filters.
+ * Note: This is applied after the filterText has been applied.
  */
-export function applyFilterOptions(
-  item: IChangesListItem,
+export function fileMatchesFilterOptions(
+  change: WorkingDirectoryFileChange,
   filters: IFileListFilterState
 ): boolean {
   // If no filters are active, show all files
   if (countActiveFilterOptions(filters) === 0) {
     return true
   }
-
-  const { change } = item
 
   if (filters.isIncludedInCommit && !change.isIncludedInCommit()) {
     return false
@@ -40,6 +39,24 @@ export function applyFilterOptions(
 
   // File matches all active filters
   return true
+}
+
+/**
+ * Apply filter options to determine if a list item should be shown
+ * Uses AND logic - file must satisfy ALL active filters
+ * Note: This is applied after the filterText has been applied
+ */
+export function applyFilterOptions(
+  item: IChangesListItem,
+  filters: IFileListFilterState
+): boolean {
+  // Folder rows (tree view) have no associated change and are never filtered
+  // out here — tree filtering is handled before the tree is built.
+  if (item.change === undefined) {
+    return true
+  }
+
+  return fileMatchesFilterOptions(item.change, filters)
 }
 
 /**

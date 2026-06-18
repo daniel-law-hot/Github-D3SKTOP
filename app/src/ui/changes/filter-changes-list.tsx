@@ -33,6 +33,13 @@ import {
 } from '../lib/context-menu'
 import { CommitMessage } from './commit-message'
 import { ChangedFile } from './changed-file'
+import { ChangedFolder } from './changed-folder'
+import {
+  buildChangesTree,
+  compactChangesTree,
+  flattenChangesTree,
+  ChangesTreeNode,
+} from './changes-tree'
 import { IAutocompletionProvider } from '../autocompletion'
 import { showContextualMenu } from '../../lib/menu-item'
 import { arrayEquals } from '../../lib/equality'
@@ -71,6 +78,7 @@ import {
   getNoResultsMessage,
   hasActiveFilters,
   applyFilters,
+  fileMatchesFilterOptions,
 } from './filter-changes-logic'
 import { ChangesListFilterOptions } from './changes-list-filter-options'
 import { HookProgress } from '../../lib/git'
@@ -79,8 +87,20 @@ import { formatNumber } from '../../lib/format-number'
 export interface IChangesListItem extends IFilterListItem {
   readonly id: string
   readonly text: ReadonlyArray<string>
-  readonly change: WorkingDirectoryFileChange
+  /**
+   * The associated file change. Present for file rows; `undefined` for folder
+   * rows in the tree view.
+   */
+  readonly change?: WorkingDirectoryFileChange
+  /**
+   * The tree node this row represents, when the list is rendered as a folder
+   * tree. `undefined` in the flat list view.
+   */
+  readonly treeNode?: ChangesTreeNode
 }
+
+/** The indentation, in pixels, applied per level of tree nesting. */
+const TreeIndentPerLevel = 12
 
 const RowHeight = 29
 const StashIcon: OcticonSymbolVariant = {
@@ -224,6 +244,9 @@ interface IFilterChangesListProps {
   /** Whether or not to show the changes filter */
   readonly showChangesFilter: boolean
 
+  /** Whether to show the changed files as a folder tree instead of a flat list */
+  readonly showChangesAsTree: boolean
+
   /**
    * Whether or not to skip blocking commit hooks when creating commits
    * by means of passing the `--no-verify` flag to git commit
@@ -255,6 +278,8 @@ interface IFilterChangesListState {
   readonly selectedItems: ReadonlyArray<IChangesListItem>
   readonly focusedRow: string | null
   readonly groups: ReadonlyArray<IFilterListGroup<IChangesListItem>>
+  /** The set of folder paths that are currently collapsed in the tree view. */
+  readonly collapsedFolders: ReadonlySet<string>
 }
 
 function getSelectedItemsFromProps(
@@ -357,57 +382,188 @@ export class FilterChangesList extends React.Component<
   public constructor(props: IFilterChangesListProps) {
     super(props)
 
-    const listItems = this.createListItems(props.workingDirectory.files)
-    const groups = [listItems]
+    const collapsedFolders = new Set<string>()
+    const { group, filteredItems } = this.buildItems(props, collapsedFolders)
 
     this.state = {
-      filteredItems: new Map<string, IChangesListItem>(
-        listItems.items.map(i => [i.id, i])
-      ),
+      filteredItems,
       selectedItems: getSelectedItemsFromProps(props),
       focusedRow: null,
-      groups,
+      groups: [group],
+      collapsedFolders,
     }
   }
 
   public componentWillReceiveProps(nextProps: IFilterChangesListProps) {
-    // No need to update state unless we haven't done it yet or the
-    // selected file id list has changed.
-    if (
-      !arrayEquals(nextProps.selectedFileIDs, this.props.selectedFileIDs) ||
-      !arrayEquals(
-        nextProps.workingDirectory.files,
-        this.props.workingDirectory.files
+    const filesChanged = !arrayEquals(
+      nextProps.workingDirectory.files,
+      this.props.workingDirectory.files
+    )
+    const selectionChanged = !arrayEquals(
+      nextProps.selectedFileIDs,
+      this.props.selectedFileIDs
+    )
+    const viewModeChanged =
+      nextProps.showChangesAsTree !== this.props.showChangesAsTree
+
+    // In the tree view we build (and filter) the items ourselves, so we also
+    // need to rebuild when the filter state changes. In the flat list view the
+    // filtering is performed by the list component itself.
+    const filterChanged =
+      nextProps.showChangesAsTree &&
+      (nextProps.fileListFilter !== this.props.fileListFilter ||
+        nextProps.showChangesFilter !== this.props.showChangesFilter)
+
+    if (filesChanged || selectionChanged || viewModeChanged || filterChanged) {
+      // Reset the collapsed state when toggling between views so the tree
+      // always starts fully expanded.
+      const collapsedFolders = viewModeChanged
+        ? new Set<string>()
+        : this.state.collapsedFolders
+
+      const { group, filteredItems } = this.buildItems(
+        nextProps,
+        collapsedFolders
       )
-    ) {
-      this.setState({
+
+      // In the flat list view `filteredItems` is owned by the list's filter
+      // callback, so we only overwrite it when building the tree (or when
+      // switching views, to seed a sensible initial value).
+      const shouldSetFilteredItems =
+        nextProps.showChangesAsTree || viewModeChanged
+
+      const baseState = {
         selectedItems: getSelectedItemsFromProps(nextProps),
-        groups: [this.createListItems(nextProps.workingDirectory.files)],
-      })
+        groups: [group],
+        collapsedFolders,
+      }
+
+      if (shouldSetFilteredItems) {
+        this.setState({ ...baseState, filteredItems })
+      } else {
+        this.setState(baseState)
+      }
     }
   }
 
-  private createListItems(
-    files: ReadonlyArray<WorkingDirectoryFileChange>
-  ): IFilterListGroup<IChangesListItem> {
-    const items = files.map(file => ({
+  /**
+   * Build the list group and the map of filter-matching file items for the
+   * current view mode (flat list or folder tree).
+   */
+  private buildItems(
+    props: IFilterChangesListProps,
+    collapsedFolders: ReadonlySet<string>
+  ): {
+    group: IFilterListGroup<IChangesListItem>
+    filteredItems: Map<string, IChangesListItem>
+  } {
+    if (props.showChangesAsTree) {
+      const files = this.getTreeFilteredFiles(props)
+      const nodes = flattenChangesTree(
+        compactChangesTree(buildChangesTree(files)),
+        collapsedFolders
+      )
+
+      const items: ReadonlyArray<IChangesListItem> = nodes.map(node =>
+        node.kind === 'folder'
+          ? { id: node.path, text: [node.path], treeNode: node }
+          : {
+              id: node.change.id,
+              text: [node.change.path],
+              change: node.change,
+              treeNode: node,
+            }
+      )
+
+      const filteredItems = new Map<string, IChangesListItem>(
+        files.map(f => [f.id, { id: f.id, text: [f.path], change: f }])
+      )
+
+      return { group: { identifier: 'changed-files', items }, filteredItems }
+    }
+
+    const items = props.workingDirectory.files.map(file => ({
       text: [file.path],
       id: file.id,
       change: file,
     }))
 
     return {
-      identifier: 'changed-files',
-      items,
+      group: { identifier: 'changed-files', items },
+      filteredItems: new Map<string, IChangesListItem>(
+        items.map(i => [i.id, i])
+      ),
+    }
+  }
+
+  /**
+   * Apply the active text and option filters to the working directory files.
+   * Used to build the folder tree from the filtered set so that empty folders
+   * are pruned. Mirrors the filtering the list component performs in flat view.
+   */
+  private getTreeFilteredFiles(
+    props: IFilterChangesListProps
+  ): ReadonlyArray<WorkingDirectoryFileChange> {
+    const files = props.workingDirectory.files
+
+    if (!props.showChangesFilter) {
+      return files
+    }
+
+    const { filterText } = props.fileListFilter
+    const search = filterText.toLowerCase()
+
+    return files.filter(
+      f =>
+        (search === '' || f.path.toLowerCase().includes(search)) &&
+        fileMatchesFilterOptions(f, props.fileListFilter)
+    )
+  }
+
+  private toggleFolderExpanded = (path: string) => {
+    const collapsedFolders = new Set(this.state.collapsedFolders)
+    if (collapsedFolders.has(path)) {
+      collapsedFolders.delete(path)
+    } else {
+      collapsedFolders.add(path)
+    }
+
+    const { group } = this.buildItems(this.props, collapsedFolders)
+    this.setState({ collapsedFolders, groups: [group] })
+  }
+
+  private setFolderExpanded = (path: string, expanded: boolean) => {
+    const isCollapsed = this.state.collapsedFolders.has(path)
+    if (expanded === !isCollapsed) {
+      return
+    }
+    this.toggleFolderExpanded(path)
+  }
+
+  private toggleFolderInclude = (node: ChangesTreeNode) => {
+    if (node.kind !== 'folder') {
+      return
+    }
+
+    const allIncluded = node.files.every(
+      f => f.selection.getSelectionType() === DiffSelectionType.All
+    )
+
+    this.props.onIncludeChanged(node.files, !allIncluded)
+  }
+
+  private onFolderIncludeChanged = (path: string, include: boolean) => {
+    const item = this.state.groups[0]?.items.find(i => i.id === path)
+    if (item?.treeNode?.kind === 'folder') {
+      this.props.onIncludeChanged(item.treeNode.files, include)
     }
   }
 
   private onIncludeAllChanged = (event: React.FormEvent<HTMLInputElement>) => {
     const include = event.currentTarget.checked
-    const filteredItemPaths = Array.from(
-      this.state.filteredItems,
-      ([, v]) => v.change
-    )
+    const filteredItemPaths = Array.from(this.state.filteredItems, ([, v]) => v)
+      .map(v => v.change)
+      .filter((c): c is WorkingDirectoryFileChange => c !== undefined)
     this.props.onIncludeChanged(filteredItemPaths, include)
   }
 
@@ -422,7 +578,19 @@ export class FilterChangesList extends React.Component<
       availableWidth,
     } = this.props
 
+    const node = changeListItem.treeNode
+
+    if (node?.kind === 'folder') {
+      return this.renderChangedFolder(node)
+    }
+
     const file = changeListItem.change
+
+    if (file === undefined) {
+      return null
+    }
+
+    const indentation = node ? node.depth * TreeIndentPerLevel : 0
     const selection = file.selection.getSelectionType()
     const { submoduleStatus } = file.status
 
@@ -466,10 +634,42 @@ export class FilterChangesList extends React.Component<
         key={file.id}
         onIncludeChanged={onIncludeChanged}
         availableWidth={availableWidth}
+        indentation={indentation}
         disableSelection={disableSelection}
         checkboxTooltip={checkboxTooltip}
         focused={this.state.focusedRow === changeListItem.id}
         matches={matches}
+      />
+    )
+  }
+
+  private renderChangedFolder = (node: ChangesTreeNode): JSX.Element | null => {
+    if (node.kind !== 'folder') {
+      return null
+    }
+
+    const { rebaseConflictState, isCommitting } = this.props
+
+    const allIncluded = node.files.every(
+      f => f.selection.getSelectionType() === DiffSelectionType.All
+    )
+    const noneIncluded = node.files.every(
+      f => f.selection.getSelectionType() === DiffSelectionType.None
+    )
+    const include = allIncluded ? true : noneIncluded ? false : null
+
+    const disableSelection = isCommitting || rebaseConflictState !== null
+
+    return (
+      <ChangedFolder
+        path={node.path}
+        name={node.name}
+        key={node.path}
+        indentation={node.depth * TreeIndentPerLevel}
+        expanded={!this.state.collapsedFolders.has(node.path)}
+        include={include}
+        disableSelection={disableSelection}
+        onIncludeChanged={this.onFolderIncludeChanged}
       />
     )
   }
@@ -842,6 +1042,11 @@ export class FilterChangesList extends React.Component<
   ) => {
     const file = item.change
 
+    // Folder rows (tree view) have no context menu.
+    if (file === undefined) {
+      return
+    }
+
     if (this.props.isCommitting) {
       return
     }
@@ -1125,11 +1330,14 @@ export class FilterChangesList extends React.Component<
   }
 
   private onChangedFileDoubleClick = (item: IChangesListItem) => {
+    if (item.change === undefined) {
+      return
+    }
     this.props.onOpenItemInExternalEditor(item.change.path)
   }
 
   private onItemKeyDown = (
-    _item: IChangesListItem,
+    item: IChangesListItem,
     event: React.KeyboardEvent<HTMLDivElement>
   ) => {
     // The commit is already in-flight but this check prevents the
@@ -1139,6 +1347,18 @@ export class FilterChangesList extends React.Component<
       (event.key === 'Enter' || event.key === ' ')
     ) {
       event.preventDefault()
+    }
+
+    // In the tree view, the arrow keys expand/collapse the focused folder.
+    const node = item.treeNode
+    if (node?.kind === 'folder') {
+      if (event.key === 'ArrowRight') {
+        this.setFolderExpanded(node.path, true)
+        event.preventDefault()
+      } else if (event.key === 'ArrowLeft') {
+        this.setFolderExpanded(node.path, false)
+        event.preventDefault()
+      }
     }
 
     return
@@ -1157,6 +1377,28 @@ export class FilterChangesList extends React.Component<
     item: IChangesListItem,
     source: ClickSource
   ) => {
+    const node = item.treeNode
+
+    if (node?.kind === 'folder') {
+      // Pressing space/enter toggles inclusion (matching file rows), while a
+      // mouse click expands/collapses the folder.
+      if (source.kind === 'keyboard') {
+        this.toggleFolderInclude(node)
+      } else {
+        // A click on the include checkbox is handled by its own change event;
+        // don't also expand/collapse the folder in that case.
+        const target = source.event.target as HTMLElement
+        if (target.closest('.checkbox-component') === null) {
+          this.toggleFolderExpanded(node.path)
+        }
+      }
+      return
+    }
+
+    if (item.change === undefined) {
+      return
+    }
+
     const fileIndex = this.props.workingDirectory.findFileIndexByID(
       item.change.id
     )
@@ -1175,14 +1417,28 @@ export class FilterChangesList extends React.Component<
   private onFilterListResultsChanged = (
     filteredItems: ReadonlyArray<IChangesListItem>
   ) => {
+    // In the tree view we manage `filteredItems` ourselves (folder rows must
+    // not be counted as changed files), so ignore the list's callback.
+    if (this.props.showChangesAsTree) {
+      return
+    }
+
     const filteredSet = new Map<string, IChangesListItem>()
     filteredItems.forEach(f => filteredSet.set(f.id, f))
     this.setState({ filteredItems: filteredSet })
   }
 
   private onFileSelectionChanged = (items: ReadonlyArray<IChangesListItem>) => {
-    const rows = items.map(i =>
-      this.props.workingDirectory.findFileIndexByID(i.change.id)
+    const fileItems = items.filter(i => i.change !== undefined)
+
+    // Selecting a folder row (e.g. clicking to expand it) shouldn't change the
+    // displayed diff, so preserve the current file selection in that case.
+    if (fileItems.length === 0 && items.length > 0) {
+      return
+    }
+
+    const rows = fileItems.map(i =>
+      this.props.workingDirectory.findFileIndexByID(i.change!.id)
     )
     this.props.onFileSelectionChanged(rows)
   }
@@ -1260,6 +1516,11 @@ export class FilterChangesList extends React.Component<
     }
     ${formatNumber(files.length)} changed file${plural(files.length)}`
 
+    const showingTree = this.props.showChangesAsTree
+    const viewToggleLabel = showingTree
+      ? 'Show changes as a list'
+      : 'Show changes as a tree'
+
     return (
       <div className="checkbox-container">
         <Checkbox
@@ -1271,8 +1532,25 @@ export class FilterChangesList extends React.Component<
           className="changes-list-check-all"
           label={checkAllLabel}
         />
+        <Button
+          className="changes-list-view-toggle"
+          onClick={this.onToggleViewMode}
+          tooltip={viewToggleLabel}
+          ariaLabel={viewToggleLabel}
+          ariaPressed={showingTree}
+        >
+          <Octicon
+            symbol={
+              showingTree ? octicons.listUnordered : octicons.fileDirectory
+            }
+          />
+        </Button>
       </div>
     )
+  }
+
+  private onToggleViewMode = () => {
+    this.props.dispatcher.toggleChangesListViewMode()
   }
 
   private renderFilterBox = () => {
@@ -1332,7 +1610,12 @@ export class FilterChangesList extends React.Component<
             id="changes-list"
             rowHeight={RowHeight}
             filterText={
-              this.props.showChangesFilter
+              // In the tree view we filter the files ourselves before building
+              // the tree, so the list must not re-filter (it would hide folder
+              // rows whose names don't match).
+              this.props.showChangesAsTree
+                ? ''
+                : this.props.showChangesFilter
                 ? this.props.fileListFilter.filterText
                 : ''
             }
@@ -1351,11 +1634,13 @@ export class FilterChangesList extends React.Component<
             onSelectionChanged={this.onFileSelectionChanged}
             groups={this.state.groups}
             filterMethod={
-              this.props.fileListFilter.isIncludedInCommit ||
-              this.props.fileListFilter.isNewFile ||
-              this.props.fileListFilter.isModifiedFile ||
-              this.props.fileListFilter.isDeletedFile ||
-              this.props.fileListFilter.isExcludedFromCommit
+              this.props.showChangesAsTree
+                ? undefined
+                : this.props.fileListFilter.isIncludedInCommit ||
+                  this.props.fileListFilter.isNewFile ||
+                  this.props.fileListFilter.isModifiedFile ||
+                  this.props.fileListFilter.isDeletedFile ||
+                  this.props.fileListFilter.isExcludedFromCommit
                 ? this.applyFilters
                 : undefined
             }
@@ -1364,6 +1649,8 @@ export class FilterChangesList extends React.Component<
               isCommitting: isCommitting,
               focusedRow: this.state.focusedRow,
               showChangesFilter: this.props.showChangesFilter,
+              showChangesAsTree: this.props.showChangesAsTree,
+              collapsedFolders: this.state.collapsedFolders,
               filterNewFiles: this.props.fileListFilter.isNewFile,
               filterModifiedFiles: this.props.fileListFilter.isModifiedFile,
               filterDeletedFiles: this.props.fileListFilter.isDeletedFile,

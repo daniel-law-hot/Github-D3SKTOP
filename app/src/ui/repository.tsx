@@ -118,6 +118,9 @@ interface IRepositoryViewProps {
   /** Whether or not to show the changes filter */
   readonly showChangesFilter: boolean
 
+  /** Whether to show the changed files as a folder tree instead of a flat list */
+  readonly showChangesAsTree: boolean
+
   /**
    * Whether or not to skip blocking commit hooks when creating commits
    * by means of passing the `--no-verify` flag to git commit
@@ -329,6 +332,7 @@ export class RepositoryView extends React.Component<
         commitSpellcheckEnabled={this.props.commitSpellcheckEnabled}
         showCommitLengthWarning={this.props.showCommitLengthWarning}
         showChangesFilter={this.props.showChangesFilter}
+        showChangesAsTree={this.props.showChangesAsTree}
         skipCommitHooks={this.props.skipCommitHooks}
         signOffCommits={this.props.signOffCommits}
         allowEmptyCommit={this.props.allowEmptyCommit}

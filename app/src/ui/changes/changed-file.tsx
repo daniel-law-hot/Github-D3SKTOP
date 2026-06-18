@@ -14,6 +14,8 @@ interface IChangedFileProps {
   readonly file: WorkingDirectoryFileChange
   readonly include: boolean | null
   readonly availableWidth: number
+  /** Indentation, in pixels, applied to the start of the row (tree view). */
+  readonly indentation?: number
   readonly disableSelection: boolean
   readonly checkboxTooltip?: string
   readonly focused: boolean
@@ -46,6 +48,7 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
     const {
       file,
       availableWidth,
+      indentation = 0,
       disableSelection,
       checkboxTooltip,
       focused,
@@ -64,7 +67,8 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
       listItemPadding -
       checkboxWidth -
       filePadding -
-      statusWidth
+      statusWidth -
+      indentation
 
     const includedText =
       this.props.include === true
@@ -78,7 +82,7 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
     )} ${includedText}`
 
     return (
-      <div className="file">
+      <div className="file" style={{ marginInlineStart: indentation }}>
         <TooltippedContent
           tooltip={checkboxTooltip}
           direction={TooltipDirection.EAST}

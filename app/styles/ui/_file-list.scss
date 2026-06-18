@@ -50,4 +50,42 @@
       color: var(--text-color);
     }
   }
+
+  // A folder row in the changed files tree view.
+  .folder {
+    display: flex;
+    align-items: center;
+    flex-grow: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0 var(--spacing);
+
+    .checkbox-component {
+      flex-shrink: 0;
+      width: 20px;
+    }
+
+    .folder-chevron {
+      flex-shrink: 0;
+      margin-right: var(--spacing-quarter);
+      // Chevrons are wider than they are tall; nudge to align with the icon.
+      width: 12px;
+    }
+
+    .folder-icon {
+      flex-shrink: 0;
+      margin-right: var(--spacing-half);
+      color: var(--text-secondary-color);
+    }
+
+    .folder-name {
+      @include ellipsis;
+      flex-grow: 1;
+      min-width: 0;
+    }
+
+    .octicon {
+      vertical-align: text-bottom;
+    }
+  }
 }

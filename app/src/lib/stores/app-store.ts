@@ -518,6 +518,9 @@ export const showChangesFilterKey = 'show-changes-filter'
 const selectedCopilotModelsKey = 'selected-copilot-models'
 export const showChangesFilterDefault = true
 
+export const showChangesAsTreeKey = 'changes-list-view-mode-tree'
+export const showChangesAsTreeDefault = false
+
 export class AppStore extends TypedBaseStore<IAppState> {
   private readonly gitStoreCache: GitStoreCache
 
@@ -676,6 +679,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private commitMessageGenerationButtonClicked: boolean = false
 
   private showChangesFilter: boolean = false
+  private showChangesAsTree: boolean = false
 
   private selectedCopilotModels: CopilotModelSelections = {}
   private copilotModels: ReadonlyArray<ModelInfo> | null = null
@@ -1191,6 +1195,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       commitMessageGenerationButtonClicked:
         this.commitMessageGenerationButtonClicked,
       showChangesFilter: this.showChangesFilter,
+      showChangesAsTree: this.showChangesAsTree,
       selectedCopilotModels: this.selectedCopilotModels,
       copilotModels: this.copilotModels,
       copilotAvailable: this.copilotStore.isAvailable,
@@ -2455,6 +2460,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.showChangesFilter = getBoolean(
       showChangesFilterKey,
       showChangesFilterDefault
+    )
+
+    this.showChangesAsTree = getBoolean(
+      showChangesAsTreeKey,
+      showChangesAsTreeDefault
     )
 
     this.selectedCopilotModels = this.loadCopilotModelSelections()
@@ -9494,6 +9504,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.showChangesFilter = !this.showChangesFilter
     setBoolean(showChangesFilterKey, this.showChangesFilter)
     this.updateMenuLabelsForSelectedRepository()
+    this.emitUpdate()
+  }
+
+  public _toggleChangesListViewMode() {
+    this.showChangesAsTree = !this.showChangesAsTree
+    setBoolean(showChangesAsTreeKey, this.showChangesAsTree)
     this.emitUpdate()
   }
 }

@@ -399,6 +399,9 @@ export interface IAppState {
   /** Whether the changes filter is shown */
   readonly showChangesFilter: boolean
 
+  /** Whether the changed files are shown as a folder tree instead of a flat list */
+  readonly showChangesAsTree: boolean
+
   /**
    * Per-feature Copilot model selections. An absent key means the default
    * model will be used for that feature.

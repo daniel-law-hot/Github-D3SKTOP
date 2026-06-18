@@ -4165,6 +4165,11 @@ export class Dispatcher {
     this.appStore._toggleChangesFilterVisibility()
   }
 
+  /** Toggle the changed files view between a flat list and a folder tree. */
+  public toggleChangesListViewMode() {
+    this.appStore._toggleChangesListViewMode()
+  }
+
   /** Set the selected Copilot model for a specific feature. */
   public setSelectedCopilotModel(
     feature: CopilotFeature,

@@ -150,6 +150,30 @@
         .spacer {
           flex-grow: 1;
         }
+
+        // Toggle between the flat list and folder tree views. Anchored to the
+        // right edge of the row (the check-all label grows to fill the space).
+        .changes-list-view-toggle {
+          flex-shrink: 0;
+          width: 22px;
+          height: 22px;
+          padding: 0;
+          margin-left: var(--spacing-half);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          border: none;
+          color: var(--text-secondary-color);
+
+          &:hover {
+            color: var(--text-color);
+          }
+
+          .octicon {
+            margin: 0;
+          }
+        }
       }
 
       .changes-list-check-all {
