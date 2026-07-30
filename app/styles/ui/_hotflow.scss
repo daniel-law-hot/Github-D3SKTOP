@@ -310,40 +310,67 @@ body.theme-dark {
  * works because the diagram is drawn at 1:1 — one viewBox unit is one pixel.
  */
 .hotflow-merge-buttons,
-.hotflow-checkout-buttons {
+.hotflow-branch-names {
   position: absolute;
   top: 0;
   left: 0;
 
-  // The container is only a coordinate space; the buttons inside it take
+  // The container is only a coordinate space; the controls inside it take
   // pointer events back.
   pointer-events: none;
 }
 
 /**
- * The stub-wide checkout button.
+ * A feature branch's name on its stub.
  *
- * Invisible until hovered — the SVG stub underneath already draws the row, so
- * this only adds the interaction. On hover it tints the stub it covers, which is
- * the whole affordance: the row lights up, so the row is clickable.
+ * HTML rather than SVG text so the name can be the control itself. The font has
+ * to match what the rest of the diagram draws, since it sits in the same row as
+ * SVG-rendered labels — hence the mirrored family and size rather than inherited
+ * ones. Truncation is left to `text-overflow`, so a name that fits isn't cut.
  */
-.hotflow-checkout-button {
+.hotflow-branch-name {
   position: absolute;
+  display: flex;
+  align-items: center;
   padding: 0;
   background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  cursor: pointer;
-  pointer-events: auto;
+  border: none;
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 
-  &:hover {
-    background: var(--hotflow-focus-background);
-    border-color: var(--hotflow-focus-line);
+  &.current {
+    color: var(--text-color);
   }
 
-  &:focus-visible {
-    outline: 2px solid var(--focus-color);
-    outline-offset: 1px;
+  // The clickable case: styled as a link, underlined on hover, like every other
+  // "this takes you somewhere" in the app.
+  &.link {
+    color: var(--link-button-color);
+    cursor: pointer;
+    pointer-events: auto;
+
+    &:hover {
+      text-decoration: underline;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--focus-color);
+      outline-offset: 1px;
+      border-radius: 2px;
+    }
+  }
+
+  // A branch with no pull request, matching the hollow dashed stub behind it.
+  &.dim {
+    color: var(--text-secondary-color);
+
+    &.link:hover {
+      color: var(--link-button-color);
+    }
   }
 }
 

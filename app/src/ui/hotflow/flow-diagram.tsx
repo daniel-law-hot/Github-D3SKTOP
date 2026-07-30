@@ -76,15 +76,6 @@ export const diagramWidth = productionRight + G.inset
 const edgeGap = 6
 
 /**
- * How many characters fit in a stub at the monospace size used for branch names.
- * Derived from the box width rather than guessed so it tracks `featureWidth`.
- *
- * The reserve on the right holds the pull request number and, for branches that
- * have one, the merge button overlaid at the stub's right edge.
- */
-const stubLabelLength = Math.floor((G.featureWidth - 96) / 6.2)
-
-/**
  * The action row's geometry, derived from the diagram's own columns.
  *
  * The two buttons sit in the space above which the feature stubs, the pull
@@ -192,43 +183,43 @@ interface IFlowDiagramProps {
   readonly onCheckoutBranch: (entry: IFeatureLaneEntry) => void
 }
 
-interface ICheckoutButtonProps {
+interface IBranchNameLinkProps {
   readonly entry: IFeatureLaneEntry
 
-  /** What checking out would do, for the tooltip and the accessible name. */
-  readonly label: string
+  /** Dimmed to match the hollow stub of a branch with no pull request. */
+  readonly idle: boolean
 
-  readonly left: number
-  readonly top: number
-  readonly width: number
-  readonly height: number
+  /** Says what clicking does, since the name alone only says where. */
+  readonly tooltip: string
+
+  readonly style: React.CSSProperties
 
   readonly onCheckout: (entry: IFeatureLaneEntry) => void
 }
 
 /**
- * The stub-wide checkout button.
+ * A feature branch's name, as a link that checks it out.
  *
- * Its own component to hold the ref its tooltip needs. The button is
- * transparent — the SVG stub beneath it supplies the visuals — so the tooltip is
- * what tells you it does anything at all before you click it.
+ * Its own component to hold the ref its tooltip needs. The visible text is the
+ * branch name, which says where you'd go but not that clicking goes there — the
+ * tooltip covers that, and covers the remote-only case too.
  */
-class CheckoutButton extends React.Component<ICheckoutButtonProps> {
+class BranchNameLink extends React.Component<IBranchNameLinkProps> {
   private buttonRef = createObservableRef<HTMLButtonElement>()
 
   public render() {
-    const { label, left, top, width, height } = this.props
+    const { entry, idle, tooltip, style } = this.props
 
     return (
       <button
         ref={this.buttonRef}
         type="button"
-        className="hotflow-checkout-button"
-        style={{ left, top, width, height }}
+        className={`hotflow-branch-name link${idle ? ' dim' : ''}`}
+        style={style}
         onClick={this.onClick}
-        aria-label={label}
       >
-        <Tooltip target={this.buttonRef}>{label}</Tooltip>
+        <Tooltip target={this.buttonRef}>{tooltip}</Tooltip>
+        {entry.branchName}
       </button>
     )
   }
@@ -404,50 +395,67 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           {this.renderProductionEdge()}
           {this.renderProductionNode()}
         </svg>
-        {/*
-          Checkout first, merge second: absolutely positioned siblings paint in
-          DOM order, so the merge button sits on top of the stub-wide checkout
-          button and takes the clicks in its own corner.
-        */}
-        {this.renderCheckoutButtons()}
+        {this.renderBranchNames()}
         {this.renderMergeButtons()}
       </div>
     )
   }
 
   /**
-   * A stub-wide button over each feature branch that checks it out.
+   * The branch name on each stub, as a link that checks the branch out.
    *
-   * Covers the whole stub rather than adding a control beside it, because the
-   * stubs are already tight on width for a real branch name. Nothing is drawn
-   * except on hover — the branch name showing through from the SVG below is the
-   * button's label as far as the eye is concerned, and `aria-label` says it
-   * properly for everything else.
+   * HTML rather than SVG `<text>`, so the name can *be* the control: a link is
+   * styled, underlined on hover and clickable in one element, whereas an overlay
+   * button can't reach into the SVG to style the text beneath it. It also means
+   * the name ellipsises only when it genuinely doesn't fit, rather than being cut
+   * at a guessed character count.
+   *
+   * The branch you're already on is plain text — there's nothing to go to.
    */
-  private renderCheckoutButtons() {
+  private renderBranchNames() {
     const centres = this.stubCentres
 
+    // Left inset plus the right-hand slot the pull request badge and merge
+    // button share. Matches the SVG's own coordinates for both.
+    const maxWidth = G.featureWidth - 10 - 86
+
     return (
-      <div className="hotflow-checkout-buttons">
+      <div className="hotflow-branch-names">
         {this.shownEntries.map((entry, i) => {
-          // No point offering to check out the branch we're already on.
+          const idle =
+            entry.pullRequestNumber === null &&
+            this.props.pullRequestKnowledge === 'known'
+
+          const style = {
+            left: featureX + 10,
+            top: centres[i] - G.stubHeight / 2,
+            height: G.stubHeight,
+            maxWidth,
+          }
+
           if (entry.branchName === this.props.currentBranchName) {
-            return null
+            return (
+              <span
+                key={entry.branchName}
+                className="hotflow-branch-name current"
+                style={style}
+              >
+                {entry.branchName}
+              </span>
+            )
           }
 
           return (
-            <CheckoutButton
+            <BranchNameLink
               key={entry.branchName}
               entry={entry}
-              label={
+              idle={idle}
+              tooltip={
                 entry.isRemoteOnly
                   ? `Check out ${entry.branchName} — creates a local branch`
                   : `Check out ${entry.branchName}`
               }
-              left={featureX}
-              top={centres[i] - G.stubHeight / 2}
-              width={G.featureWidth}
-              height={G.stubHeight}
+              style={style}
               onCheckout={this.props.onCheckoutBranch}
             />
           )
@@ -589,7 +597,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
             entry.pullRequestNumber === null &&
             this.props.pullRequestKnowledge === 'known'
 
-          // The one stub with no checkout button, so it says why.
+          // The one stub whose name isn't a link, so it says why.
           const current = entry.branchName === this.props.currentBranchName
 
           return (
@@ -604,13 +612,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
                 height={G.stubHeight}
                 rx={4}
               />
-              <text
-                className={`hotflow-text mono sm${idle ? ' dim' : ''}`}
-                x={featureX + 10}
-                y={centres[i] + 4}
-              >
-                {truncate(entry.branchName, stubLabelLength)}
-              </text>
+              {/* The branch name is HTML, in the overlay — see renderBranchNames. */}
               <text
                 className="hotflow-text xs dim"
                 // Only branches with a pull request give up the right-hand slot
