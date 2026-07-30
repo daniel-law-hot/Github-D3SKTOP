@@ -378,6 +378,27 @@ export class Dispatcher {
     return this.appStore._setHotFlowBranches(repository, override)
   }
 
+  /**
+   * Merge a pull request into the integration branch.
+   *
+   * `expectedHeadSha` is sent to GitHub so the merge is refused if the branch has
+   * moved since it was displayed — this closes the pull request and notifies its
+   * reviewers, so it must act on what the user actually looked at.
+   */
+  public mergeHotFlowPullRequest(
+    repository: Repository,
+    pullRequestNumber: number,
+    mergeMethod: 'merge' | 'squash' | 'rebase',
+    expectedHeadSha: string
+  ): Promise<void> {
+    return this.appStore._mergeHotFlowPullRequest(
+      repository,
+      pullRequestNumber,
+      mergeMethod,
+      expectedHeadSha
+    )
+  }
+
   /** Store an Azure DevOps personal access token and reload work item detail. */
   public setAdoPat(repository: Repository, pat: string): Promise<void> {
     return this.appStore._setAdoPat(repository, pat)

@@ -180,6 +180,9 @@ export async function detectHotFlowState(
     unreleasedCommitCount: unreleased.commitCount,
     unreleasedVsoCount: unreleased.vsoCount,
     nextVersion: computeNextVersion(releaseCandidates, releaseHistory),
+    // Approvals are a separate API read; the store fills these in after
+    // detection so a network hiccup can't hold up the git picture.
+    pullRequestApprovals: defaultHotFlowState.pullRequestApprovals,
     ado: defaultAdoState,
   }
 }

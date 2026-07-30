@@ -118,6 +118,7 @@ export enum PopupType {
   HotFlowConnectAdo = 'HotFlowConnectAdo',
   HotFlowEditCycle = 'HotFlowEditCycle',
   HotFlowEditBranches = 'HotFlowEditBranches',
+  HotFlowMergePullRequest = 'HotFlowMergePullRequest',
 }
 
 interface IBasePopup {
@@ -192,6 +193,16 @@ export type PopupDetail =
   | {
       type: PopupType.HotFlowEditBranches
       repository: Repository
+    }
+  | {
+      type: PopupType.HotFlowMergePullRequest
+      repository: Repository
+      pullRequestNumber: number
+      branchName: string
+      baseBranchName: string
+      title: string
+      headSha: string
+      pullRequestUrl: string | null
     }
   | {
       type: PopupType.HotFlowEditCycle

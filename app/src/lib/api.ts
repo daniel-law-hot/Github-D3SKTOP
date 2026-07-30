@@ -1298,6 +1298,65 @@ export class API {
     }
   }
 
+  /**
+   * Merges a pull request.
+   *
+   * `expectedHeadSha` is passed through as the API's `sha` parameter so the merge
+   * is refused if the branch has moved since we read it — without it, this could
+   * merge something other than what the user was shown.
+   *
+   * Throws on failure. GitHub answers 405 when the pull request isn't mergeable
+   * (failing checks, missing required reviews, conflicts) and 409 when the head
+   * sha no longer matches, and those need to reach the user rather than be
+   * swallowed into a silent no-op.
+   */
+  public async mergePullRequest(
+    owner: string,
+    name: string,
+    prNumber: number,
+    mergeMethod: 'merge' | 'squash' | 'rebase',
+    expectedHeadSha: string
+  ): Promise<void> {
+    const path = `/repos/${owner}/${name}/pulls/${prNumber}/merge`
+
+    const response = await this.ghRequest('PUT', path, {
+      body: { merge_method: mergeMethod, sha: expectedHeadSha },
+    })
+
+    if (response.ok) {
+      return
+    }
+
+    // Distinguish the cases worth acting on from a generic failure.
+    if (response.status === 405) {
+      throw new Error(
+        `GitHub refused to merge #${prNumber}: it isn't currently mergeable. ` +
+          `Required checks or reviews may be outstanding, or there may be conflicts.`
+      )
+    }
+
+    if (response.status === 409) {
+      throw new Error(
+        `#${prNumber} has changed since this was loaded, so it wasn't merged. ` +
+          `Refresh and try again.`
+      )
+    }
+
+    if (response.status === 403) {
+      throw new Error(
+        `You don't have permission to merge #${prNumber} in ${owner}/${name}.`
+      )
+    }
+
+    const apiError = await response.json().catch(() => null)
+    const message =
+      apiError !== null && typeof apiError.message === 'string'
+        ? apiError.message
+        : `${response.status} ${response.statusText}`
+
+    throw new Error(`Failed to merge #${prNumber}: ${message}`)
+  }
+
   /** Fetches all reviews from a given pull request. */
   public async fetchPullRequestReviews(
     owner: string,

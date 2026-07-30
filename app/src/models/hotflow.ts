@@ -126,6 +126,18 @@ export interface IWorkItem {
   readonly releaseSequence: number | null
 }
 
+/**
+ * How many reviewers have approved a pull request, and how many have asked for
+ * changes — counted the way GitHub does, latest review per reviewer.
+ */
+export interface IPullRequestApproval {
+  readonly approvals: number
+  readonly changesRequested: number
+}
+
+/** Approvals at or above this count are treated as ready to merge. */
+export const ApprovalsForReady = 2
+
 /** Which side(s) of the git/ADO reconciliation a work item appeared on. */
 export type WorkItemPresence =
   /** In the release branch and tagged for the cycle. The happy path. */
@@ -270,6 +282,14 @@ export interface IHotFlowState {
   /** The version a new release branch would be cut as. */
   readonly nextVersion: string | null
 
+  /**
+   * Approval state for open pull requests, keyed by pull request number.
+   *
+   * A missing entry means unknown rather than unapproved — reviews are a separate
+   * API read that can fail or not have happened yet.
+   */
+  readonly pullRequestApprovals: ReadonlyMap<number, IPullRequestApproval>
+
   readonly ado: IAdoState
 }
 
@@ -299,5 +319,6 @@ export const defaultHotFlowState: IHotFlowState = {
   unreleasedCommitCount: 0,
   unreleasedVsoCount: 0,
   nextVersion: null,
+  pullRequestApprovals: new Map<number, IPullRequestApproval>(),
   ado: defaultAdoState,
 }

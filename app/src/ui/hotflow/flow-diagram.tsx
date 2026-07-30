@@ -1,5 +1,14 @@
 import * as React from 'react'
-import { IHotFlowState, IReleaseBranchState } from '../../models/hotflow'
+import {
+  ApprovalsForReady,
+  IHotFlowState,
+  IPullRequestApproval,
+  IReleaseBranchState,
+} from '../../models/hotflow'
+import { Octicon } from '../octicons'
+import * as octicons from '../octicons/octicons.generated'
+import { Tooltip } from '../lib/tooltip'
+import { createObservableRef } from '../lib/observable-ref'
 
 /**
  * The diagram's geometry, in viewBox units.
@@ -69,8 +78,11 @@ const edgeGap = 6
 /**
  * How many characters fit in a stub at the monospace size used for branch names.
  * Derived from the box width rather than guessed so it tracks `featureWidth`.
+ *
+ * The reserve on the right holds the pull request number and, for branches that
+ * have one, the merge button overlaid at the stub's right edge.
  */
-const stubLabelLength = Math.floor((G.featureWidth - 74) / 6.2)
+const stubLabelLength = Math.floor((G.featureWidth - 96) / 6.2)
 
 /**
  * The action row's geometry, derived from the diagram's own columns.
@@ -154,6 +166,66 @@ interface IFlowDiagramProps {
 
   /** Whether "no pull request" is something we actually know. */
   readonly pullRequestKnowledge: PullRequestKnowledge
+
+  /**
+   * Approval counts by pull request number. A missing entry means unknown, which
+   * is deliberately not the same as unapproved.
+   */
+  readonly approvals: ReadonlyMap<number, IPullRequestApproval>
+
+  /** Invoked when a branch's merge button is pressed. */
+  readonly onMergePullRequest: (entry: IFeatureLaneEntry) => void
+}
+
+interface IMergeButtonProps {
+  readonly entry: IFeatureLaneEntry
+
+  /** Undefined when reviews haven't been read — not the same as no approvals. */
+  readonly approval: IPullRequestApproval | undefined
+
+  /** What merging this would do, used for both the tooltip and the label. */
+  readonly label: string
+
+  readonly left: number
+  readonly top: number
+
+  readonly onMerge: (entry: IFeatureLaneEntry) => void
+}
+
+/**
+ * The merge button on a feature stub.
+ *
+ * Its own component so it can hold the ref its tooltip needs — the approval count
+ * is the whole reason the button is one colour rather than the other, and a 20px
+ * icon has nowhere to say so.
+ */
+class MergeButton extends React.Component<IMergeButtonProps> {
+  private buttonRef = createObservableRef<HTMLButtonElement>()
+
+  public render() {
+    const { approval, label, left, top } = this.props
+
+    const ready =
+      approval !== undefined && approval.approvals >= ApprovalsForReady
+
+    return (
+      <button
+        ref={this.buttonRef}
+        type="button"
+        className={`hotflow-merge-button ${ready ? 'ready' : 'short'}`}
+        style={{ left, top }}
+        onClick={this.onClick}
+        aria-label={label}
+      >
+        <Tooltip target={this.buttonRef}>{label}</Tooltip>
+        <Octicon symbol={octicons.gitMerge} />
+      </button>
+    )
+  }
+
+  private onClick = () => {
+    this.props.onMerge(this.props.entry)
+  }
 }
 
 /**
@@ -271,8 +343,65 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           {this.renderProductionEdge()}
           {this.renderProductionNode()}
         </svg>
+        {this.renderMergeButtons()}
       </div>
     )
+  }
+
+  /**
+   * Merge buttons for branches with an open pull request.
+   *
+   * Real HTML buttons positioned over the SVG rather than clickable SVG groups:
+   * a `<g>` with a click handler is a non-interactive element to the
+   * accessibility linter, and buttons get focus, roles and keyboard handling for
+   * free. This only works cleanly because the diagram is unscaled — one viewBox
+   * unit is one pixel, so the coordinates map straight across.
+   */
+  private renderMergeButtons() {
+    const entries = this.shownEntries
+    const centres = this.stubCentres
+
+    return (
+      <div className="hotflow-merge-buttons">
+        {entries.map((entry, i) => {
+          if (entry.pullRequestNumber === null) {
+            return null
+          }
+
+          const approval = this.props.approvals.get(entry.pullRequestNumber)
+
+          return (
+            <MergeButton
+              key={entry.branchName}
+              entry={entry}
+              approval={approval}
+              label={this.getMergeButtonLabel(entry, approval)}
+              left={featureX + G.featureWidth - 26}
+              top={centres[i] - 9}
+              onMerge={this.props.onMergePullRequest}
+            />
+          )
+        })}
+      </div>
+    )
+  }
+
+  /** Says what merging this would do, and how well reviewed it is. */
+  private getMergeButtonLabel(
+    entry: IFeatureLaneEntry,
+    approval: IPullRequestApproval | undefined
+  ): string {
+    const base = `Merge #${entry.pullRequestNumber} into ${this.integrationName}`
+
+    if (approval === undefined) {
+      return `${base} — review state unknown`
+    }
+
+    if (approval.changesRequested > 0) {
+      return `${base} — changes requested`
+    }
+
+    return `${base} — ${approval.approvals} of ${ApprovalsForReady} approvals`
   }
 
   /**
@@ -371,7 +500,13 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
               </text>
               <text
                 className="hotflow-text xs dim"
-                x={featureX + G.featureWidth - 10}
+                // Only branches with a pull request give up the right-hand slot
+                // to the merge button; the rest keep the full width.
+                x={
+                  featureX +
+                  G.featureWidth -
+                  (entry.pullRequestNumber === null ? 10 : 32)
+                }
                 y={centres[i] + 4}
                 textAnchor="end"
               >
@@ -458,49 +593,38 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
         ? `M${from},${midY} L${to},${midY}`
         : `M${from},${y} C${bend},${y} ${bend},${midY} ${to},${midY}`
 
-    const label = (
-      <text className="hotflow-text xs dim" x={from + 12} y={midY - 10}>
-        PR
-      </text>
-    )
-
     if (centres.length === 0) {
-      return (
-        <g>
-          <path className="hotflow-edge faint" d={curve(midY)} fill="none" />
-          {label}
-        </g>
-      )
+      return <path className="hotflow-edge faint" d={curve(midY)} fill="none" />
     }
+
+    // Only draw a connector faint when we know the branch has no pull request.
+    // Without pull request data every connector would otherwise look idle.
+    const isIdle = (i: number) =>
+      this.shownEntries[i].pullRequestNumber === null &&
+      this.props.pullRequestKnowledge === 'known'
 
     // The last solid connector carries the arrowhead, so the fan reads as one
     // flow into the integration branch rather than several arrows stacked up.
-    const lastWithPr = this.shownEntries.reduce(
-      (last, entry, i) => (entry.pullRequestNumber !== null ? i : last),
-      -1
-    )
+    const lastSolid = centres.reduce((last, _, i) => (isIdle(i) ? last : i), -1)
 
     return (
       <g>
         {centres.map((y, i) => {
-          const idle = this.shownEntries[i].pullRequestNumber === null
-
           return (
             <path
               key={i}
-              className={idle ? 'hotflow-edge faint' : 'hotflow-edge'}
+              className={isIdle(i) ? 'hotflow-edge faint' : 'hotflow-edge'}
               d={curve(y)}
               fill="none"
               markerEnd={
-                i === lastWithPr ||
-                (lastWithPr === -1 && i === centres.length - 1)
+                i === lastSolid ||
+                (lastSolid === -1 && i === centres.length - 1)
                   ? 'url(#hotflow-arrow)'
                   : undefined
               }
             />
           )
         })}
-        {label}
       </g>
     )
   }

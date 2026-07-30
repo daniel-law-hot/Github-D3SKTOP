@@ -44,6 +44,17 @@ $hotflow-action-arrow-width: 367px;
   --hotflow-warn-background: #{$yellow-100};
   --hotflow-warn-line: #{$yellow-700};
 
+  // The merge button's two states. Orange rather than the warning yellow, so a
+  // reviewed-but-short pull request doesn't read as the same class of problem as
+  // an unreconciled release.
+  --hotflow-merge-ready-color: #{$green-600};
+  --hotflow-merge-ready-background: #{$green-000};
+  --hotflow-merge-ready-line: #{$green-400};
+
+  --hotflow-merge-short-color: #{$orange-800};
+  --hotflow-merge-short-background: #{$orange-000};
+  --hotflow-merge-short-line: #{$orange-300};
+
   --hotflow-node-background: var(--background-color);
   --hotflow-stub-background: #{$gray-100};
   --hotflow-edge-color: #{$gray-400};
@@ -59,6 +70,14 @@ body.theme-dark {
   --hotflow-warn-color: #{$yellow-600};
   --hotflow-warn-background: #{darken($yellow-900, 12%)};
   --hotflow-warn-line: #{$yellow-700};
+
+  --hotflow-merge-ready-color: #{$green-400};
+  --hotflow-merge-ready-background: #{darken($green-900, 8%)};
+  --hotflow-merge-ready-line: #{$green-400};
+
+  --hotflow-merge-short-color: #{$orange-400};
+  --hotflow-merge-short-background: #{darken($orange-900, 14%)};
+  --hotflow-merge-short-line: #{$orange-600};
 
   --hotflow-node-background: #{$gray-800};
   --hotflow-stub-background: #{lighten($gray-900, 3%)};
@@ -272,10 +291,71 @@ body.theme-dark {
   // taller band shows more branch rows rather than a bigger picture.
   flex-shrink: 0;
   min-width: $hotflow-diagram-width;
+
+  // Anchors the merge buttons, which are positioned from the same stub
+  // coordinates the SVG uses.
+  position: relative;
 }
 
 .hotflow-diagram-svg {
   display: block;
+}
+
+/**
+ * Merge buttons, overlaid on the feature stubs.
+ *
+ * Real buttons rather than clickable SVG groups: a `<g>` with a click handler is
+ * a non-interactive element as far as accessibility is concerned, whereas a
+ * button gets focus, a role and keyboard activation for nothing. Positioning
+ * works because the diagram is drawn at 1:1 — one viewBox unit is one pixel.
+ */
+.hotflow-merge-buttons {
+  position: absolute;
+  top: 0;
+  left: 0;
+
+  // The container is only a coordinate space; the buttons inside it take
+  // pointer events back.
+  pointer-events: none;
+}
+
+.hotflow-merge-button {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  padding: 0;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  pointer-events: auto;
+
+  .octicon {
+    width: 12px;
+    height: 12px;
+  }
+
+  &.ready {
+    color: var(--hotflow-merge-ready-color);
+    background: var(--hotflow-merge-ready-background);
+    border: 1px solid var(--hotflow-merge-ready-line);
+  }
+
+  &.short {
+    color: var(--hotflow-merge-short-color);
+    background: var(--hotflow-merge-short-background);
+    border: 1px solid var(--hotflow-merge-short-line);
+  }
+
+  &:hover {
+    filter: brightness(1.08);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--focus-color);
+    outline-offset: 1px;
+  }
 }
 
 .hotflow-node {
@@ -1134,6 +1214,7 @@ body.theme-dark {
 #hotflow-update-release,
 #hotflow-finish-release,
 #hotflow-connect-ado,
+#hotflow-merge-pull-request,
 #hotflow-edit-cycle {
   width: 512px;
 
@@ -1158,6 +1239,27 @@ body.theme-dark {
   margin: 0;
   font-size: var(--font-size);
   line-height: 1.55;
+}
+
+// The pull request being merged: its title, and a way to go and read it.
+.hotflow-pr-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-half) var(--spacing);
+  background: var(--box-alt-background-color);
+  border-radius: var(--border-radius);
+  min-width: 0;
+}
+
+.hotflow-pr-title {
+  font-weight: var(--font-weight-semibold);
+
+  // Pull request titles run long; the link below is the way to read the whole
+  // thing, so truncating here loses nothing.
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hotflow-dialog-heading {

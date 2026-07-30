@@ -28,6 +28,9 @@ interface IStoredSettings {
   readonly cycles?: Record<string, string>
   readonly integrationBranch?: string
   readonly productionBranch?: string
+
+  /** The merge method last used for a pull request in this repository. */
+  readonly mergeMethod?: string
 }
 
 function storageKey(repository: Repository): string {
@@ -120,6 +123,34 @@ export function getBranchOverride(
         ? productionBranch
         : undefined,
   }
+}
+
+// ── merge method ─────────────────────────────────────────────────────────────
+
+/** The merge strategies GitHub offers. */
+export type StoredMergeMethod = 'merge' | 'squash' | 'rebase'
+
+const defaultMergeMethod: StoredMergeMethod = 'merge'
+
+/**
+ * The merge method last used in this repository, defaulting to a merge commit.
+ *
+ * Remembered per repository rather than globally, since different repositories
+ * reasonably want different strategies.
+ */
+export function getMergeMethod(repository: Repository): StoredMergeMethod {
+  const stored = read(repository).mergeMethod
+
+  return stored === 'merge' || stored === 'squash' || stored === 'rebase'
+    ? stored
+    : defaultMergeMethod
+}
+
+export function setMergeMethod(
+  repository: Repository,
+  mergeMethod: StoredMergeMethod
+): void {
+  write(repository, { ...read(repository), mergeMethod })
 }
 
 /**

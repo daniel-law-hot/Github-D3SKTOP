@@ -402,6 +402,7 @@ import {
 } from '../copilot-conflict-context'
 import { resolveWithin } from '../path'
 import { detectHotFlowState } from '../hotflow/detect'
+import { fetchPullRequestApprovals } from '../hotflow/pull-request-approvals'
 import {
   IHotFlowBranchOverride,
   IReleaseBranchState,
@@ -411,6 +412,7 @@ import {
   setConfirmedReleaseCycle,
   getBranchOverride,
   setBranchOverride,
+  setMergeMethod,
 } from '../hotflow/settings-store'
 import { getAdoCredential, setStoredPat } from '../hotflow/ado-auth'
 import {
@@ -4152,7 +4154,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
       }))
       this.emitUpdate()
 
-      await this._refreshHotFlowWorkItems(repository)
+      await Promise.all([
+        this._refreshHotFlowWorkItems(repository),
+        this._refreshHotFlowApprovals(repository),
+      ])
     } catch (e) {
       log.error('[AppStore] failed to refresh HotFlow state', e)
       this.repositoryStateCache.updateHotFlowState(repository, () => ({
@@ -4241,6 +4246,108 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     this.emitUpdate()
+  }
+
+  /**
+   * Loads approval counts for the open pull requests HotFlow is showing.
+   *
+   * Desktop fetches pull requests but not their reviews, so this is a separate
+   * read — one request per pull request, hence only for those targeting the
+   * integration branch.
+   */
+  private async _refreshHotFlowApprovals(
+    repository: Repository
+  ): Promise<void> {
+    if (!isRepositoryWithGitHubRepository(repository)) {
+      return
+    }
+
+    const account = getAccountForRepository(this.accounts, repository)
+
+    if (account === null) {
+      return
+    }
+
+    const state = this.repositoryStateCache.get(repository)
+    const integrationName = state.hotFlowState.integrationBranchName
+
+    const numbers = state.branchesState.openPullRequests
+      .filter(pr => pr.base.ref === integrationName)
+      .map(pr => pr.pullRequestNumber)
+
+    if (numbers.length === 0) {
+      return
+    }
+
+    try {
+      const pullRequestApprovals = await fetchPullRequestApprovals(
+        account,
+        getNonForkGitHubRepository(repository),
+        numbers
+      )
+
+      this.repositoryStateCache.updateHotFlowState(repository, () => ({
+        pullRequestApprovals,
+      }))
+      this.emitUpdate()
+    } catch (e) {
+      log.warn('[AppStore] HotFlow could not load pull request approvals', e)
+    }
+  }
+
+  /**
+   * Merges a pull request into the integration branch.
+   *
+   * This is the second action in HotFlow that reaches outside the repository, and
+   * unlike finishing a release it can't be undone locally — it closes the pull
+   * request and notifies its reviewers. The head sha is passed to the API so the
+   * merge is refused if the branch moved since the user looked at it.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _mergeHotFlowPullRequest(
+    repository: Repository,
+    pullRequestNumber: number,
+    mergeMethod: 'merge' | 'squash' | 'rebase',
+    expectedHeadSha: string
+  ): Promise<void> {
+    // Remembered as the user's preference for this repository whether or not
+    // GitHub accepts the merge — they chose it either way.
+    setMergeMethod(repository, mergeMethod)
+
+    if (!isRepositoryWithGitHubRepository(repository)) {
+      return
+    }
+
+    const account = getAccountForRepository(this.accounts, repository)
+
+    if (account === null) {
+      this.emitError(
+        new Error('Sign in to GitHub to merge pull requests from HotFlow.')
+      )
+      return
+    }
+
+    const ghRepository = getNonForkGitHubRepository(repository)
+
+    try {
+      await API.fromAccount(account).mergePullRequest(
+        ghRepository.owner.login,
+        ghRepository.name,
+        pullRequestNumber,
+        mergeMethod,
+        expectedHeadSha
+      )
+    } catch (e) {
+      log.error(`[AppStore] failed merging #${pullRequestNumber}`, e)
+      this.emitError(e instanceof Error ? e : new Error(String(e)))
+      return
+    }
+
+    // The branch has landed, so both the pull request list and the release
+    // picture are now stale.
+    await this._refreshPullRequests(repository)
+    await this._refreshHotFlow(repository)
   }
 
   /**

@@ -65,10 +65,12 @@ import {
   EditBranchesDialog,
   EditCycleDialog,
   FinishReleaseDialog,
+  MergePullRequestDialog,
   StartFeatureDialog,
   StartReleaseDialog,
   UpdateReleaseDialog,
 } from './hotflow/dialogs'
+import { getMergeMethod } from '../lib/hotflow/settings-store'
 import { getMissingWorkItemCount } from '../lib/hotflow/reconcile'
 import { iconForRepository, OcticonSymbol } from './octicons'
 import * as octicons from './octicons/octicons.generated'
@@ -2913,6 +2915,33 @@ export class App extends React.Component<IAppProps, IAppState> {
             dispatcher={this.props.dispatcher}
             hotFlowState={state.hotFlowState}
             allBranches={state.branchesState.allBranches}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.HotFlowMergePullRequest: {
+        const state = this.getHotFlowPopupState(popup.repository)
+
+        // A missing entry means reviews haven't been read, which the dialog
+        // shows as unknown rather than treating as zero approvals.
+        const approval =
+          state?.hotFlowState.pullRequestApprovals.get(
+            popup.pullRequestNumber
+          ) ?? null
+
+        return (
+          <MergePullRequestDialog
+            key="hotflow-merge-pull-request"
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            pullRequestNumber={popup.pullRequestNumber}
+            branchName={popup.branchName}
+            baseBranchName={popup.baseBranchName}
+            title={popup.title}
+            headSha={popup.headSha}
+            pullRequestUrl={popup.pullRequestUrl}
+            approval={approval}
+            initialMergeMethod={getMergeMethod(popup.repository)}
             onDismissed={onPopupDismissedFn}
           />
         )

@@ -160,6 +160,40 @@ export class HotFlowView extends React.Component<
     })
   }
 
+  /**
+   * Opens the merge confirmation for a branch's pull request.
+   *
+   * The lane entry carries only the number, so the pull request itself is looked
+   * up here for the head sha the merge is pinned to. If it has gone from the list
+   * — merged or closed under us — there is nothing to confirm, and a refresh will
+   * drop the button on its own.
+   */
+  private onMergePullRequest = (entry: IFeatureLaneEntry) => {
+    const pullRequest = this.props.branchesState.openPullRequests.find(
+      pr => pr.pullRequestNumber === entry.pullRequestNumber
+    )
+
+    if (pullRequest === undefined) {
+      return
+    }
+
+    const htmlURL = pullRequest.base.gitHubRepository.htmlURL
+
+    this.props.dispatcher.showPopup({
+      type: PopupType.HotFlowMergePullRequest,
+      repository: this.props.repository,
+      pullRequestNumber: pullRequest.pullRequestNumber,
+      branchName: pullRequest.head.ref,
+      baseBranchName: pullRequest.base.ref,
+      title: pullRequest.title,
+      headSha: pullRequest.head.sha,
+      pullRequestUrl:
+        htmlURL === null
+          ? null
+          : `${htmlURL}/pull/${pullRequest.pullRequestNumber}`,
+    })
+  }
+
   public render() {
     const { missingRequiredBranches } = this.props.hotFlowState
 
@@ -371,6 +405,8 @@ export class HotFlowView extends React.Component<
               featureLane={this.featureLane}
               maxStubs={this.maxStubs}
               pullRequestKnowledge={this.pullRequestKnowledge}
+              approvals={hotFlowState.pullRequestApprovals}
+              onMergePullRequest={this.onMergePullRequest}
             />
             {this.renderActions()}
           </div>
