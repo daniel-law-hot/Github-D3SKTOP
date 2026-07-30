@@ -29,7 +29,10 @@
       "Read(//c/Users/Daniel.Law/AppData/Roaming/**)",
       "Bash(npx --version)",
       "PowerShell(node --version; $tsc = Join-Path \\(Get-Location\\) \"node_modules\\\\.bin\\\\tsc.cmd\"; if \\(Test-Path $tsc\\) { \"tsc found\" } else { \"no tsc\" })",
-      "PowerShell(Get-Command *)"
+      "PowerShell(Get-Command *)",
+      "PowerShell(git log *)",
+      "PowerShell(git merge-base --is-ancestor ec802a2267 fdf82af682; echo \"ancestor of 1.2026.7: $?\"; git log --oneline ec802a2267~1..ec802a2267 --format=\"%h %ad %s\" --date=short)",
+      "PowerShell(gh api *)"
     ]
   }
 }
