@@ -195,11 +195,69 @@ export async function getWorkItemIdsForReleaseSequence(
   return ids
 }
 
+/** Exported alongside `extractLinkedCommitShas` so tests can build one. */
+export interface IWorkItemRelation {
+  readonly rel?: string
+  readonly url?: string
+  readonly attributes?: { readonly name?: string }
+}
+
 interface IWorkItemsBatchResponse {
   readonly value?: ReadonlyArray<{
     readonly id: number
     readonly fields?: Record<string, unknown>
+    readonly relations?: ReadonlyArray<IWorkItemRelation>
   }>
+}
+
+/**
+ * A GitHub commit link on a work item, as Azure DevOps stores it:
+ *
+ *   vstfs:///GitHub/Commit/<repo-guid>%2f<sha>
+ *
+ * Note the `%2f`. The separator between the repository guid and the sha is
+ * percent-encoded in the stored value, unlike the slashes before it — a regex
+ * expecting a literal slash there matches nothing at all, silently, and every
+ * work item ends up looking like it has no commit links. The alternation keeps
+ * both forms accepted in case the encoding ever changes.
+ *
+ * The guid identifies the repository, but nothing exposes a guid-to-name map —
+ * `githubconnections/{id}/repos` returns names with the ids blank — so the sha is
+ * the usable half. Resolving it against a local object database answers "is this
+ * commit in this repository" without needing the guid at all.
+ */
+const gitHubCommitArtifactRegex =
+  /^vstfs:\/{3}GitHub\/Commit\/[^/%]+(?:%2f|\/)([0-9a-f]{7,40})$/i
+
+/**
+ * Pulls the commit SHAs out of a work item's Development links.
+ *
+ * Exported for testing. Getting the `%2f` above wrong returns an empty list for
+ * every work item rather than failing, which reads downstream as "nobody has
+ * started any of this" — so the parsing is worth pinning down.
+ */
+export function extractLinkedCommitShas(
+  relations: ReadonlyArray<IWorkItemRelation> | undefined
+): ReadonlyArray<string> {
+  if (relations === undefined) {
+    return []
+  }
+
+  const shas = new Set<string>()
+
+  for (const relation of relations) {
+    if (relation.rel !== 'ArtifactLink' || relation.url === undefined) {
+      continue
+    }
+
+    const match = gitHubCommitArtifactRegex.exec(relation.url)
+
+    if (match !== null) {
+      shas.add(match[1].toLowerCase())
+    }
+  }
+
+  return [...shas]
 }
 
 function readStringField(
@@ -272,22 +330,15 @@ export async function getWorkItems(
     `https://dev.azure.com/${encodeURIComponent(config.organisation)}/` +
     `_apis/wit/workitemsbatch?api-version=${ApiVersion}`
 
-  const fields = [
-    'System.Id',
-    'System.Title',
-    'System.WorkItemType',
-    'System.State',
-    'System.AssignedTo',
-    'System.Tags',
-    ReleaseSequenceField,
-  ]
-
   for (let i = 0; i < needed.length; i += MaxBatchSize) {
     const chunk = needed.slice(i, i + MaxBatchSize)
 
+    // `$expand` and an explicit `fields` list are mutually exclusive — asking for
+    // both is a 400 — so this takes every field in exchange for the relations,
+    // which are the only thing that says which repository a work item belongs to.
     const response = await postJson<IWorkItemsBatchResponse>(
       url,
-      { ids: chunk, fields },
+      { ids: chunk, $expand: 'relations' },
       credential
     )
 
@@ -309,6 +360,7 @@ export async function getWorkItems(
                 .map(t => t.trim())
                 .filter(t => t.length > 0),
         releaseSequence: readNumberField(item.fields, ReleaseSequenceField),
+        linkedCommitShas: extractLinkedCommitShas(item.relations),
       }
 
       result.set(item.id, workItem)

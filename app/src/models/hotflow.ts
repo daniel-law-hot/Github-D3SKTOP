@@ -124,6 +124,20 @@ export interface IWorkItem {
    * This, not `System.Tags`, is how House of Travel records the release.
    */
   readonly releaseSequence: number | null
+
+  /**
+   * Commit SHAs from the work item's Development links, across every repository.
+   *
+   * The only field that says which repository a work item's work actually
+   * happened in. Nothing else does: the whole organisation is one Azure DevOps
+   * project, area paths lump sibling repositories together, and tags are free
+   * text. Resolving these against the local object database is how HotFlow keeps
+   * another repository's work out of this release — see `work-item-scope.ts`.
+   *
+   * Empty means nobody has started it anywhere, which is not the same as it
+   * belonging elsewhere.
+   */
+  readonly linkedCommitShas: ReadonlyArray<string>
 }
 
 /**

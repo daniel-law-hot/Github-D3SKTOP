@@ -421,6 +421,11 @@ import {
   getWorkItemIdsForReleaseSequence,
   getWorkItems,
 } from '../hotflow/ado-client'
+import {
+  collectLinkedCommitShas,
+  scopeToRepository,
+} from '../hotflow/work-item-scope'
+import { getCommitsPresentInRepository } from '../hotflow/commit-membership'
 
 const LastSelectedRepositoryIDKey = 'last-selected-repository-id'
 
@@ -4223,13 +4228,35 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
       const workItems = await getWorkItems(defaultAdoConfig, ids, credential)
 
+      // The cycle query is project-wide, and the project spans every repository,
+      // so what came back includes other repositories' work. Narrow it using the
+      // work items' own commit links — see `work-item-scope.ts` for the rule.
+      const shasInRepository = await getCommitsPresentInRepository(
+        repository,
+        collectLinkedCommitShas(cycleTaggedIds, workItems)
+      )
+
+      const scopedCycleTaggedIds = scopeToRepository(
+        cycleTaggedIds,
+        workItems,
+        shasInRepository
+      )
+
+      if (scopedCycleTaggedIds.length !== cycleTaggedIds.length) {
+        log.info(
+          `[AppStore] HotFlow scoped cycle ${release.cycle?.tag} from ` +
+            `${cycleTaggedIds.length} to ${scopedCycleTaggedIds.length} work ` +
+            `items for ${repository.name}`
+        )
+      }
+
       this.repositoryStateCache.updateHotFlowState(repository, () => ({
         ado: {
           status: 'ok' as const,
           authMethod:
             credential.kind === 'bearer' ? ('az' as const) : ('pat' as const),
           workItems,
-          cycleTaggedIds,
+          cycleTaggedIds: scopedCycleTaggedIds,
           errorMessage: null,
         },
       }))
