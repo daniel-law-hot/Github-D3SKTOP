@@ -334,6 +334,11 @@ body.theme-dark {
   .octicon {
     width: 12px;
     height: 12px;
+
+    // The global reset in `_globals.scss` sets `cursor: default` on every
+    // element, which the icon matches directly — so it wins over inheriting the
+    // button's pointer, and the hand only appeared on the button's border.
+    cursor: pointer;
   }
 
   &.ready {
@@ -678,6 +683,12 @@ body.theme-dark {
   border-bottom: 2px solid transparent;
   padding: 9px 11px;
   cursor: pointer;
+
+  // Same reason as the merge button: the global reset's `cursor: default` beats
+  // inheritance on the count pill, so it needs saying again here.
+  * {
+    cursor: pointer;
+  }
 
   &:hover {
     color: var(--text-color);

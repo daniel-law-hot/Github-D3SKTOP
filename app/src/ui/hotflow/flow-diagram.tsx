@@ -541,7 +541,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
 
     switch (this.props.pullRequestKnowledge) {
       case 'known':
-        return 'no PR'
+        return 'No PR'
       case 'loading':
         return '…'
       default:
