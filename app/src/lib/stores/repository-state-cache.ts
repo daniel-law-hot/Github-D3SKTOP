@@ -363,6 +363,7 @@ function getInitialRepositoryState(): IRepositoryState {
       openPullRequests: new Array<PullRequest>(),
       currentPullRequest: null,
       isLoadingPullRequests: false,
+      pullRequestsLastRefreshed: undefined,
       forcePushBranches: new Map<string, string>(),
     },
     graphState: {

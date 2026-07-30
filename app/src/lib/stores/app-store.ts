@@ -4125,6 +4125,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.emitUpdate()
 
     try {
+      // Ask for pull requests rather than waiting on the background updater,
+      // whose first fetch is a couple of minutes out and which only starts on
+      // repository selection. Without this the feature lane sits empty for
+      // minutes, or forever if the account arrived after the repo was selected.
+      // Not awaited: the git picture shouldn't wait on the network.
+      this._refreshPullRequests(repository).catch(e =>
+        log.warn('[AppStore] HotFlow could not refresh pull requests', e)
+      )
+
       const confirmedCycles = getConfirmedReleaseCycles(repository)
       const detected = await detectHotFlowState(
         repository,
@@ -7735,8 +7744,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
     repository: Repository,
     openPullRequests: ReadonlyArray<PullRequest>
   ) {
+    // Record when pull requests were last actually fetched, so consumers can
+    // tell "none are open" apart from "we have never looked". An empty list
+    // arrives on every repository selection, long before the first fetch.
+    const pullRequestsLastRefreshed = isRepositoryWithGitHubRepository(
+      repository
+    )
+      ? this.pullRequestCoordinator.getLastRefreshed(repository)
+      : undefined
+
     this.repositoryStateCache.updateBranchesState(repository, () => {
-      return { openPullRequests }
+      return { openPullRequests, pullRequestsLastRefreshed }
     })
 
     this.updateCurrentPullRequest(repository)

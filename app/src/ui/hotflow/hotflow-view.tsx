@@ -88,11 +88,21 @@ export class HotFlowView extends React.Component<
    * labelling every branch "no PR" would be reporting missing data as a finding.
    */
   private get pullRequestKnowledge(): PullRequestKnowledge {
-    if (this.props.branchesState.isLoadingPullRequests) {
+    const { isLoadingPullRequests, pullRequestsLastRefreshed } =
+      this.props.branchesState
+
+    // No account means Desktop will never fetch, so nothing is knowable.
+    if (!this.props.hasGitHubAccount) {
+      return 'unavailable'
+    }
+
+    // Never fetched yet — a refresh is on its way, so don't report an empty
+    // list as a finding in the meantime.
+    if (isLoadingPullRequests || pullRequestsLastRefreshed === undefined) {
       return 'loading'
     }
 
-    return this.props.hasGitHubAccount ? 'known' : 'unavailable'
+    return 'known'
   }
 
   /**

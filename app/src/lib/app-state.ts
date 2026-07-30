@@ -737,6 +737,17 @@ export interface IBranchesState {
   /** Are we currently loading pull requests? */
   readonly isLoadingPullRequests: boolean
 
+  /**
+   * When pull requests were last fetched from the API, or undefined if they
+   * never have been for this repository.
+   *
+   * `openPullRequests` is populated from the local database on every repository
+   * selection, so an empty array on its own can't distinguish "none are open"
+   * from "we haven't looked yet" — the first background fetch is a couple of
+   * minutes after launch.
+   */
+  readonly pullRequestsLastRefreshed: number | undefined
+
   /** The pull request associated with the current branch. */
   readonly currentPullRequest: PullRequest | null
 
