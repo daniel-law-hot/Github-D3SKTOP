@@ -117,6 +117,16 @@ export interface IFeatureLaneEntry {
   readonly pullRequestNumber: number | null
 }
 
+/**
+ * Whether pull request state is knowable for this repository.
+ *
+ * An empty pull request list is ambiguous — it means "none open" when Desktop has
+ * fetched them, and "we have no idea" when it hasn't. Without an authenticated
+ * account Desktop never fetches at all, and labelling every branch "no PR" in
+ * that case is an assertion we haven't earned.
+ */
+export type PullRequestKnowledge = 'known' | 'loading' | 'unavailable'
+
 interface IFlowDiagramProps {
   readonly hotFlowState: IHotFlowState
 
@@ -141,6 +151,9 @@ interface IFlowDiagramProps {
    * branches rather than a larger picture.
    */
   readonly maxStubs: number
+
+  /** Whether "no pull request" is something we actually know. */
+  readonly pullRequestKnowledge: PullRequestKnowledge
 }
 
 /**
@@ -276,7 +289,10 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
     const parts: Array<string> = [
       `${lane.length} open feature ${
         lane.length === 1 ? 'branch' : 'branches'
-      } feeding ${this.integrationName}, ${withPr} with an open pull request.`,
+      } feeding ${this.integrationName}` +
+        (this.props.pullRequestKnowledge === 'known'
+          ? `, ${withPr} with an open pull request.`
+          : '. Pull request status is unavailable.'),
       `${hotFlowState.unreleasedCommitCount} commits in ${this.integrationName} are not yet in production.`,
     ]
 
@@ -330,7 +346,11 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
     return (
       <g>
         {entries.map((entry, i) => {
-          const idle = entry.pullRequestNumber === null
+          // Only treat a branch as idle when we actually know it has no pull
+          // request. Without pull request data every branch would look idle.
+          const idle =
+            entry.pullRequestNumber === null &&
+            this.props.pullRequestKnowledge === 'known'
 
           return (
             <g key={entry.branchName}>
@@ -355,7 +375,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
                 y={centres[i] + 4}
                 textAnchor="end"
               >
-                {idle ? 'no PR' : `#${entry.pullRequestNumber}`}
+                {this.getStubBadge(entry)}
               </text>
             </g>
           )
@@ -378,10 +398,30 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
     )
   }
 
+  /** The right-hand marker on a stub: its pull request, or why we can't say. */
+  private getStubBadge(entry: IFeatureLaneEntry): string {
+    if (entry.pullRequestNumber !== null) {
+      return `#${entry.pullRequestNumber}`
+    }
+
+    switch (this.props.pullRequestKnowledge) {
+      case 'known':
+        return 'no PR'
+      case 'loading':
+        return '…'
+      default:
+        // Say nothing rather than claim there's no pull request.
+        return ''
+    }
+  }
+
   /**
    * Reports branches and pull requests separately, because they answer different
    * questions — a branch can be in flight with no pull request, and the two
    * counts routinely disagree.
+   *
+   * When pull request data isn't available the caption says so, rather than
+   * reporting zero as though it were a finding.
    */
   private getLaneCaption(total: number, withPr: number, shown: number): string {
     if (total === 0) {
@@ -389,11 +429,16 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
     }
 
     const branches = `${total} ${total === 1 ? 'branch' : 'branches'}`
+    const overflow = total > shown ? ` · showing ${shown}` : ''
+
     const prs =
-      withPr === 0
+      this.props.pullRequestKnowledge === 'unavailable'
+        ? 'pull requests unavailable — sign in to GitHub'
+        : this.props.pullRequestKnowledge === 'loading'
+        ? 'loading pull requests…'
+        : withPr === 0
         ? 'none with a pull request'
         : `${withPr} with a pull request`
-    const overflow = total > shown ? ` · showing ${shown}` : ''
 
     return `${branches} · ${prs} → ${this.integrationName}${overflow}`
   }

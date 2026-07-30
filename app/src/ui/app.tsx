@@ -3919,6 +3919,11 @@ export class App extends React.Component<IAppProps, IAppState> {
           dispatcher={this.props.dispatcher}
           hotFlowState={selectedState.state.hotFlowState}
           branchesState={selectedState.state.branchesState}
+          // Without an account Desktop never fetches pull requests, so HotFlow
+          // must not read the empty list as "no branch has one".
+          hasGitHubAccount={
+            getAccountForRepository(accounts, selectedState.repository) !== null
+          }
         />
       )
     }

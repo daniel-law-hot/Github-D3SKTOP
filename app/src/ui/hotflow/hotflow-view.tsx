@@ -19,6 +19,7 @@ import {
   DiagramGeometry,
   FlowDiagram,
   IFeatureLaneEntry,
+  PullRequestKnowledge,
   actionArrowWidth,
   stubsForHeight,
 } from './flow-diagram'
@@ -39,6 +40,13 @@ interface IHotFlowViewProps {
   readonly dispatcher: Dispatcher
   readonly hotFlowState: IHotFlowState
   readonly branchesState: IBranchesState
+
+  /**
+   * Whether an authenticated GitHub account covers this repository.
+   *
+   * Decides whether "no pull request" is a fact or an absence of data.
+   */
+  readonly hasGitHubAccount: boolean
 }
 
 interface IHotFlowViewState {
@@ -70,6 +78,21 @@ export class HotFlowView extends React.Component<
 
   private get integrationName(): string {
     return this.props.hotFlowState.integrationBranchName
+  }
+
+  /**
+   * Whether pull request state is something we actually know for this repository.
+   *
+   * Desktop only fetches pull requests for a GitHub repository with an
+   * authenticated account. Without one the list is permanently empty, and
+   * labelling every branch "no PR" would be reporting missing data as a finding.
+   */
+  private get pullRequestKnowledge(): PullRequestKnowledge {
+    if (this.props.branchesState.isLoadingPullRequests) {
+      return 'loading'
+    }
+
+    return this.props.hasGitHubAccount ? 'known' : 'unavailable'
   }
 
   /**
@@ -337,6 +360,7 @@ export class HotFlowView extends React.Component<
               lastShippedVersion={lastShippedVersion}
               featureLane={this.featureLane}
               maxStubs={this.maxStubs}
+              pullRequestKnowledge={this.pullRequestKnowledge}
             />
             {this.renderActions()}
           </div>
