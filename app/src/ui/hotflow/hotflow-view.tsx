@@ -34,6 +34,7 @@ import { ReleaseSummary } from './release-summary'
 import { reconcileRelease } from '../../lib/hotflow/reconcile'
 import { isFeatureBranchName } from '../../lib/hotflow/branch-patterns'
 import { TipState } from '../../models/tip'
+import { BranchType } from '../../models/branch'
 
 interface IHotFlowViewProps {
   readonly repository: Repository
@@ -144,6 +145,7 @@ export class HotFlowView extends React.Component<
       return {
         branchName: name,
         pullRequestNumber: pullRequests.get(name) ?? null,
+        isRemoteOnly: feature.branch.type === BranchType.Remote,
       }
     })
 
@@ -158,6 +160,32 @@ export class HotFlowView extends React.Component<
 
       return a.branchName.localeCompare(b.branchName)
     })
+  }
+
+  /** The checked out branch, or null when the tip is detached or unborn. */
+  private get currentBranchName(): string | null {
+    const tip = this.props.branchesState.tip
+
+    return tip.kind === TipState.Valid ? tip.branch.nameWithoutRemote : null
+  }
+
+  /**
+   * Checks out a feature branch from the lane.
+   *
+   * Goes through the dispatcher rather than straight to git so it picks up
+   * Desktop's whole checkout flow — uncommitted changes get the stash prompt, and
+   * a remote-only branch gets a local one created to track it.
+   */
+  private onCheckoutFeatureBranch = (entry: IFeatureLaneEntry) => {
+    const feature = this.props.hotFlowState.openFeatureBranches.find(
+      f => f.branch.nameWithoutRemote === entry.branchName
+    )
+
+    if (feature === undefined) {
+      return
+    }
+
+    this.props.dispatcher.checkoutBranch(this.props.repository, feature.branch)
   }
 
   /**
@@ -407,6 +435,8 @@ export class HotFlowView extends React.Component<
               pullRequestKnowledge={this.pullRequestKnowledge}
               approvals={hotFlowState.pullRequestApprovals}
               onMergePullRequest={this.onMergePullRequest}
+              currentBranchName={this.currentBranchName}
+              onCheckoutBranch={this.onCheckoutFeatureBranch}
             />
             {this.renderActions()}
           </div>

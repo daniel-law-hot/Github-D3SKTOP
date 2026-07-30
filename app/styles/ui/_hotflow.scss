@@ -309,7 +309,8 @@ body.theme-dark {
  * button gets focus, a role and keyboard activation for nothing. Positioning
  * works because the diagram is drawn at 1:1 — one viewBox unit is one pixel.
  */
-.hotflow-merge-buttons {
+.hotflow-merge-buttons,
+.hotflow-checkout-buttons {
   position: absolute;
   top: 0;
   left: 0;
@@ -317,6 +318,33 @@ body.theme-dark {
   // The container is only a coordinate space; the buttons inside it take
   // pointer events back.
   pointer-events: none;
+}
+
+/**
+ * The stub-wide checkout button.
+ *
+ * Invisible until hovered — the SVG stub underneath already draws the row, so
+ * this only adds the interaction. On hover it tints the stub it covers, which is
+ * the whole affordance: the row lights up, so the row is clickable.
+ */
+.hotflow-checkout-button {
+  position: absolute;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  pointer-events: auto;
+
+  &:hover {
+    background: var(--hotflow-focus-background);
+    border-color: var(--hotflow-focus-line);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--focus-color);
+    outline-offset: 1px;
+  }
 }
 
 .hotflow-merge-button {
@@ -393,6 +421,15 @@ body.theme-dark {
   &.idle {
     fill: none;
     stroke-dasharray: 4 3;
+  }
+
+  /**
+   * The branch you're on. Marked because it's the one stub with no checkout
+   * button, and an unexplained gap reads as a bug rather than a decision.
+   */
+  &.current {
+    stroke: var(--hotflow-focus-line);
+    stroke-width: 1.5;
   }
 }
 

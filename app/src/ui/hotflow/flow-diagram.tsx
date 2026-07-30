@@ -127,6 +127,12 @@ function clampStubCount(count: number): number {
 export interface IFeatureLaneEntry {
   readonly branchName: string
   readonly pullRequestNumber: number | null
+
+  /**
+   * True when only the remote has this branch, so checking it out creates a
+   * local one. Worth saying out loud rather than surprising someone with it.
+   */
+  readonly isRemoteOnly: boolean
 }
 
 /**
@@ -175,6 +181,61 @@ interface IFlowDiagramProps {
 
   /** Invoked when a branch's merge button is pressed. */
   readonly onMergePullRequest: (entry: IFeatureLaneEntry) => void
+
+  /**
+   * The checked out branch, so the lane doesn't offer to check out the branch
+   * you're already on. Null when the tip is detached or unborn.
+   */
+  readonly currentBranchName: string | null
+
+  /** Invoked when a feature stub is clicked. */
+  readonly onCheckoutBranch: (entry: IFeatureLaneEntry) => void
+}
+
+interface ICheckoutButtonProps {
+  readonly entry: IFeatureLaneEntry
+
+  /** What checking out would do, for the tooltip and the accessible name. */
+  readonly label: string
+
+  readonly left: number
+  readonly top: number
+  readonly width: number
+  readonly height: number
+
+  readonly onCheckout: (entry: IFeatureLaneEntry) => void
+}
+
+/**
+ * The stub-wide checkout button.
+ *
+ * Its own component to hold the ref its tooltip needs. The button is
+ * transparent — the SVG stub beneath it supplies the visuals — so the tooltip is
+ * what tells you it does anything at all before you click it.
+ */
+class CheckoutButton extends React.Component<ICheckoutButtonProps> {
+  private buttonRef = createObservableRef<HTMLButtonElement>()
+
+  public render() {
+    const { label, left, top, width, height } = this.props
+
+    return (
+      <button
+        ref={this.buttonRef}
+        type="button"
+        className="hotflow-checkout-button"
+        style={{ left, top, width, height }}
+        onClick={this.onClick}
+        aria-label={label}
+      >
+        <Tooltip target={this.buttonRef}>{label}</Tooltip>
+      </button>
+    )
+  }
+
+  private onClick = () => {
+    this.props.onCheckout(this.props.entry)
+  }
 }
 
 interface IMergeButtonProps {
@@ -343,7 +404,54 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           {this.renderProductionEdge()}
           {this.renderProductionNode()}
         </svg>
+        {/*
+          Checkout first, merge second: absolutely positioned siblings paint in
+          DOM order, so the merge button sits on top of the stub-wide checkout
+          button and takes the clicks in its own corner.
+        */}
+        {this.renderCheckoutButtons()}
         {this.renderMergeButtons()}
+      </div>
+    )
+  }
+
+  /**
+   * A stub-wide button over each feature branch that checks it out.
+   *
+   * Covers the whole stub rather than adding a control beside it, because the
+   * stubs are already tight on width for a real branch name. Nothing is drawn
+   * except on hover — the branch name showing through from the SVG below is the
+   * button's label as far as the eye is concerned, and `aria-label` says it
+   * properly for everything else.
+   */
+  private renderCheckoutButtons() {
+    const centres = this.stubCentres
+
+    return (
+      <div className="hotflow-checkout-buttons">
+        {this.shownEntries.map((entry, i) => {
+          // No point offering to check out the branch we're already on.
+          if (entry.branchName === this.props.currentBranchName) {
+            return null
+          }
+
+          return (
+            <CheckoutButton
+              key={entry.branchName}
+              entry={entry}
+              label={
+                entry.isRemoteOnly
+                  ? `Check out ${entry.branchName} — creates a local branch`
+                  : `Check out ${entry.branchName}`
+              }
+              left={featureX}
+              top={centres[i] - G.stubHeight / 2}
+              width={G.featureWidth}
+              height={G.stubHeight}
+              onCheckout={this.props.onCheckoutBranch}
+            />
+          )
+        })}
       </div>
     )
   }
@@ -481,10 +589,15 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
             entry.pullRequestNumber === null &&
             this.props.pullRequestKnowledge === 'known'
 
+          // The one stub with no checkout button, so it says why.
+          const current = entry.branchName === this.props.currentBranchName
+
           return (
             <g key={entry.branchName}>
               <rect
-                className={idle ? 'hotflow-stub idle' : 'hotflow-stub'}
+                className={`hotflow-stub${idle ? ' idle' : ''}${
+                  current ? ' current' : ''
+                }`}
                 x={featureX}
                 y={centres[i] - G.stubHeight / 2}
                 width={G.featureWidth}
