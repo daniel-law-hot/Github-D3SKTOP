@@ -534,6 +534,23 @@ body.theme-dark {
 
   // Matches the 8px inset the diagram's leftmost box starts at.
   padding-left: 8px;
+
+  /**
+   * The hand cursor on the action row.
+   *
+   * Desktop's `.button-component` doesn't set a cursor, so the global reset's
+   * `cursor: default` stands. Restated on any child too, since a child element
+   * matches that reset directly and so wins over inheriting from the button.
+   *
+   * Disabled buttons keep the arrow — Open pull request is disabled off a
+   * feature branch, and there's nothing to click.
+   */
+  .button-component:not(:disabled) {
+    &,
+    * {
+      cursor: pointer;
+    }
+  }
 }
 
 .hotflow-action-cell {
