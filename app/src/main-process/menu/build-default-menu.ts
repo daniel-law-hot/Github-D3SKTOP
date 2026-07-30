@@ -187,6 +187,14 @@ export function buildDefaultMenu({
         click: emit('show-history'),
       },
       {
+        // 'G' belongs to Toggle Chan&ges Filter and 'R' to &Reload, so the
+        // access key sits on the 'a'.
+        label: __DARWIN__ ? 'Show Graph' : 'Gr&aph',
+        id: 'show-graph',
+        accelerator: 'CmdOrCtrl+3',
+        click: emit('show-graph'),
+      },
+      {
         label: __DARWIN__ ? 'Show Repository List' : 'Repository &list',
         id: 'show-repository-list',
         accelerator: 'CmdOrCtrl+T',
@@ -367,9 +375,7 @@ export function buildDefaultMenu({
         click: emit('open-with-external-editor'),
       },
       {
-        label: __DARWIN__
-          ? 'Open in Visual Studio'
-          : 'Open in Visual S&tudio',
+        label: __DARWIN__ ? 'Open in Visual Studio' : 'Open in Visual S&tudio',
         id: 'open-in-visual-studio',
         click: emit('open-in-visual-studio'),
         visible: __WIN32__,
@@ -496,6 +502,60 @@ export function buildDefaultMenu({
     label: __DARWIN__ ? 'Branch' : '&Branch',
     id: 'branch',
     submenu: branchSubmenu,
+  })
+
+  template.push({
+    // 'F' belongs to &File and 'H' to &Help, so the access key sits on the 'o'.
+    label: __DARWIN__ ? 'HotFlow' : 'H&otFlow',
+    id: 'hotflow',
+    submenu: [
+      {
+        label: __DARWIN__ ? 'Show HotFlow' : '&Show HotFlow',
+        id: 'show-hotflow',
+        accelerator: 'CmdOrCtrl+4',
+        click: emit('show-hotflow'),
+      },
+      separator,
+      {
+        label: __DARWIN__ ? 'Start Feature Branch…' : 'Start &feature branch…',
+        id: 'hotflow-start-feature',
+        click: emit('hotflow-start-feature'),
+      },
+      {
+        label: __DARWIN__
+          ? 'Open Pull Request for Feature…'
+          : 'Open &pull request for feature…',
+        id: 'hotflow-open-pull-request',
+        click: emit('hotflow-open-pull-request'),
+      },
+      separator,
+      {
+        label: __DARWIN__ ? 'Start Release Branch…' : 'Start &release branch…',
+        id: 'hotflow-start-release',
+        click: emit('hotflow-start-release'),
+      },
+      {
+        label: __DARWIN__
+          ? 'Update Release from Development…'
+          : '&Update release from development…',
+        id: 'hotflow-update-release',
+        click: emit('hotflow-update-release'),
+      },
+      {
+        label: __DARWIN__
+          ? 'Finish Release (Merge & Tag)…'
+          : 'Fi&nish release (merge && tag)…',
+        id: 'hotflow-finish-release',
+        click: emit('hotflow-finish-release'),
+      },
+      separator,
+      {
+        // 'f' is taken by 'Start &feature branch' within this submenu.
+        label: __DARWIN__ ? 'Refresh Release Data' : 'Refresh release &data',
+        id: 'hotflow-refresh',
+        click: emit('hotflow-refresh'),
+      },
+    ],
   })
 
   if (__DARWIN__) {

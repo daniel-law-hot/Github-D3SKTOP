@@ -401,6 +401,24 @@ import {
   gatherCommitContext,
 } from '../copilot-conflict-context'
 import { resolveWithin } from '../path'
+import { detectHotFlowState } from '../hotflow/detect'
+import {
+  IHotFlowBranchOverride,
+  IReleaseBranchState,
+} from '../../models/hotflow'
+import {
+  getConfirmedReleaseCycles,
+  setConfirmedReleaseCycle,
+  getBranchOverride,
+  setBranchOverride,
+} from '../hotflow/settings-store'
+import { getAdoCredential, setStoredPat } from '../hotflow/ado-auth'
+import {
+  clearAdoCache,
+  defaultAdoConfig,
+  getWorkItemIdsForReleaseSequence,
+  getWorkItems,
+} from '../hotflow/ado-client'
 
 const LastSelectedRepositoryIDKey = 'last-selected-repository-id'
 
@@ -544,6 +562,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private focusCommitMessage = false
   private currentFoldout: Foldout | null = null
   private currentBanner: Banner | null = null
+
+  /** Whether the HotFlow release view is replacing the repository view. */
+  private hotFlowVisible: boolean = false
   private emitQueued = false
 
   private readonly localRepositoryStateLookup = new Map<
@@ -1141,6 +1162,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       isUpdateAvailableBannerVisible: this.isUpdateAvailableBannerVisible,
       isUpdateShowcaseVisible: this.isUpdateShowcaseVisible,
       currentBanner: this.currentBanner,
+      hotFlowVisible: this.hotFlowVisible,
       askToMoveToApplicationsFolderSetting:
         this.askToMoveToApplicationsFolderSetting,
       useExternalCredentialHelper: this.useExternalCredentialHelper,
@@ -2099,6 +2121,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.startBackgroundPruner(repository)
 
     this.addUpstreamRemoteIfNeeded(repository)
+
+    // Load the release picture in the background. The HotFlow toolbar button and
+    // its menu items are meant to be readable without opening the view, which
+    // they can't be if the state stays empty until first open. Deliberately not
+    // awaited — it's a handful of cheap rev-list calls and must not delay
+    // switching repositories.
+    this._refreshHotFlow(repository).catch(e =>
+      log.warn('[AppStore] background HotFlow refresh failed', e)
+    )
 
     return this.repositoryWithRefreshedGitHubRepository(repository)
   }
@@ -4055,6 +4086,291 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.emitUpdate()
 
     await this._loadGraphCommits(repository)
+  }
+
+  /**
+   * Shows the HotFlow view and loads its data if we don't have any yet.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _showHotFlow(repository: Repository): Promise<void> {
+    this.hotFlowVisible = true
+    this.emitUpdate()
+
+    const state = this.repositoryStateCache.get(repository)
+
+    // Lazy: only load on first open, then rely on explicit refreshes. Opening
+    // the view shouldn't re-run git if we already have a recent picture.
+    if (state.hotFlowState.lastRefreshed === null) {
+      await this._refreshHotFlow(repository)
+    }
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public _hideHotFlow(): void {
+    if (!this.hotFlowVisible) {
+      return
+    }
+
+    this.hotFlowVisible = false
+    this.emitUpdate()
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _refreshHotFlow(repository: Repository): Promise<void> {
+    this.repositoryStateCache.updateHotFlowState(repository, () => ({
+      isLoading: true,
+      errorMessage: null,
+    }))
+    this.emitUpdate()
+
+    try {
+      const confirmedCycles = getConfirmedReleaseCycles(repository)
+      const detected = await detectHotFlowState(
+        repository,
+        confirmedCycles,
+        getBranchOverride(repository)
+      )
+
+      // Preserve whatever we already know from Azure DevOps — detection is
+      // git-only and shouldn't blow away work item detail on every refresh.
+      const existingAdo =
+        this.repositoryStateCache.get(repository).hotFlowState.ado
+
+      this.repositoryStateCache.updateHotFlowState(repository, () => ({
+        ...detected,
+        ado: existingAdo,
+      }))
+      this.emitUpdate()
+
+      await this._refreshHotFlowWorkItems(repository)
+    } catch (e) {
+      log.error('[AppStore] failed to refresh HotFlow state', e)
+      this.repositoryStateCache.updateHotFlowState(repository, () => ({
+        isLoading: false,
+        errorMessage: e instanceof Error ? e.message : String(e),
+      }))
+      this.emitUpdate()
+    }
+  }
+
+  /**
+   * Loads Azure DevOps work item detail for the current release.
+   *
+   * Deliberately best-effort: any failure leaves the git-derived view intact and
+   * records a status the UI can offer to fix, rather than failing the refresh.
+   */
+  private async _refreshHotFlowWorkItems(
+    repository: Repository
+  ): Promise<void> {
+    const state = this.repositoryStateCache.get(repository)
+    const release = state.hotFlowState.currentRelease
+
+    if (release === null) {
+      return
+    }
+
+    const credential = await getAdoCredential(defaultAdoConfig.organisation)
+
+    // No credentials isn't an error — it's the state where we ask.
+    if (credential === null) {
+      this.repositoryStateCache.updateHotFlowState(repository, s => ({
+        ado: {
+          ...s.ado,
+          status: 'unconfigured',
+          authMethod: null,
+          errorMessage: null,
+        },
+      }))
+      this.emitUpdate()
+      return
+    }
+
+    this.repositoryStateCache.updateHotFlowState(repository, s => ({
+      ado: { ...s.ado, status: 'loading', errorMessage: null },
+    }))
+    this.emitUpdate()
+
+    try {
+      // Work items assigned to this release, if we know which release it is.
+      // Read from the "Release sequence number" field rather than tags — see
+      // getWorkItemIdsForReleaseSequence for why.
+      const cycleTaggedIds =
+        release.cycle === null
+          ? []
+          : await getWorkItemIdsForReleaseSequence(
+              defaultAdoConfig,
+              release.cycle.tag,
+              credential
+            )
+
+      // Detail for everything on either side of the reconciliation.
+      const ids = [...new Set([...release.vsoNumbers, ...cycleTaggedIds])]
+
+      const workItems = await getWorkItems(defaultAdoConfig, ids, credential)
+
+      this.repositoryStateCache.updateHotFlowState(repository, () => ({
+        ado: {
+          status: 'ok' as const,
+          authMethod:
+            credential.kind === 'bearer' ? ('az' as const) : ('pat' as const),
+          workItems,
+          cycleTaggedIds,
+          errorMessage: null,
+        },
+      }))
+    } catch (e) {
+      log.warn('[AppStore] HotFlow could not load Azure DevOps work items', e)
+
+      this.repositoryStateCache.updateHotFlowState(repository, s => ({
+        ado: {
+          ...s.ado,
+          status: 'error' as const,
+          errorMessage: e instanceof Error ? e.message : String(e),
+        },
+      }))
+    }
+
+    this.emitUpdate()
+  }
+
+  /**
+   * Stores an Azure DevOps personal access token and reloads work item detail.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _setAdoPat(repository: Repository, pat: string): Promise<void> {
+    await setStoredPat(defaultAdoConfig.organisation, pat)
+    clearAdoCache()
+    await this._refreshHotFlowWorkItems(repository)
+  }
+
+  /**
+   * Finishes a release: merges it into production, tags it, and pushes.
+   *
+   * The riskiest thing HotFlow does, so the sequence is deliberately plain and
+   * additive — checkout, pull, merge with an explicit merge commit, tag, push.
+   * Nothing here force-pushes, force-tags, resets, or deletes, and any failure
+   * stops the sequence rather than pressing on to the next step.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _finishRelease(
+    repository: Repository,
+    release: IReleaseBranchState,
+    productionBranch: Branch,
+    mergeBackInto: Branch | null
+  ): Promise<void> {
+    const releaseBranch = release.branch
+    const version = release.version.raw
+    const gitStore = this.gitStoreCache.get(repository)
+
+    try {
+      // 1. Get onto production and make sure it's current.
+      await this._checkoutBranch(repository, productionBranch)
+      await this._pull(repository)
+
+      // 2. Merge the release in. --no-ff because a release landing in
+      //    production should always be a visible, single event in the history.
+      const mergeResult = await gitStore.merge(releaseBranch, { noFf: true })
+
+      if (mergeResult !== MergeResult.Success) {
+        // Conflicts on a release-to-production merge are unusual and want human
+        // attention. Stop here rather than tagging a half-finished merge.
+        this.emitError(
+          new Error(
+            `Merging ${releaseBranch.name} into ${productionBranch.name} did not complete. ` +
+              `Resolve it and finish the merge before tagging ${version}.`
+          )
+        )
+        await this._refreshRepository(repository)
+        return
+      }
+
+      // 3. Tag the merge commit. Read the tip back rather than assuming it, so
+      //    the tag can't land on the wrong commit.
+      await this._refreshRepository(repository)
+
+      const tip = this.repositoryStateCache.get(repository).branchesState.tip
+
+      if (tip.kind !== TipState.Valid) {
+        this.emitError(
+          new Error(
+            `Merged ${releaseBranch.name} into ${productionBranch.name}, but couldn't ` +
+              `resolve the resulting commit to tag it ${version}. Tag it manually.`
+          )
+        )
+        return
+      }
+
+      // createTag also registers the tag for the next push, so step 4 carries it.
+      await gitStore.createTag(version, tip.branch.tip.sha)
+
+      // 4. Push production and the new tag.
+      await this._push(repository)
+
+      // 5. Optionally merge back, so commits that only ever existed on the
+      //    release branch don't end up stranded on production.
+      if (mergeBackInto !== null) {
+        await this._checkoutBranch(repository, mergeBackInto)
+        await this._pull(repository)
+
+        const backMerge = await gitStore.merge(releaseBranch)
+
+        if (backMerge !== MergeResult.Success) {
+          this.emitError(
+            new Error(
+              `Released ${version} successfully, but merging ${releaseBranch.name} back ` +
+                `into ${mergeBackInto.name} did not complete. Resolve it to keep the ` +
+                `branches in step.`
+            )
+          )
+          await this._refreshRepository(repository)
+          return
+        }
+
+        await this._push(repository)
+      }
+    } catch (e) {
+      log.error('[AppStore] HotFlow could not finish the release', e)
+      this.emitError(
+        e instanceof Error ? e : new Error(`Failed to finish release: ${e}`)
+      )
+    } finally {
+      await this._refreshHotFlow(repository)
+    }
+  }
+
+  /**
+   * Confirms (or overrides) which Azure DevOps cycle a release branch belongs
+   * to, and re-runs reconciliation against the new tag.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _setReleaseCycle(
+    repository: Repository,
+    branchName: string,
+    cycleTag: string
+  ): Promise<void> {
+    setConfirmedReleaseCycle(repository, branchName, cycleTag)
+    await this._refreshHotFlow(repository)
+  }
+
+  /**
+   * Pins which branches HotFlow should treat as integration and production for
+   * this repository, overriding alias resolution.
+   *
+   * Pass an empty string for either to clear that override and go back to
+   * resolving it from the known aliases.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _setHotFlowBranches(
+    repository: Repository,
+    override: IHotFlowBranchOverride
+  ): Promise<void> {
+    setBranchOverride(repository, override)
+    await this._refreshHotFlow(repository)
   }
 
   private async refreshHistorySection(repository: Repository): Promise<void> {

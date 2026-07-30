@@ -11,6 +11,7 @@ import { updateMenuState as ipcUpdateMenuState } from '../ui/main-process-proxy'
 import { AppMenu, MenuItem } from '../models/app-menu'
 import { hasConflictedFiles } from './status'
 import { findContributionTargetDefaultBranch } from './branch'
+import { isFeatureBranchName } from './hotflow/branch-patterns'
 
 export interface IMenuItemState {
   readonly enabled?: boolean
@@ -125,6 +126,15 @@ const allMenuIds: ReadonlyArray<MenuIDs> = [
   'create-branch',
   'show-changes',
   'show-history',
+  'show-graph',
+  'hotflow',
+  'show-hotflow',
+  'hotflow-start-feature',
+  'hotflow-open-pull-request',
+  'hotflow-start-release',
+  'hotflow-update-release',
+  'hotflow-finish-release',
+  'hotflow-refresh',
   'show-repository-list',
   'show-branches-list',
   'open-working-directory',
@@ -174,6 +184,10 @@ function getRepositoryMenuBuilder(state: IAppState): MenuStateBuilder {
   let branchHasStashEntry = false
   let onContributionTargetDefaultBranch = false
   let hasContributionTargetDefaultBranch = false
+  let hotFlowHasIntegrationBranch = false
+  let hotFlowHasRelease = false
+  let hotFlowReleaseIsBehind = false
+  let onFeatureBranch = false
 
   // check that its a github repo and if so, that is has issues enabled
   const repoIssuesEnabled =
@@ -229,6 +243,14 @@ function getRepositoryMenuBuilder(state: IAppState): MenuStateBuilder {
       changesState.conflictState !== null ||
       hasConflictedFiles(workingDirectory)
     hasChangedFiles = workingDirectory.files.length > 0
+
+    const { hotFlowState } = selectedState.state
+    hotFlowHasIntegrationBranch = hotFlowState.integrationBranch !== null
+    hotFlowHasRelease = hotFlowState.currentRelease !== null
+    hotFlowReleaseIsBehind =
+      (hotFlowState.currentRelease?.behindIntegration ?? 0) > 0
+    onFeatureBranch =
+      tip.kind === TipState.Valid && isFeatureBranchName(tip.branch.name)
   }
 
   // These are IDs for menu items that are entirely _and only_
@@ -250,6 +272,10 @@ function getRepositoryMenuBuilder(state: IAppState): MenuStateBuilder {
     'open-in-visual-studio',
     'compare-to-branch',
     'toggle-changes-filter',
+    'show-graph',
+    'hotflow',
+    'show-hotflow',
+    'hotflow-refresh',
   ]
 
   const menuStateBuilder = new MenuStateBuilder()
@@ -279,6 +305,26 @@ function getRepositoryMenuBuilder(state: IAppState): MenuStateBuilder {
         hasContributionTargetDefaultBranch &&
         !onContributionTargetDefaultBranch
     )
+    // HotFlow actions are only offered when they'd actually do something —
+    // there's no point in a Finish Release that has no release to finish.
+    menuStateBuilder.setEnabled(
+      'hotflow-start-feature',
+      hotFlowHasIntegrationBranch
+    )
+    menuStateBuilder.setEnabled(
+      'hotflow-open-pull-request',
+      hotFlowHasIntegrationBranch && onFeatureBranch && isHostedOnGitHub
+    )
+    menuStateBuilder.setEnabled(
+      'hotflow-start-release',
+      hotFlowHasIntegrationBranch
+    )
+    menuStateBuilder.setEnabled(
+      'hotflow-update-release',
+      hotFlowHasRelease && hotFlowReleaseIsBehind
+    )
+    menuStateBuilder.setEnabled('hotflow-finish-release', hotFlowHasRelease)
+
     menuStateBuilder.setEnabled('merge-branch', onBranch)
     menuStateBuilder.setEnabled('squash-and-merge-branch', onBranch)
     menuStateBuilder.setEnabled('rebase-branch', onBranch)

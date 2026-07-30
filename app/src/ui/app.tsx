@@ -9,6 +9,7 @@ import {
   SelectionType,
   HistoryTabMode,
   CommitOptions,
+  IRepositoryState,
 } from '../lib/app-state'
 import { Dispatcher } from './dispatcher'
 import { AppStore, GitHubUserStore, IssuesStore } from '../lib/stores'
@@ -58,6 +59,17 @@ import {
   BranchDropdown,
   RevertProgress,
 } from './toolbar'
+import { HotFlowView } from './hotflow'
+import {
+  ConnectAdoDialog,
+  EditBranchesDialog,
+  EditCycleDialog,
+  FinishReleaseDialog,
+  StartFeatureDialog,
+  StartReleaseDialog,
+  UpdateReleaseDialog,
+} from './hotflow/dialogs'
+import { getMissingWorkItemCount } from '../lib/hotflow/reconcile'
 import { iconForRepository, OcticonSymbol } from './octicons'
 import * as octicons from './octicons/octicons.generated'
 import {
@@ -447,6 +459,22 @@ export class App extends React.Component<IAppProps, IAppState> {
         return this.showChanges(true)
       case 'show-history':
         return this.showHistory(true)
+      case 'show-graph':
+        return this.showGraph()
+      case 'show-hotflow':
+        return this.showHotFlow()
+      case 'hotflow-start-feature':
+        return this.showHotFlowPopup(PopupType.HotFlowStartFeature)
+      case 'hotflow-open-pull-request':
+        return this.hotFlowOpenPullRequest()
+      case 'hotflow-start-release':
+        return this.showHotFlowPopup(PopupType.HotFlowStartRelease)
+      case 'hotflow-update-release':
+        return this.showHotFlowPopup(PopupType.HotFlowUpdateRelease)
+      case 'hotflow-finish-release':
+        return this.showHotFlowPopup(PopupType.HotFlowFinishRelease)
+      case 'hotflow-refresh':
+        return this.refreshHotFlow()
       case 'choose-repository':
         return this.chooseRepository()
       case 'add-local-repository':
@@ -912,6 +940,99 @@ export class App extends React.Component<IAppProps, IAppState> {
     if (shouldFocusChanges) {
       this.repositoryViewRef.current?.setFocusChangesNeeded()
     }
+  }
+
+  private async showGraph() {
+    const state = this.state.selectedState
+    if (state == null || state.type !== SelectionType.Repository) {
+      return
+    }
+
+    this.props.dispatcher.closeCurrentFoldout()
+
+    await this.props.dispatcher.changeRepositorySection(
+      state.repository,
+      RepositorySectionTab.Graph
+    )
+  }
+
+  /**
+   * Toggles the HotFlow view. Toggling rather than only showing means the
+   * accelerator and the toolbar button both behave the way people expect from a
+   * view switch.
+   */
+  private async showHotFlow() {
+    const state = this.state.selectedState
+    if (state == null || state.type !== SelectionType.Repository) {
+      return
+    }
+
+    this.props.dispatcher.closeCurrentFoldout()
+
+    if (this.state.hotFlowVisible) {
+      this.props.dispatcher.hideHotFlow()
+      return
+    }
+
+    await this.props.dispatcher.showHotFlow(state.repository)
+  }
+
+  private async refreshHotFlow() {
+    const state = this.state.selectedState
+    if (state == null || state.type !== SelectionType.Repository) {
+      return
+    }
+
+    await this.props.dispatcher.refreshHotFlow(state.repository)
+  }
+
+  /**
+   * Opens one of the HotFlow action dialogs, making sure the view itself is
+   * showing first so the action always has its context visible behind it.
+   */
+  private async showHotFlowPopup(
+    type:
+      | PopupType.HotFlowStartFeature
+      | PopupType.HotFlowStartRelease
+      | PopupType.HotFlowUpdateRelease
+      | PopupType.HotFlowFinishRelease
+  ) {
+    const state = this.state.selectedState
+    if (state == null || state.type !== SelectionType.Repository) {
+      return
+    }
+
+    if (!this.state.hotFlowVisible) {
+      await this.props.dispatcher.showHotFlow(state.repository)
+    }
+
+    this.props.dispatcher.showPopup({ type, repository: state.repository })
+  }
+
+  /**
+   * Opens a pull request for the checked-out feature branch, targeting
+   * `development` rather than the repository's default branch.
+   */
+  private hotFlowOpenPullRequest() {
+    const state = this.state.selectedState
+    if (state == null || state.type !== SelectionType.Repository) {
+      return
+    }
+
+    const { branchesState, hotFlowState } = state.state
+    const integrationBranch = hotFlowState.integrationBranch
+
+    if (integrationBranch === null) {
+      return
+    }
+
+    const tip = branchesState.tip
+
+    if (tip.kind !== TipState.Valid) {
+      return
+    }
+
+    this.props.dispatcher.createPullRequest(state.repository, integrationBranch)
   }
 
   private chooseRepository() {
@@ -2697,9 +2818,140 @@ export class App extends React.Component<IAppProps, IAppState> {
           />
         )
       }
+      case PopupType.HotFlowStartFeature: {
+        const state = this.getHotFlowPopupState(popup.repository)
+
+        if (state === null) {
+          return null
+        }
+
+        return (
+          <StartFeatureDialog
+            key="hotflow-start-feature"
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            hotFlowState={state.hotFlowState}
+            allBranches={state.branchesState.allBranches}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.HotFlowStartRelease: {
+        const state = this.getHotFlowPopupState(popup.repository)
+
+        if (state === null) {
+          return null
+        }
+
+        return (
+          <StartReleaseDialog
+            key="hotflow-start-release"
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            hotFlowState={state.hotFlowState}
+            allBranches={state.branchesState.allBranches}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.HotFlowUpdateRelease: {
+        const state = this.getHotFlowPopupState(popup.repository)
+
+        if (state === null) {
+          return null
+        }
+
+        return (
+          <UpdateReleaseDialog
+            key="hotflow-update-release"
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            hotFlowState={state.hotFlowState}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.HotFlowFinishRelease: {
+        const state = this.getHotFlowPopupState(popup.repository)
+
+        if (state === null) {
+          return null
+        }
+
+        return (
+          <FinishReleaseDialog
+            key="hotflow-finish-release"
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            hotFlowState={state.hotFlowState}
+            missingWorkItemCount={getMissingWorkItemCount(state.hotFlowState)}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.HotFlowConnectAdo: {
+        return (
+          <ConnectAdoDialog
+            key="hotflow-connect-ado"
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.HotFlowEditBranches: {
+        const state = this.getHotFlowPopupState(popup.repository)
+
+        if (state === null) {
+          return null
+        }
+
+        return (
+          <EditBranchesDialog
+            key="hotflow-edit-branches"
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            hotFlowState={state.hotFlowState}
+            allBranches={state.branchesState.allBranches}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.HotFlowEditCycle: {
+        return (
+          <EditCycleDialog
+            key="hotflow-edit-cycle"
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            branchName={popup.branchName}
+            currentTag={popup.currentTag}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
       default:
         return assertNever(popup, `Unknown popup type: ${popup}`)
     }
+  }
+
+  /**
+   * The repository state a HotFlow dialog needs, or null when the popup's
+   * repository is no longer the selected one.
+   */
+  private getHotFlowPopupState(
+    repository: Repository
+  ): IRepositoryState | null {
+    const selection = this.state.selectedState
+
+    if (
+      selection === null ||
+      selection.type !== SelectionType.Repository ||
+      selection.repository.hash !== repository.hash
+    ) {
+      return null
+    }
+
+    return selection.state
   }
 
   private onUpdateCommitOptions = (
@@ -3509,10 +3761,69 @@ export class App extends React.Component<IAppProps, IAppState> {
         </div>
         {this.renderBranchToolbarButton()}
         {this.renderPushPullToolbarButton()}
+        {this.renderHotFlowToolbarButton()}
         {this.renderOpenWithClaudeToolbarButton()}
         {this.renderOpenInVisualStudioToolbarButton()}
       </Toolbar>
     )
+  }
+
+  /**
+   * The HotFlow toolbar button. Carries the current release version and a drift
+   * badge so release state is legible without opening the view — half the value
+   * of the feature is never having to open it.
+   */
+  private renderHotFlowToolbarButton() {
+    const selection = this.state.selectedState
+
+    if (!selection || selection.type !== SelectionType.Repository) {
+      return null
+    }
+
+    const { hotFlowState } = selection.state
+    const release = hotFlowState.currentRelease
+
+    // Before the first read there's nothing to report — saying "No release
+    // branch" would be asserting something we haven't looked for yet.
+    const description =
+      hotFlowState.lastRefreshed === null
+        ? 'Release status'
+        : release === null
+        ? 'No release branch'
+        : `Release ${release.version.raw}`
+
+    const behind = release?.behindIntegration ?? 0
+
+    return (
+      <ToolbarButton
+        className={classNames('hotflow-button', {
+          'hotflow-button-active': this.state.hotFlowVisible,
+        })}
+        title="HotFlow"
+        description={description}
+        icon={octicons.gitMerge}
+        style={ToolbarButtonStyle.Subtitle}
+        onClick={this.onHotFlowToolbarButtonClick}
+        ariaExpanded={this.state.hotFlowVisible}
+      >
+        {behind > 0 && (
+          <span className="hotflow-drift-badge">
+            {behind}
+            {/* The number alone means nothing read aloud, so spell it out for
+                screen readers without cluttering the button. */}
+            <span className="sr-only">
+              {` commit${behind === 1 ? '' : 's'} in ${
+                hotFlowState.integrationBranchName
+              } not yet in this release`}
+            </span>
+          </span>
+        )}
+      </ToolbarButton>
+    )
+  }
+
+  private onHotFlowToolbarButtonClick = () => {
+    this.showHotFlow()
   }
 
   private renderOpenWithClaudeToolbarButton() {
@@ -3594,6 +3905,22 @@ export class App extends React.Component<IAppProps, IAppState> {
     const selectedState = state.selectedState
     if (!selectedState) {
       return <NoRepositorySelected />
+    }
+
+    // HotFlow takes over everything below the toolbar, sidebar included, so it
+    // replaces the repository view rather than living inside it.
+    if (
+      state.hotFlowVisible &&
+      selectedState.type === SelectionType.Repository
+    ) {
+      return (
+        <HotFlowView
+          repository={selectedState.repository}
+          dispatcher={this.props.dispatcher}
+          hotFlowState={selectedState.state.hotFlowState}
+          branchesState={selectedState.state.branchesState}
+        />
+      )
     }
 
     if (selectedState.type === SelectionType.Repository) {

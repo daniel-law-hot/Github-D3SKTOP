@@ -1,0 +1,1431 @@
+/**
+ * HotFlow — the release flow view.
+ *
+ * Everything here draws from Desktop's existing custom properties so the view
+ * inherits both themes for free rather than branching on theme in the markup.
+ * The only new tokens are the semantic ones for release state, defined against
+ * Primer values that already exist elsewhere in the app.
+ */
+
+/**
+ * The flow diagram's geometry, shared between the SVG and the action row below
+ * it so the buttons line up with the nodes they act on.
+ *
+ * These mirror the coordinates in `app/src/ui/hotflow/flow-diagram.tsx`. The
+ * SVG's viewBox is 1040 wide and its boxes start at x=8.
+ */
+$hotflow-diagram-width: 1216px;
+$hotflow-col-feature: 352px; // feature stubs      x    8 → 360
+$hotflow-col-pr-edge: 66px; // pull request edge  x  360 → 426
+$hotflow-col-integration: 176px; // integration   x  426 → 602
+$hotflow-col-drift-edge: 114px; // drift edge     x  602 → 716
+$hotflow-col-release: 212px; // release branch    x  716 → 928
+$hotflow-col-tag-edge: 122px; // merge + tag edge x  928 → 1050
+$hotflow-col-production: 158px; // production     x 1050 → 1208
+
+/**
+ * The action row's columns, mirrored in `flow-diagram.tsx` as
+ * `actionPairWidth` and `actionArrowWidth`.
+ *
+ *   pair      2 × 168 button + 5 gap            = 341
+ *   connector feature + pr + integration + drift
+ *             (352 + 66 + 176 + 114) − 341      = 367
+ */
+$hotflow-action-button-width: 168px;
+$hotflow-action-pair-width: 341px;
+$hotflow-action-arrow-width: 367px;
+
+:root {
+  --hotflow-ok-color: #{$green-600};
+  --hotflow-ok-background: #{$green-000};
+  --hotflow-ok-line: #{$green-400};
+
+  --hotflow-warn-color: #{$yellow-800};
+  --hotflow-warn-background: #{$yellow-100};
+  --hotflow-warn-line: #{$yellow-700};
+
+  --hotflow-node-background: var(--background-color);
+  --hotflow-stub-background: #{$gray-100};
+  --hotflow-edge-color: #{$gray-400};
+  --hotflow-focus-background: #{$blue-000};
+  --hotflow-focus-line: #{$blue-300};
+}
+
+body.theme-dark {
+  --hotflow-ok-color: #{$green-400};
+  --hotflow-ok-background: #{darken($green-900, 8%)};
+  --hotflow-ok-line: #{$green-400};
+
+  --hotflow-warn-color: #{$yellow-600};
+  --hotflow-warn-background: #{darken($yellow-900, 12%)};
+  --hotflow-warn-line: #{$yellow-700};
+
+  --hotflow-node-background: #{$gray-800};
+  --hotflow-stub-background: #{lighten($gray-900, 3%)};
+  --hotflow-edge-color: #{$gray-500};
+  --hotflow-focus-background: #{darken($blue-900, 4%)};
+  --hotflow-focus-line: #{$blue-400};
+}
+
+#hotflow {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--background-color);
+}
+
+.hotflow {
+  .mono {
+    font-family: var(--font-family-monospace);
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dim {
+    color: var(--text-secondary-color);
+  }
+
+  .warn {
+    color: var(--hotflow-warn-color);
+  }
+
+  .ok {
+    color: var(--hotflow-ok-color);
+  }
+
+  .info {
+    color: var(--text-secondary-color);
+  }
+
+  .accent {
+    color: var(--link-button-color);
+  }
+
+  .octicon.spin {
+    animation: hotflow-spin 1s linear infinite;
+  }
+}
+
+@keyframes hotflow-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hotflow .octicon.spin {
+    animation: none;
+  }
+}
+
+// ── header ────────────────────────────────────────────────────────────────────
+
+.hotflow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing);
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0 var(--spacing);
+  border-bottom: 1px solid var(--box-border-color);
+}
+
+.hotflow-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-half);
+  min-width: 0;
+}
+
+.hotflow-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-half);
+  flex-shrink: 0;
+}
+
+.hotflow-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.hotflow-repo {
+  font-size: var(--font-size);
+  color: var(--text-secondary-color);
+  padding-left: var(--spacing-half);
+  border-left: 1px solid var(--box-border-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hotflow-icon-button {
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  color: var(--text-secondary-color);
+  background: transparent;
+  border-color: transparent;
+
+  // Centre the icon with flex rather than relying on inline layout. The base
+  // `.button-component .octicon` rule sets `vertical-align: middle`, and
+  // `ui/button` is imported after this file so it would win on source order —
+  // but `vertical-align` is inert on a flex item, so this neutralises it
+  // instead of fighting it with specificity.
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  .octicon {
+    // The base stylesheet adds a left margin to icons in buttons with text.
+    margin: 0;
+    flex: none;
+  }
+
+  &:hover {
+    background: var(--box-alt-background-color);
+    border-color: var(--box-border-color);
+  }
+}
+
+.hotflow-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  padding: 3px 9px;
+  border-radius: 11px;
+  border: 1px solid;
+  white-space: nowrap;
+
+  &.ok {
+    color: var(--hotflow-ok-color);
+    background: var(--hotflow-ok-background);
+    border-color: var(--hotflow-ok-line);
+  }
+
+  &.warn {
+    color: var(--hotflow-warn-color);
+    background: var(--hotflow-warn-background);
+    border-color: var(--hotflow-warn-line);
+  }
+
+  &.error {
+    color: var(--color-deleted);
+    border-color: var(--color-deleted);
+  }
+
+  &.shipped,
+  &.none {
+    color: var(--text-secondary-color);
+    border-color: var(--box-border-contrast-color);
+  }
+}
+
+// ── flow diagram band ─────────────────────────────────────────────────────────
+
+.hotflow-flow-band {
+  // Height is set inline from the resizer; content scales to fit it.
+  flex-shrink: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: var(--spacing) var(--spacing) var(--spacing-half);
+  border-bottom: 1px solid var(--box-border-color);
+  background: var(--box-alt-background-color);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-half);
+}
+
+/**
+ * The schematic has a natural width. Scroll the band rather than letting the
+ * whole view scroll sideways — and scroll the diagram and its action buttons
+ * together, so the buttons stay under the nodes they belong to.
+ */
+.hotflow-flow-scroll {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-x: auto;
+  // The diagram is sized to the band, but clip rather than jump if it overruns.
+  overflow-y: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-half);
+
+  // The action row sits under the diagram, not stretched alongside it.
+  justify-content: flex-start;
+}
+
+.hotflow-diagram {
+  // The SVG carries its own pixel width and height — it is never scaled, so a
+  // taller band shows more branch rows rather than a bigger picture.
+  flex-shrink: 0;
+  min-width: $hotflow-diagram-width;
+}
+
+.hotflow-diagram-svg {
+  display: block;
+}
+
+.hotflow-node {
+  fill: var(--hotflow-node-background);
+  stroke: var(--box-border-contrast-color);
+  stroke-width: 1;
+
+  &.focus {
+    fill: var(--hotflow-focus-background);
+    stroke: var(--hotflow-focus-line);
+    stroke-width: 1.5;
+  }
+
+  &.empty {
+    fill: none;
+    stroke: var(--box-border-contrast-color);
+    stroke-dasharray: 4 3;
+  }
+}
+
+.hotflow-stub {
+  fill: var(--hotflow-stub-background);
+  stroke: var(--box-border-color);
+  stroke-width: 1;
+
+  /**
+   * A branch with no pull request open. Drawn hollow and dashed because it
+   * hasn't entered the flow yet — it's waiting, not on its way in.
+   */
+  &.idle {
+    fill: none;
+    stroke-dasharray: 4 3;
+  }
+}
+
+.hotflow-pin {
+  &.ok {
+    fill: var(--hotflow-ok-line);
+  }
+
+  &.warn {
+    fill: var(--hotflow-warn-line);
+  }
+}
+
+.hotflow-edge {
+  fill: none;
+  stroke: var(--hotflow-edge-color);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+
+  &.faint {
+    stroke: var(--box-border-contrast-color);
+    stroke-dasharray: 3 3;
+  }
+
+  &.warn {
+    stroke: var(--hotflow-warn-line);
+    stroke-width: 1.9;
+  }
+
+  &.ok {
+    stroke: var(--hotflow-ok-line);
+    stroke-width: 1.9;
+  }
+}
+
+.hotflow-arrowhead {
+  fill: none;
+  stroke: var(--hotflow-edge-color);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+
+  &.warn {
+    stroke: var(--hotflow-warn-line);
+    stroke-width: 1.8;
+  }
+
+  &.ok {
+    stroke: var(--hotflow-ok-line);
+    stroke-width: 1.8;
+  }
+}
+
+.hotflow-pill {
+  &.warn {
+    fill: var(--hotflow-warn-background);
+    stroke: var(--hotflow-warn-line);
+    stroke-width: 1;
+  }
+
+  &.ok {
+    fill: var(--hotflow-ok-background);
+    stroke: var(--hotflow-ok-line);
+    stroke-width: 1;
+  }
+}
+
+.hotflow-text {
+  font-family: var(--font-family-sans-serif);
+  fill: var(--text-color);
+
+  &.mono {
+    font-family: var(--font-family-monospace);
+  }
+
+  &.xs {
+    font-size: 10.5px;
+  }
+
+  &.sm {
+    font-size: var(--font-size-sm);
+  }
+
+  &.md {
+    font-size: 12.5px;
+  }
+
+  &.strong {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &.dim {
+    fill: var(--text-secondary-color);
+  }
+
+  &.warn {
+    fill: var(--hotflow-warn-color);
+  }
+
+  &.ok {
+    fill: var(--hotflow-ok-color);
+  }
+}
+
+/**
+ * The action row, laid out on a grid whose columns are the diagram's own
+ * x-coordinates so each button sits directly under the node it acts on.
+ *
+ * The numbers below are lifted straight from the SVG in `flow-diagram.tsx`; if
+ * the schematic's geometry changes, these move with it.
+ *
+ *   feature stubs   x   8 → 184   (176 wide)
+ *   PR connector    x 184 → 250   ( 66)
+ *   integration     x 250 → 426   (176)
+ *   drift edge      x 426 → 540   (114)
+ *   release         x 540 → 752   (212)
+ *   merge + tag     x 752 → 874   (122)
+ *   production      x 874 → 1032  (158)
+ */
+.hotflow-actions {
+  display: grid;
+  /**
+   * Every column is a fixed width so the connector's length is known, letting it
+   * be drawn as SVG with the diagram's real arrow marker rather than a stretched
+   * approximation. The trailing `auto` soaks up the diagram's right-hand inset.
+   *
+   * The pair and connector widths are mirrored in `flow-diagram.tsx` as
+   * `actionPairWidth` and `actionArrowWidth` — change one, change the other.
+   */
+  grid-template-columns:
+    #{$hotflow-action-pair-width}
+    #{$hotflow-action-arrow-width}
+    #{$hotflow-col-release}
+    #{$hotflow-col-tag-edge}
+    #{$hotflow-col-production}
+    auto;
+  align-items: center;
+  min-width: $hotflow-diagram-width;
+
+  // Matches the 8px inset the diagram's leftmost box starts at.
+  padding-left: 8px;
+}
+
+.hotflow-action-cell {
+  min-width: 0;
+
+  // Buttons fill their column so their width echoes the node above them,
+  // making the alignment unmistakable rather than approximate.
+  .button-component {
+    width: 100%;
+  }
+}
+
+/**
+ * The two buttons that get work into the integration branch.
+ *
+ * Ordinary buttons at their natural size, left aligned — they share a column
+ * rather than being stretched to fill it.
+ */
+.hotflow-action-pair {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--spacing-half);
+  min-width: 0;
+
+  // Both the same width, and wide enough not to feel cramped next to the
+  // diagram above them. Mirrored in `flow-diagram.tsx` as `actionButtonWidth`.
+  .button-component {
+    width: $hotflow-action-button-width;
+  }
+}
+
+.hotflow-action-spacer {
+  // An empty column, so the grid keeps its shape when an action is absent.
+  min-width: 0;
+}
+
+/**
+ * The connector between action groups.
+ *
+ * Renders the diagram's own `.hotflow-edge` stroke and arrow marker, at a
+ * viewBox width matching this column exactly, so it is identical to the
+ * connectors between the boxes above rather than an approximation of them.
+ */
+/**
+ * The connector between action groups — a real SVG line using the diagram's own
+ * `.hotflow-edge` stroke and arrow marker. Because neither the diagram nor this
+ * is scaled, they render identically.
+ */
+.hotflow-action-arrow {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+
+  svg {
+    display: block;
+  }
+}
+
+// ── flow band resizer ─────────────────────────────────────────────────────────
+
+/**
+ * The drag bar between the flow band and the tabs below it.
+ *
+ * Deliberately a thin target with a wider invisible grab area, so it's easy to
+ * hit without drawing attention to itself.
+ */
+.hotflow-band-resizer {
+  flex-shrink: 0;
+  width: 100%;
+  height: 9px;
+  margin-top: -5px;
+  margin-bottom: -4px;
+  cursor: ns-resize;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  // Strip the button chrome; this is a drag target, not a push button.
+  padding: 0;
+  border: none;
+  background: none;
+  appearance: none;
+
+  &:hover .hotflow-band-resizer-grip,
+  &:focus-visible .hotflow-band-resizer-grip {
+    opacity: 1;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--focus-color);
+    outline-offset: -2px;
+  }
+}
+
+.hotflow-band-resizer-grip {
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--box-border-contrast-color);
+  opacity: 0;
+  transition: opacity 100ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hotflow-band-resizer-grip {
+    transition: none;
+  }
+}
+
+// ── body: contents + summary ──────────────────────────────────────────────────
+
+.hotflow-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 268px;
+  flex-grow: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hotflow-contents {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--box-border-color);
+}
+
+.hotflow-tabs {
+  display: flex;
+  flex-shrink: 0;
+  padding: 0 var(--spacing-half);
+  border-bottom: 1px solid var(--box-border-color);
+}
+
+.hotflow-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: var(--font-size);
+  color: var(--text-secondary-color);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 9px 11px;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text-color);
+  }
+
+  &.selected {
+    color: var(--text-color);
+    font-weight: var(--font-weight-semibold);
+    border-bottom-color: var(--link-button-color);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--focus-color);
+    outline-offset: -2px;
+  }
+}
+
+.hotflow-tab-count {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  background: var(--box-alt-background-color);
+  color: var(--text-secondary-color);
+  border: 1px solid var(--box-border-color);
+  border-radius: 8px;
+  padding: 1px 5px;
+
+  &.warn {
+    color: var(--hotflow-warn-color);
+    background: var(--hotflow-warn-background);
+    border-color: var(--hotflow-warn-line);
+  }
+}
+
+.hotflow-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-half);
+  flex-shrink: 0;
+  font-size: var(--font-size);
+  line-height: 1.45;
+  padding: var(--spacing-half) var(--spacing);
+  border-bottom: 1px solid var(--box-border-color);
+
+  > span {
+    flex-grow: 1;
+  }
+
+  .octicon {
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  button {
+    flex-shrink: 0;
+  }
+
+  &.warn {
+    background: var(--hotflow-warn-background);
+
+    .octicon {
+      color: var(--hotflow-warn-color);
+    }
+  }
+
+  &.ok {
+    background: var(--hotflow-ok-background);
+
+    .octicon {
+      color: var(--hotflow-ok-color);
+    }
+  }
+
+  &.error {
+    background: var(--hotflow-warn-background);
+
+    .octicon {
+      color: var(--color-deleted);
+    }
+  }
+
+  &.info {
+    background: var(--box-alt-background-color);
+
+    .octicon {
+      color: var(--text-secondary-color);
+    }
+  }
+}
+
+// ── tables ────────────────────────────────────────────────────────────────────
+
+/**
+ * Scroll container for a table.
+ *
+ * The table itself stays a real table so header and body share one set of column
+ * widths — making `thead` and `tbody` separate `display: table` boxes lets them
+ * size columns independently, which silently misaligns every header.
+ */
+.hotflow-table-scroll {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.hotflow-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--background-color);
+  }
+
+  th {
+    text-align: left;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-secondary-color);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--box-border-color);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--box-border-color);
+    font-size: var(--font-size);
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  tbody tr:hover {
+    background: var(--box-alt-background-color);
+  }
+}
+
+.hotflow-wi-glyph {
+  width: 30px;
+  padding-left: var(--spacing) !important;
+}
+
+.hotflow-wi-id {
+  width: 74px;
+  font-family: var(--font-family-monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.hotflow-wi-type {
+  // Sized for Azure DevOps' longest common type name, "Product Backlog Item",
+  // plus the badge's padding and border — shown in full rather than abbreviated.
+  width: 140px;
+}
+
+.hotflow-wi-state {
+  width: 108px;
+}
+
+.hotflow-wi-row {
+  &.missing {
+    background: var(--hotflow-warn-background);
+
+    &:hover {
+      background: var(--hotflow-warn-background);
+    }
+
+    // A left stripe as well as the tint, so the row reads without colour.
+    .hotflow-wi-glyph {
+      box-shadow: inset 3px 0 0 var(--hotflow-warn-line);
+    }
+  }
+}
+
+.hotflow-wi-type-badge {
+  display: inline-block;
+  max-width: 100%;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: 1.5px 6px;
+  border-radius: 3px;
+  border: 1px solid;
+  white-space: nowrap;
+
+  // An unrecognised, unusually long type name ellipsises inside its border
+  // rather than running past it and being cut off by the cell.
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+
+  &.bug {
+    color: var(--color-deleted);
+    border-color: var(--color-deleted);
+  }
+
+  &.story {
+    color: var(--link-button-color);
+    border-color: var(--link-button-color);
+  }
+
+  &.task {
+    color: var(--text-secondary-color);
+    border-color: var(--box-border-contrast-color);
+  }
+}
+
+.hotflow-wi-missing {
+  color: var(--hotflow-warn-color);
+  font-weight: var(--font-weight-semibold);
+}
+
+.hotflow-commits {
+  .hotflow-sha {
+    width: 74px;
+    font-family: var(--font-family-monospace);
+  }
+
+  .hotflow-commit-author {
+    width: 140px;
+    color: var(--text-secondary-color);
+  }
+
+  .hotflow-commit-date {
+    width: 96px;
+    color: var(--text-secondary-color);
+  }
+}
+
+.hotflow-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  flex-shrink: 0;
+  padding: var(--spacing-half) var(--spacing);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary-color);
+  border-top: 1px solid var(--box-border-color);
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+}
+
+.hotflow-empty-list {
+  padding: var(--spacing-double) var(--spacing);
+  font-size: var(--font-size);
+  color: var(--text-secondary-color);
+  max-width: 62ch;
+  line-height: 1.5;
+}
+
+// ── summary column ────────────────────────────────────────────────────────────
+
+.hotflow-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-half);
+  padding: var(--spacing) var(--spacing) var(--spacing-double);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.hotflow-summary-heading {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary-color);
+}
+
+.hotflow-summary-rule {
+  height: 1px;
+  background: var(--box-border-color);
+  flex-shrink: 0;
+}
+
+.hotflow-summary-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-half);
+}
+
+.hotflow-summary-heading-action {
+  font-size: var(--font-size-sm);
+  font-weight: normal;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/**
+ * Marks a branch that wasn't simply found locally under its conventional name,
+ * so an unexpected resolution is visible rather than silently skewing every
+ * number measured against it.
+ */
+.hotflow-branch-hint {
+  display: inline-block;
+  margin-left: 5px;
+  font-family: var(--font-family-sans-serif);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary-color);
+  background: var(--box-alt-background-color);
+  border: 1px solid var(--box-border-color);
+  border-radius: 3px;
+  padding: 0 4px;
+  vertical-align: 1px;
+}
+
+#hotflow-edit-branches {
+  width: 452px;
+}
+
+.hotflow-summary-empty {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary-color);
+}
+
+.hotflow-dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px var(--spacing-half);
+  align-items: baseline;
+  font-size: var(--font-size);
+
+  dt {
+    color: var(--text-secondary-color);
+    white-space: nowrap;
+  }
+
+  dd {
+    margin: 0;
+    text-align: right;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.hotflow-cycle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.hotflow-cycle-unverified {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--hotflow-warn-color);
+  background: var(--hotflow-warn-background);
+  border: 1px solid var(--hotflow-warn-line);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.hotflow-cycle-confirmed {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--hotflow-ok-color);
+  white-space: nowrap;
+}
+
+.hotflow-cycle-unknown {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary-color);
+}
+
+.hotflow-other-release {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-half);
+  font-size: var(--font-size);
+
+  .mono {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .dim {
+    margin-left: auto;
+  }
+}
+
+.hotflow-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: var(--font-size-sm);
+  }
+
+  .mono {
+    font-weight: var(--font-weight-semibold);
+    min-width: 62px;
+  }
+}
+
+.hotflow-history-count {
+  margin-left: auto;
+}
+
+// ── blocked / empty states ────────────────────────────────────────────────────
+
+.hotflow-blocked {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--spacing-double) var(--spacing);
+}
+
+.hotflow-blocked-inner {
+  max-width: 480px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-half);
+
+  .octicon {
+    width: 30px;
+    height: 30px;
+  }
+
+  h2 {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  p {
+    margin: 0;
+    font-size: var(--font-size);
+    color: var(--text-secondary-color);
+    line-height: 1.55;
+  }
+
+  .mono {
+    color: var(--text-color);
+  }
+}
+
+.hotflow-blocked-footnote {
+  font-size: var(--font-size-sm) !important;
+}
+
+.hotflow-empty-stats {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: var(--spacing-double);
+  margin: var(--spacing-half) 0;
+  padding: var(--spacing) var(--spacing-double);
+  background: var(--box-alt-background-color);
+  border: 1px solid var(--box-border-color);
+  border-radius: var(--border-radius);
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
+.hotflow-stat-value {
+  font-size: 17px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-color);
+}
+
+.hotflow-stat-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary-color);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+// ── toolbar button ────────────────────────────────────────────────────────────
+
+.toolbar-button.hotflow-button {
+  // Matches the width behaviour of the neighbouring push/pull button.
+  min-width: 160px;
+
+  &.hotflow-button-active {
+    background: var(--toolbar-button-active-background-color);
+    color: var(--toolbar-button-active-color);
+  }
+}
+
+.hotflow-drift-badge {
+  display: inline-block;
+  align-self: center;
+  margin-left: var(--spacing-half);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 9px;
+  background: var(--hotflow-warn-line);
+  color: #{$gray-900};
+}
+
+// ── action dialogs ────────────────────────────────────────────────────────────
+
+#hotflow-start-feature,
+#hotflow-start-release,
+#hotflow-update-release,
+#hotflow-finish-release,
+#hotflow-connect-ado,
+#hotflow-edit-cycle {
+  width: 512px;
+
+  .dialog-content > * + * {
+    margin-top: var(--spacing);
+  }
+
+  .mono {
+    font-family: var(--font-family-monospace);
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dim {
+    color: var(--text-secondary-color);
+  }
+}
+
+.hotflow-dialog-lede {
+  margin: 0;
+  font-size: var(--font-size);
+  line-height: 1.55;
+}
+
+.hotflow-dialog-heading {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary-color);
+}
+
+.hotflow-dialog-note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary-color);
+  line-height: 1.5;
+}
+
+.hotflow-name-preview {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing);
+  padding: var(--spacing-half) var(--spacing);
+  background: var(--box-alt-background-color);
+  border: 1px solid var(--box-border-color);
+  border-radius: var(--border-radius);
+}
+
+.hotflow-name-preview-label {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary-color);
+  flex-shrink: 0;
+}
+
+.hotflow-name-preview-value {
+  font-size: var(--font-size);
+  font-weight: var(--font-weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// pre-flight checks
+
+.hotflow-preflight {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hotflow-preflight-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-half);
+  font-size: var(--font-size);
+  color: var(--text-secondary-color);
+}
+
+.hotflow-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: var(--font-size);
+  line-height: 1.45;
+
+  .octicon {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  &.pass .octicon {
+    color: var(--hotflow-ok-color);
+  }
+
+  &.warn .octicon {
+    color: var(--hotflow-warn-color);
+  }
+
+  &.fail .octicon {
+    color: var(--color-deleted);
+  }
+}
+
+.hotflow-check-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.hotflow-check-label {
+  color: var(--text-color);
+}
+
+.hotflow-check-detail {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary-color);
+}
+
+.hotflow-check.fail .hotflow-check-detail {
+  color: var(--color-deleted);
+}
+
+// impact stats
+
+.hotflow-ship-stats {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--spacing);
+  padding: var(--spacing);
+  background: var(--box-alt-background-color);
+  border: 1px solid var(--box-border-color);
+  border-radius: var(--border-radius);
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+}
+
+.hotflow-ship-value {
+  font-size: 15px;
+  font-weight: var(--font-weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hotflow-ship-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary-color);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+// work item chips
+
+.hotflow-vso-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.hotflow-vso-chips-label {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary-color);
+}
+
+.hotflow-vso-chips-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.hotflow-vso-chip {
+  font-size: var(--font-size-sm);
+  padding: 1px 6px;
+  border: 1px solid var(--box-border-contrast-color);
+  border-radius: 3px;
+  color: var(--text-secondary-color);
+}
+
+// merge-back
+
+.hotflow-mergeback {
+  padding: var(--spacing-half) var(--spacing);
+  background: var(--hotflow-warn-background);
+  border: 1px solid var(--hotflow-warn-line);
+  border-radius: var(--border-radius);
+}
+
+.hotflow-mergeback-why {
+  margin-top: var(--spacing-half);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary-color);
+  line-height: 1.5;
+
+  ul {
+    margin: 4px 0 0;
+    padding-left: var(--spacing);
+  }
+
+  li {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mono {
+    color: var(--text-color);
+  }
+}
+
+.hotflow-mergeback-warning {
+  margin: var(--spacing-half) 0 0;
+  color: var(--hotflow-warn-color);
+  font-weight: var(--font-weight-semibold);
+}
+
+.hotflow-confirm {
+  padding-top: var(--spacing-half);
+}
+
+// command preview
+
+.hotflow-commands {
+  font-size: var(--font-size-sm);
+
+  summary {
+    cursor: pointer;
+    color: var(--link-button-color);
+    font-weight: 500;
+
+    &:focus-visible {
+      outline: 2px solid var(--focus-color);
+      outline-offset: 1px;
+    }
+  }
+}
+
+.hotflow-command-block {
+  margin: var(--spacing-half) 0 0;
+  padding: var(--spacing-half) var(--spacing);
+  background: var(--box-alt-background-color);
+  border: 1px solid var(--box-border-color);
+  border-radius: var(--border-radius);
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-sm);
+  line-height: 1.65;
+  color: var(--text-color);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.hotflow-command-actions {
+  margin-top: var(--spacing-half);
+}
+
+// connect / edit cycle
+
+.hotflow-test-actions,
+.hotflow-test-result {
+  font-size: var(--font-size);
+}
+
+.hotflow-test-result {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+
+  &.ok {
+    color: var(--hotflow-ok-color);
+  }
+}
+
+.hotflow-cycle-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing);
+}

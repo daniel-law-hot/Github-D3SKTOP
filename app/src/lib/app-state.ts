@@ -12,6 +12,7 @@ import { Repository, ILocalRepositoryState } from '../models/repository'
 import { Branch, IAheadBehind } from '../models/branch'
 import { Tip } from '../models/tip'
 import { Commit } from '../models/commit'
+import { IHotFlowState } from '../models/hotflow'
 import { CommittedFileChange, WorkingDirectoryStatus } from '../models/status'
 import { CloningRepository } from '../models/cloning-repository'
 import { IMenu } from '../models/app-menu'
@@ -144,6 +145,12 @@ export interface IAppState {
   readonly allPopups: ReadonlyArray<Popup>
   readonly currentFoldout: Foldout | null
   readonly currentBanner: Banner | null
+
+  /**
+   * Whether the HotFlow release view is taking over the area below the toolbar.
+   * When true the repository view (sidebar included) is replaced entirely.
+   */
+  readonly hotFlowVisible: boolean
 
   /**
    * The shape of the drag element rendered in the `app.renderDragElement`. It
@@ -561,6 +568,12 @@ export interface IRepositoryState {
   readonly changesState: IChangesState
   readonly compareState: ICompareState
   readonly graphState: IGraphState
+
+  /**
+   * State backing the HotFlow release view (House of Travel's
+   * feature -> development -> release -> main flow).
+   */
+  readonly hotFlowState: IHotFlowState
   readonly selectedSection: RepositorySectionTab
 
   /**

@@ -105,6 +105,15 @@ export class CommitMessageAvatar extends React.Component<
   private avatarButtonRef: HTMLButtonElement | null = null
   private warningBadgeRef = React.createRef<HTMLDivElement>()
 
+  /**
+   * Whether the component has gone away while an async git read was in flight.
+   *
+   * `determineGitConfigLocation` awaits two `git config` calls before setting
+   * state, and the whole sidebar can be unmounted in that window — switching
+   * away from the repository view, or removing the last repository.
+   */
+  private hasUnmounted = false
+
   public constructor(props: ICommitMessageAvatarProps) {
     super(props)
 
@@ -132,8 +141,17 @@ export class CommitMessageAvatar extends React.Component<
     }
   }
 
+  public componentWillUnmount() {
+    this.hasUnmounted = true
+  }
+
   private async determineGitConfigLocation() {
     const isGitConfigLocal = await this.isGitConfigLocal()
+
+    if (this.hasUnmounted) {
+      return
+    }
+
     this.setState({ isGitConfigLocal })
   }
 

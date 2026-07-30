@@ -62,6 +62,10 @@ import { Account } from '../../models/account'
 import { AppMenu, ExecutableMenuItem } from '../../models/app-menu'
 import { Author, UnknownAuthor } from '../../models/author'
 import { Branch, IAheadBehind } from '../../models/branch'
+import {
+  IHotFlowBranchOverride,
+  IReleaseBranchState,
+} from '../../models/hotflow'
 import { BranchesTab } from '../../models/branches-tab'
 import { CloneRepositoryTab } from '../../models/clone-repository-tab'
 import { CloningRepository } from '../../models/cloning-repository'
@@ -323,6 +327,81 @@ export class Dispatcher {
     branchName: string | null
   ): Promise<void> {
     return this.appStore._setGraphBranch(repository, branchName)
+  }
+
+  /**
+   * Show the HotFlow release view, replacing the repository view. Loads the
+   * release data on first open.
+   */
+  public showHotFlow(repository: Repository): Promise<void> {
+    return this.appStore._showHotFlow(repository)
+  }
+
+  /** Hide the HotFlow view and return to the repository view. */
+  public hideHotFlow(): void {
+    this.appStore._hideHotFlow()
+  }
+
+  /** Re-read the repository and Azure DevOps to refresh the HotFlow view. */
+  public refreshHotFlow(repository: Repository): Promise<void> {
+    return this.appStore._refreshHotFlow(repository)
+  }
+
+  /**
+   * Confirm which Azure DevOps cycle a release branch belongs to.
+   *
+   * HotFlow guesses this from the version number, but the convention varies by
+   * repo — confirming it here makes the reconciliation authoritative rather than
+   * provisional.
+   */
+  public setReleaseCycle(
+    repository: Repository,
+    branchName: string,
+    cycleTag: string
+  ): Promise<void> {
+    return this.appStore._setReleaseCycle(repository, branchName, cycleTag)
+  }
+
+  /**
+   * Pin which branches HotFlow should treat as integration and production for
+   * this repository.
+   *
+   * HotFlow resolves these from a list of known aliases (develop, development,
+   * dev / main, master), which covers every House of Travel repository — this is
+   * the escape hatch for one that deviates. Pass an empty string to clear an
+   * override and return to alias resolution.
+   */
+  public setHotFlowBranches(
+    repository: Repository,
+    override: IHotFlowBranchOverride
+  ): Promise<void> {
+    return this.appStore._setHotFlowBranches(repository, override)
+  }
+
+  /** Store an Azure DevOps personal access token and reload work item detail. */
+  public setAdoPat(repository: Repository, pat: string): Promise<void> {
+    return this.appStore._setAdoPat(repository, pat)
+  }
+
+  /**
+   * Finish a release: merge it into production, tag it, and push.
+   *
+   * Pass `mergeBackInto` to also merge the release branch back into the
+   * integration branch, which keeps commits that only existed on the release
+   * branch from being stranded on production.
+   */
+  public finishRelease(
+    repository: Repository,
+    release: IReleaseBranchState,
+    productionBranch: Branch,
+    mergeBackInto: Branch | null
+  ): Promise<void> {
+    return this.appStore._finishRelease(
+      repository,
+      release,
+      productionBranch,
+      mergeBackInto
+    )
   }
 
   /**

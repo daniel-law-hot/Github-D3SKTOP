@@ -5,6 +5,7 @@ import { Row } from './row'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import { Ref } from './ref'
+import { isRecommendedFeatureBranchName } from '../../lib/hotflow/branch-patterns'
 
 export function renderBranchHasRemoteWarning(branch: Branch) {
   if (branch.upstream != null) {
@@ -26,12 +27,14 @@ export function renderBranchHasRemoteWarning(branch: Branch) {
  * Recommended branch naming convention: `feature/{vso number}-{description}`
  * e.g. `feature/12345-fix-login-redirect`.
  *
+ * The pattern itself lives in `lib/hotflow/branch-patterns` so this warning and
+ * HotFlow's own branch detection can never disagree about what a feature branch
+ * looks like.
+ *
  * This is only a warning and is not enforced.
  */
-const branchNameFormatRegex = /^feature\/\d+-[a-z0-9]+(?:-[a-z0-9]+)*$/
-
 export function renderBranchNameFormatWarning(branchName: string) {
-  if (branchName.length === 0 || branchNameFormatRegex.test(branchName)) {
+  if (branchName.length === 0 || isRecommendedFeatureBranchName(branchName)) {
     return null
   }
 

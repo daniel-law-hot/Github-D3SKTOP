@@ -22,6 +22,7 @@ import {
   IPullRequestState,
 } from '../app-state'
 import { merge } from '../merge'
+import { IHotFlowState, defaultHotFlowState } from '../../models/hotflow'
 import { DefaultCommitMessage } from '../../models/commit-message'
 import { sendNonFatalException } from '../helpers/non-fatal-exception'
 import { IStatsStore } from '../stats'
@@ -92,6 +93,18 @@ export class RepositoryStateCache {
       const newValues = fn(graphState)
 
       return { graphState: merge(graphState, newValues) }
+    })
+  }
+
+  public updateHotFlowState<K extends keyof IHotFlowState>(
+    repository: Repository,
+    fn: (state: IHotFlowState) => Pick<IHotFlowState, K>
+  ) {
+    this.update(repository, state => {
+      const hotFlowState = state.hotFlowState
+      const newValues = fn(hotFlowState)
+
+      return { hotFlowState: merge(hotFlowState, newValues) }
     })
   }
 
@@ -358,6 +371,7 @@ function getInitialRepositoryState(): IRepositoryState {
       errorMessage: null,
       selectedBranchName: null,
     },
+    hotFlowState: defaultHotFlowState,
     compareState: {
       formState: {
         kind: HistoryTabMode.History,

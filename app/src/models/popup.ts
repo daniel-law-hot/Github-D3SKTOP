@@ -111,6 +111,13 @@ export enum PopupType {
   EditCopilotBYOKProvider = 'EditCopilotBYOKProvider',
   EditCopilotBYOKModel = 'EditCopilotBYOKModel',
   ConfirmDeleteCopilotBYOKProvider = 'ConfirmDeleteCopilotBYOKProvider',
+  HotFlowStartFeature = 'HotFlowStartFeature',
+  HotFlowStartRelease = 'HotFlowStartRelease',
+  HotFlowUpdateRelease = 'HotFlowUpdateRelease',
+  HotFlowFinishRelease = 'HotFlowFinishRelease',
+  HotFlowConnectAdo = 'HotFlowConnectAdo',
+  HotFlowEditCycle = 'HotFlowEditCycle',
+  HotFlowEditBranches = 'HotFlowEditBranches',
 }
 
 interface IBasePopup {
@@ -161,6 +168,36 @@ export type PopupDetail =
   | {
       type: PopupType.ConfirmDeleteCopilotBYOKProvider
       provider: IBYOKProvider
+    }
+  | {
+      type: PopupType.HotFlowStartFeature
+      repository: Repository
+    }
+  | {
+      type: PopupType.HotFlowStartRelease
+      repository: Repository
+    }
+  | {
+      type: PopupType.HotFlowUpdateRelease
+      repository: Repository
+    }
+  | {
+      type: PopupType.HotFlowFinishRelease
+      repository: Repository
+    }
+  | {
+      type: PopupType.HotFlowConnectAdo
+      repository: Repository
+    }
+  | {
+      type: PopupType.HotFlowEditBranches
+      repository: Repository
+    }
+  | {
+      type: PopupType.HotFlowEditCycle
+      repository: Repository
+      branchName: string
+      currentTag: string | null
     }
   | {
       type: PopupType.RepositorySettings
