@@ -161,10 +161,25 @@ describe('hotflow/branch-patterns', () => {
       assert.deepStrictEqual(extractVsoNumbers('Fixes AB#100712'), [100712])
     })
 
-    it('reads written-out VSO references', () => {
-      assert.deepStrictEqual(extractVsoNumbers('VSO 100712'), [100712])
-      assert.deepStrictEqual(extractVsoNumbers('VSO-100712'), [100712])
-      assert.deepStrictEqual(extractVsoNumbers('vso #100712'), [100712])
+    it('ignores written-out VSO references', () => {
+      // These used to count. They don't, because prose discusses other people's
+      // work items and "someone typed VSO near a number" is not a claim about this
+      // commit. See the note on `vsoPatterns`.
+      assert.deepStrictEqual(extractVsoNumbers('VSO 100712'), [])
+      assert.deepStrictEqual(extractVsoNumbers('VSO-100712'), [])
+      assert.deepStrictEqual(extractVsoNumbers('vso #100712'), [])
+    })
+
+    it('ignores a work item another repository owns, mentioned in passing', () => {
+      // Verbatim from a ContentOrchestration commit in release/1.2026.17. The
+      // sentence points at NimbleObt, and 105730 still showed up in
+      // ContentOrchestration's release — the `[\s-]?` matched the wrapped newline.
+      const body =
+        'CountryDescription null on locations (e.g. Australia on trans-tasman\n' +
+        'flights - the root cause behind the display fallbacks added for VSO\n' +
+        '105730 in NimbleObt).'
+
+      assert.deepStrictEqual(extractVsoNumbers(body), [])
     })
 
     it('ignores bare numbers', () => {
@@ -176,7 +191,7 @@ describe('hotflow/branch-patterns', () => {
     })
 
     it('deduplicates repeated references', () => {
-      const text = 'feature/100712-fix-login and AB#100712 and VSO 100712'
+      const text = 'feature/100712-fix-login and AB#100712'
 
       assert.deepStrictEqual(extractVsoNumbers(text), [100712])
     })

@@ -85,10 +85,22 @@ export function isReleaseBranchName(name: string): boolean {
 /**
  * Patterns that identify a VSO (Azure DevOps work item) reference.
  *
- * Deliberately conservative: a bare five-or-six digit number is NOT treated as
- * a VSO, because PR numbers, dates, and ticket-like strings in commit messages
- * would produce false positives and quietly inflate "what's in this release".
- * Every pattern here requires explicit context.
+ * Deliberately conservative: a bare five-or-six digit number is NOT treated as a
+ * VSO, because PR numbers, dates, and ticket-like strings in commit messages would
+ * produce false positives and quietly inflate "what's in this release". Every
+ * pattern here requires explicit context.
+ *
+ * Both surviving patterns mean something beyond a number being present. A feature
+ * branch name is structural — it's how the merge got its subject. `AB#` is Azure
+ * DevOps' own linking syntax, so writing it *is* the act of linking.
+ *
+ * A third pattern, `/VSO[\s-]?#?(\d+)/`, used to cover the hand-written form
+ * (`VSO 100712`, `vso #100712`). It's gone, because "someone typed VSO near a
+ * number" isn't a claim about this commit — prose discusses other people's work
+ * items. A ContentOrchestration commit explaining a root cause ended with "…the
+ * display fallbacks added for VSO 105730 in NimbleObt", and 105730 duly appeared in
+ * ContentOrchestration's release, attributed to a repository the sentence was
+ * pointing away from. The `[\s-]?` even matched the newline the line had wrapped on.
  */
 const vsoPatterns: ReadonlyArray<RegExp> = [
   // A merged feature branch name, as it appears in merge and squash commits:
@@ -98,9 +110,6 @@ const vsoPatterns: ReadonlyArray<RegExp> = [
 
   // Azure DevOps' own git linking convention.
   /AB#(\d+)/gi,
-
-  // Written out by hand, e.g. `VSO 100712`, `VSO-100712`, `vso #100712`.
-  /VSO[\s-]?#?(\d+)/gi,
 ]
 
 /**
