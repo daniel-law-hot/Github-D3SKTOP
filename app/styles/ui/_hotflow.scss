@@ -1120,7 +1120,7 @@ body.theme-dark {
   }
 }
 
-.hotflow-cycle {
+.hotflow-sequence {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1128,27 +1128,24 @@ body.theme-dark {
   flex-wrap: wrap;
 }
 
-.hotflow-cycle-unverified {
+// The number reads as data first and a control second, so it keeps the tabular
+// figures the rest of the panel uses rather than taking the link font wholesale.
+.hotflow-sequence-value {
+  font-variant-numeric: tabular-nums;
+}
+
+// Marks a number someone typed, so an unexpected one has a visible reason.
+.hotflow-sequence-edited {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  color: var(--hotflow-warn-color);
-  background: var(--hotflow-warn-background);
-  border: 1px solid var(--hotflow-warn-line);
+  color: var(--text-secondary-color);
+  background: var(--box-alt-background-color);
+  border: 1px solid var(--box-border-color);
   border-radius: 3px;
   padding: 1px 4px;
 }
 
-.hotflow-cycle-confirmed {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--hotflow-ok-color);
-  white-space: nowrap;
-}
-
-.hotflow-cycle-unknown {
+.hotflow-sequence-unknown {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1307,7 +1304,7 @@ body.theme-dark {
 #hotflow-finish-release,
 #hotflow-connect-ado,
 #hotflow-merge-pull-request,
-#hotflow-edit-cycle {
+#hotflow-edit-release-sequence {
   width: 512px;
 
   .dialog-content > * + * {
@@ -1616,10 +1613,4 @@ body.theme-dark {
   &.ok {
     color: var(--hotflow-ok-color);
   }
-}
-
-.hotflow-cycle-fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing);
 }

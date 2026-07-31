@@ -1,16 +1,17 @@
 import { Repository } from '../../models/repository'
 import { IHotFlowBranchOverride } from '../../models/hotflow'
 import { getObject, setObject } from '../local-storage'
-import { parseCycleTag } from './cycle'
+import { parseReleaseSequence } from './release-sequence'
 
 /**
  * Per-repository HotFlow settings.
  *
  * Two kinds of thing live here, both of which are corrections to a guess:
  *
- *  - **Confirmed release cycles.** HotFlow infers the Azure DevOps cycle from the
- *    trailing segment of a release version, but that convention varies by repo,
- *    so the inference has to be confirmable and the confirmation has to stick.
+ *  - **Release sequence overrides.** HotFlow derives the Azure DevOps release
+ *    sequence number from the version — `1.2026.17` gives 202617 — which is right
+ *    wherever the version's cycle segment is the calendar cycle. A repository that
+ *    numbers releases independently needs a way to say so.
  *  - **Branch overrides.** Integration and production branches are resolved from
  *    a list of known aliases, which covers every repository surveyed — but a
  *    deviant repo needs a way to say so without a code change.
@@ -24,8 +25,14 @@ import { parseCycleTag } from './cycle'
 const storageKeyPrefix = 'hotflow-settings'
 
 interface IStoredSettings {
-  /** Release branch name -> ADO cycle tag. */
-  readonly cycles?: Record<string, string>
+  /**
+   * Release branch name -> release sequence number.
+   *
+   * Still called `cycles` so values written by the old confirm-the-cycle step
+   * carry over. They held the same six-digit number as a string, and the reader
+   * below accepts both — renaming the key would have thrown them away for nothing.
+   */
+  readonly cycles?: Record<string, string | number>
   readonly integrationBranch?: string
   readonly productionBranch?: string
 
@@ -45,56 +52,75 @@ function write(repository: Repository, settings: IStoredSettings): void {
   setObject(storageKey(repository), settings)
 }
 
-// ── release cycles ───────────────────────────────────────────────────
+// ── release sequence overrides ────────────────────────────────────────────────
 
 /**
- * Reads the confirmed cycle tags for a repository.
+ * Reads the release sequence overrides for a repository.
  *
- * Entries which no longer parse as a cycle tag are dropped rather than trusted —
- * a corrupt or hand-edited value shouldn't drive reconciliation.
+ * Accepts numbers and the strings the old confirm-the-cycle step wrote, so those
+ * values keep working. Entries that don't parse as a sequence number are dropped
+ * rather than trusted — a corrupt or hand-edited value shouldn't drive
+ * reconciliation.
  */
-export function getConfirmedReleaseCycles(
+export function getReleaseSequenceOverrides(
   repository: Repository
-): ReadonlyMap<string, string> {
-  const cycles = read(repository).cycles
+): ReadonlyMap<string, number> {
+  const stored = read(repository).cycles
 
-  if (cycles === undefined) {
-    return new Map<string, string>()
+  if (stored === undefined) {
+    return new Map<string, number>()
   }
 
-  return new Map(
-    Object.entries(cycles).filter(
-      ([branch, tag]) =>
-        typeof branch === 'string' &&
-        typeof tag === 'string' &&
-        parseCycleTag(tag) !== null
-    )
-  )
+  const overrides = new Map<string, number>()
+
+  for (const [branch, value] of Object.entries(stored)) {
+    if (typeof branch !== 'string' || branch.length === 0) {
+      continue
+    }
+
+    const parsed = parseReleaseSequence(value)
+
+    if (parsed !== null) {
+      overrides.set(branch, formatSequence(parsed))
+    }
+  }
+
+  return overrides
+}
+
+function formatSequence({
+  year,
+  cycle,
+}: {
+  year: number
+  cycle: number
+}): number {
+  return year * 100 + cycle
 }
 
 /**
- * Records the confirmed cycle tag for a release branch. Returns false without
- * storing anything when the tag isn't a valid `{year}{cycle:00}` value.
+ * Records a release sequence override for a branch. Returns false without storing
+ * anything when the value isn't a plausible `{year}{cycle:00}` number.
  */
-export function setConfirmedReleaseCycle(
+export function setReleaseSequenceOverride(
   repository: Repository,
   branchName: string,
-  cycleTag: string
+  releaseSequence: number
 ): boolean {
-  if (parseCycleTag(cycleTag) === null) {
+  if (parseReleaseSequence(releaseSequence) === null) {
     return false
   }
 
   const settings = read(repository)
-  const cycles = { ...(settings.cycles ?? {}), [branchName]: cycleTag }
+  const cycles = { ...(settings.cycles ?? {}), [branchName]: releaseSequence }
 
   write(repository, { ...settings, cycles })
 
   return true
 }
 
-/** Forgets the confirmed cycle for a branch, reverting it to a guess. */
-export function clearConfirmedReleaseCycle(
+/** Forgets the override for a branch, returning it to the derived number. */
+export function clearReleaseSequenceOverride(
   repository: Repository,
   branchName: string
 ): void {

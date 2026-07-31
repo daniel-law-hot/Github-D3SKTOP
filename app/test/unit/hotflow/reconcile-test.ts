@@ -28,7 +28,7 @@ const details = new Map<number, IWorkItem>([
 describe('hotflow/reconcile', () => {
   describe('reconcileWorkItems', () => {
     it('classifies all three cases', () => {
-      const result = reconcileWorkItems([1, 3], [1, 2], details, false)
+      const result = reconcileWorkItems([1, 3], [1, 2], details)
 
       assert.strictEqual(result.inReleaseTaggedCount, 1)
       assert.strictEqual(result.missingCount, 1)
@@ -42,13 +42,13 @@ describe('hotflow/reconcile', () => {
 
     it('surfaces missing items first', () => {
       // Missing items are the reason the panel exists; they must not be buried.
-      const result = reconcileWorkItems([1, 3], [1, 2], details, false)
+      const result = reconcileWorkItems([1, 3], [1, 2], details)
 
       assert.strictEqual(result.items[0].presence, 'missing-from-release')
     })
 
     it('orders stably within a group', () => {
-      const result = reconcileWorkItems([5, 1, 3], [], new Map(), false)
+      const result = reconcileWorkItems([5, 1, 3], [], new Map())
 
       assert.deepStrictEqual(
         result.items.map(i => i.id),
@@ -57,47 +57,49 @@ describe('hotflow/reconcile', () => {
     })
 
     it('attaches detail when available and tolerates its absence', () => {
-      const result = reconcileWorkItems([1, 99], [], details, false)
+      const result = reconcileWorkItems([1, 99], [], details)
 
       const byId = new Map(result.items.map(i => [i.id, i.workItem]))
       assert.strictEqual(byId.get(1)?.title, 'In release and tagged')
       assert.strictEqual(byId.get(99), null)
     })
 
-    it('carries the provisional flag through', () => {
+    it('flags an empty assigned set, since every count is then trivially zero', () => {
+      // Otherwise this reads identically to a release with nothing outstanding,
+      // and a derived sequence number makes a wrong number the likelier reading.
       assert.strictEqual(
-        reconcileWorkItems([1], [1], details, true).provisional,
+        reconcileWorkItems([1, 3], [], details).noSequenceMatches,
         true
       )
       assert.strictEqual(
-        reconcileWorkItems([1], [1], details, false).provisional,
+        reconcileWorkItems([1], [1], details).noSequenceMatches,
         false
       )
     })
 
-    it('reports nothing missing when the release covers the cycle', () => {
-      const result = reconcileWorkItems([1, 2], [1, 2], details, false)
+    it('reports nothing missing when the release covers everything assigned', () => {
+      const result = reconcileWorkItems([1, 2], [1, 2], details)
 
       assert.strictEqual(result.missingCount, 0)
       assert.strictEqual(result.inReleaseTaggedCount, 2)
     })
 
     it('deduplicates repeated ids', () => {
-      const result = reconcileWorkItems([1, 1, 1], [1], details, false)
+      const result = reconcileWorkItems([1, 1, 1], [1], details)
 
       assert.strictEqual(result.items.length, 1)
       assert.strictEqual(result.inReleaseTaggedCount, 1)
     })
 
     it('handles both sides being empty', () => {
-      const result = reconcileWorkItems([], [], new Map(), false)
+      const result = reconcileWorkItems([], [], new Map())
 
       assert.deepStrictEqual(result.items, [])
       assert.strictEqual(result.missingCount, 0)
     })
 
-    it('reports every tagged item as missing when the release is empty', () => {
-      const result = reconcileWorkItems([], [1, 2], details, false)
+    it('reports every assigned item as missing when the release is empty', () => {
+      const result = reconcileWorkItems([], [1, 2], details)
 
       assert.strictEqual(result.missingCount, 2)
       assert.strictEqual(result.inReleaseTaggedCount, 0)
@@ -116,9 +118,9 @@ describe('hotflow/reconcile', () => {
       assert.strictEqual(result.missingCount, 0)
     })
 
-    it('is never provisional', () => {
-      // Without ADO there is no cycle claim to be provisional about.
-      assert.strictEqual(gitOnlyReconciliation([1]).provisional, false)
+    it('makes no claim about the sequence', () => {
+      // Without ADO there was no sequence query to have matched nothing.
+      assert.strictEqual(gitOnlyReconciliation([1]).noSequenceMatches, false)
     })
 
     it('carries no work item detail', () => {

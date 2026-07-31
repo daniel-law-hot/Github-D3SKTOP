@@ -21,7 +21,7 @@ interface IReleaseContentsProps {
   readonly selectedTab: ReleaseContentsTab
   readonly onTabChanged: (tab: ReleaseContentsTab) => void
   readonly onConnectAdo: () => void
-  readonly onConfirmCycle: () => void
+  readonly onEditReleaseSequence: () => void
 
   /** The resolved integration branch name, for copy. */
   readonly integrationBranchName: string
@@ -97,10 +97,17 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
     this.props.onTabChanged(tab)
   }
 
+  /** The sequence number the reconciliation queried, for the banner copy. */
+  private get releaseSequenceLabel(): string {
+    return (
+      this.props.release.releaseSequence?.value.toString() ?? 'this release'
+    )
+  }
+
   /**
    * The banner above the list, which is where HotFlow is honest about how much it
-   * actually knows: whether Azure DevOps answered, and whether the cycle backing
-   * the reconciliation has been confirmed.
+   * actually knows: whether Azure DevOps answered, and whether the sequence number
+   * it queried matched anything at all.
    */
   private renderBanner() {
     const { ado, reconciliation, selectedTab } = this.props
@@ -148,16 +155,22 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
       )
     }
 
-    if (reconciliation.provisional) {
+    // Nothing matched the sequence number, so "no work items missing" below would
+    // be true and useless. The sequence is derived from the version, so the
+    // likelier reading is that the number is wrong.
+    if (reconciliation.noSequenceMatches) {
       return (
         <div className="hotflow-banner warn">
           <Octicon symbol={octicons.alert} />
           <span>
-            <strong>Provisional.</strong> The cycle was guessed from the version
-            number, so this list may be incomplete. Confirm the cycle to be
-            sure.
+            No work items are assigned to{' '}
+            <span className="num">{this.releaseSequenceLabel}</span> in this
+            repository, so nothing can be reconciled against it. Check the
+            number if you expected some.
           </span>
-          <Button onClick={this.props.onConfirmCycle}>Confirm cycle</Button>
+          <Button onClick={this.props.onEditReleaseSequence}>
+            Change number
+          </Button>
         </div>
       )
     }

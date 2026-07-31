@@ -116,7 +116,7 @@ export enum PopupType {
   HotFlowUpdateRelease = 'HotFlowUpdateRelease',
   HotFlowFinishRelease = 'HotFlowFinishRelease',
   HotFlowConnectAdo = 'HotFlowConnectAdo',
-  HotFlowEditCycle = 'HotFlowEditCycle',
+  HotFlowEditReleaseSequence = 'HotFlowEditReleaseSequence',
   HotFlowEditBranches = 'HotFlowEditBranches',
   HotFlowMergePullRequest = 'HotFlowMergePullRequest',
 }
@@ -205,10 +205,15 @@ export type PopupDetail =
       pullRequestUrl: string | null
     }
   | {
-      type: PopupType.HotFlowEditCycle
+      type: PopupType.HotFlowEditReleaseSequence
       repository: Repository
       branchName: string
-      currentTag: string | null
+
+      /** The number in effect now, derived or overridden. Seeds the form. */
+      currentSequence: number | null
+
+      /** What the version gives, so the dialog can offer to go back to it. */
+      derivedSequence: number | null
     }
   | {
       type: PopupType.RepositorySettings

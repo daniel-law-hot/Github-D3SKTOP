@@ -68,32 +68,37 @@ export interface IReleaseVersion {
   readonly year: number | null
 
   /**
-   * The segment that plausibly identifies the release cycle — the one straight
-   * after the year, so a hotfix version like `1.2026.16.1` still reports 16.
+   * The segment holding the cycle number — the one straight after the year, so a
+   * hotfix version like `1.2026.16.1` still reports 16.
    *
-   * This is HotFlow's *guess* at the cycle number and is never treated as
-   * authoritative; see `guessCycle`.
+   * Combined with the year this gives the release sequence number; see
+   * `deriveReleaseSequence`.
    */
   readonly cycleSegment: number | null
 }
 
-/** How confident HotFlow is about which ADO cycle a release belongs to. */
-export interface IReleaseCycle {
-  /** The ADO tag, e.g. `202609`. */
-  readonly tag: string
-
-  /** The cycle number on its own, e.g. 9. */
-  readonly cycle: number
-
-  /** The year, e.g. 2026. */
-  readonly year: number
+/**
+ * The Azure DevOps release sequence number a release branch maps to.
+ *
+ * Derived from the version by concatenating the year and the cycle segment:
+ * `1.2026.17` gives 202617, which is what the work items' "Release sequence
+ * number" field holds. That derivation is right wherever the version's cycle
+ * segment is the calendar cycle, which is the convention across House of Travel —
+ * but nothing in git can confirm it, so the number is shown plainly and can be
+ * changed by clicking it.
+ */
+export interface IReleaseSequence {
+  /** The value, e.g. 202617. */
+  readonly value: number
 
   /**
-   * False when the tag was inferred from the version number and the user hasn't
-   * confirmed it. Reconciliation results derived from an unconfirmed cycle are
-   * presented as provisional.
+   * True when this came from the user rather than from the version.
+   *
+   * Only ever set when the stored value actually differs from what the version
+   * gives — re-stating the derived number isn't an override, and shouldn't read
+   * as one.
    */
-  readonly confirmed: boolean
+  readonly isOverridden: boolean
 }
 
 /** Where a release branch sits in the flow. */
@@ -178,17 +183,23 @@ export interface IReconciliation {
   readonly untaggedCount: number
 
   /**
-   * True when the cycle backing this reconciliation is unconfirmed, meaning
-   * `missingCount` can't be trusted.
+   * True when Azure DevOps returned no work items for the release sequence.
+   *
+   * Every count here is then trivially zero, which looks identical to a release
+   * with nothing outstanding. Since the sequence number is derived from the
+   * version, the likelier explanation is that the derivation is wrong — so this
+   * says so rather than reporting a clean bill of health.
    */
-  readonly provisional: boolean
+  readonly noSequenceMatches: boolean
 }
 
 /** Everything HotFlow knows about one release branch. */
 export interface IReleaseBranchState {
   readonly branch: Branch
   readonly version: IReleaseVersion
-  readonly cycle: IReleaseCycle | null
+
+  /** The ADO release sequence number, derived from the version or overridden. */
+  readonly releaseSequence: IReleaseSequence | null
 
   /** Commits in `production..release` — what this release would ship. */
   readonly commits: ReadonlyArray<Commit>
@@ -243,8 +254,11 @@ export interface IAdoState {
   /** Work item detail, keyed by id. Empty unless status is `ok`. */
   readonly workItems: ReadonlyMap<number, IWorkItem>
 
-  /** VSO ids tagged with the current release's cycle tag. */
-  readonly cycleTaggedIds: ReadonlyArray<number>
+  /**
+   * Work item ids assigned to the current release's sequence number, narrowed to
+   * this repository — see `work-item-scope.ts`.
+   */
+  readonly sequenceAssignedIds: ReadonlyArray<number>
 
   readonly errorMessage: string | null
 }
@@ -311,7 +325,7 @@ export const defaultAdoState: IAdoState = {
   status: 'unconfigured',
   authMethod: null,
   workItems: new Map<number, IWorkItem>(),
-  cycleTaggedIds: [],
+  sequenceAssignedIds: [],
   errorMessage: null,
 }
 

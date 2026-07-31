@@ -1,4 +1,5 @@
 import { IWorkItem } from '../../models/hotflow'
+import { parseReleaseSequence } from './release-sequence'
 import {
   AdoCredential,
   getAuthorizationHeader,
@@ -51,7 +52,7 @@ interface ICacheEntry<T> {
   readonly storedAt: number
 }
 
-const cycleIdCache = new Map<string, ICacheEntry<ReadonlyArray<number>>>()
+const sequenceIdCache = new Map<string, ICacheEntry<ReadonlyArray<number>>>()
 const workItemCache = new Map<number, ICacheEntry<IWorkItem>>()
 
 function isFresh<T>(
@@ -62,7 +63,7 @@ function isFresh<T>(
 
 /** Drops every cached response, so the next read hits the network. */
 export function clearAdoCache(): void {
-  cycleIdCache.clear()
+  sequenceIdCache.clear()
   workItemCache.clear()
 }
 
@@ -156,11 +157,11 @@ const ReleaseSequenceField = 'Custom.Releasesequencenumber'
  */
 export async function getWorkItemIdsForReleaseSequence(
   config: IAdoConfig,
-  releaseSequence: string,
+  releaseSequence: number,
   credential: AdoCredential
 ): Promise<ReadonlyArray<number>> {
   // Interpolated into WIQL, so restrict it to exactly the shape expected.
-  if (!/^\d{6}$/.test(releaseSequence.trim())) {
+  if (parseReleaseSequence(releaseSequence) === null) {
     throw new AdoError(
       `Invalid release sequence number: ${releaseSequence}`,
       null,
@@ -168,9 +169,9 @@ export async function getWorkItemIdsForReleaseSequence(
     )
   }
 
-  const sequence = releaseSequence.trim()
+  const sequence = releaseSequence
   const cacheKey = `${config.organisation}/${config.project}/${sequence}`
-  const cached = cycleIdCache.get(cacheKey)
+  const cached = sequenceIdCache.get(cacheKey)
 
   if (isFresh(cached)) {
     return cached.value
@@ -190,7 +191,7 @@ export async function getWorkItemIdsForReleaseSequence(
 
   const ids = (response.workItems ?? []).map(w => w.id)
 
-  cycleIdCache.set(cacheKey, { value: ids, storedAt: Date.now() })
+  sequenceIdCache.set(cacheKey, { value: ids, storedAt: Date.now() })
 
   return ids
 }

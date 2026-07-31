@@ -294,17 +294,6 @@ export async function preflightFinishRelease(
     })
   }
 
-  if (release.cycle !== null && !release.cycle.confirmed) {
-    checks.push({
-      id: 'cycle-unconfirmed',
-      label: 'Cycle is unconfirmed',
-      status: 'warn',
-      detail:
-        'The cycle was guessed from the version number, so the work item list may be incomplete.',
-      blocking: false,
-    })
-  }
-
   return summarise(checks)
 }
 

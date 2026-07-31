@@ -348,18 +348,22 @@ export class Dispatcher {
   }
 
   /**
-   * Confirm which Azure DevOps cycle a release branch belongs to.
+   * Override the Azure DevOps release sequence number for a release branch.
    *
-   * HotFlow guesses this from the version number, but the convention varies by
-   * repo — confirming it here makes the reconciliation authoritative rather than
-   * provisional.
+   * HotFlow derives this from the version — `1.2026.17` gives 202617 — which holds
+   * wherever the version's cycle segment is the calendar cycle. This is the way
+   * out for a repository that numbers its releases differently.
    */
-  public setReleaseCycle(
+  public setReleaseSequence(
     repository: Repository,
     branchName: string,
-    cycleTag: string
+    releaseSequence: number
   ): Promise<void> {
-    return this.appStore._setReleaseCycle(repository, branchName, cycleTag)
+    return this.appStore._setReleaseSequence(
+      repository,
+      branchName,
+      releaseSequence
+    )
   }
 
   /**

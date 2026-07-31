@@ -14,8 +14,7 @@ interface IReleaseSummaryProps {
   readonly hotFlowState: IHotFlowState
   readonly release: IReleaseBranchState
   readonly missingWorkItemCount: number
-  readonly onEditCycle: () => void
-  readonly onConfirmCycle: () => void
+  readonly onEditReleaseSequence: () => void
   readonly onViewRelease: (release: IReleaseBranchState) => void
   readonly onEditBranches: () => void
 }
@@ -56,17 +55,10 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
           <dt>Version</dt>
           <dd className="mono">{release.version.raw}</dd>
 
-          <dt>Cycle</dt>
-          <dd>{this.renderCycle()}</dd>
-
-          {release.cycle !== null && (
-            <>
-              {/* The Azure DevOps field this is matched against, named as it
-                  appears in a work item's Details. */}
-              <dt>Release sequence</dt>
-              <dd className="mono">{release.cycle.tag}</dd>
-            </>
-          )}
+          {/* Named as it appears in a work item's Details, because that's where
+              you'd go to check it. Clicking it is how you change it. */}
+          <dt>Release sequence</dt>
+          <dd>{this.renderReleaseSequence()}</dd>
 
           <dt>Branch</dt>
           <dd className="mono">{release.branch.nameWithoutRemote}</dd>
@@ -132,40 +124,39 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
   }
 
   /**
-   * The cycle, and whether we actually know it.
+   * The release sequence number, as a link that opens the editor.
    *
-   * An unconfirmed cycle is a guess read off the version number, and the version
-   * convention varies by repo — so it's shown as unverified with a one-click
-   * confirm rather than presented as fact.
+   * Derived from the version, so it's shown as a plain fact you can click rather
+   * than a guess awaiting confirmation — the number being on screen is the
+   * disclosure, and it's right wherever the version's cycle segment is the
+   * calendar cycle. `edited` marks the case where someone has changed it, so an
+   * unexpected number has a visible reason.
    */
-  private renderCycle() {
+  private renderReleaseSequence() {
     const { release } = this.props
 
-    if (release.cycle === null) {
+    if (release.releaseSequence === null) {
       return (
-        <span className="hotflow-cycle-unknown">
-          unknown <LinkButton onClick={this.props.onEditCycle}>Set</LinkButton>
-        </span>
-      )
-    }
-
-    if (release.cycle.confirmed) {
-      return (
-        <span className="hotflow-cycle">
-          {release.cycle.cycle}
-          <span className="hotflow-cycle-confirmed">
-            <Octicon className="ok" symbol={octicons.checkCircle} /> confirmed
-          </span>
+        <span className="hotflow-sequence-unknown">
+          unknown{' '}
+          <LinkButton onClick={this.props.onEditReleaseSequence}>
+            Set
+          </LinkButton>
         </span>
       )
     }
 
     return (
-      <span className="hotflow-cycle">
-        {release.cycle.cycle}
-        <span className="hotflow-cycle-unverified">unverified</span>
-        <LinkButton onClick={this.props.onConfirmCycle}>Confirm</LinkButton>
-        <LinkButton onClick={this.props.onEditCycle}>Edit</LinkButton>
+      <span className="hotflow-sequence">
+        <LinkButton
+          className="hotflow-sequence-value num"
+          onClick={this.props.onEditReleaseSequence}
+        >
+          {release.releaseSequence.value}
+        </LinkButton>
+        {release.releaseSequence.isOverridden && (
+          <span className="hotflow-sequence-edited">edited</span>
+        )}
       </span>
     )
   }

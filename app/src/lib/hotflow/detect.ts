@@ -33,7 +33,7 @@ import {
   parseFeatureBranchName,
   parseReleaseBranchName,
 } from './branch-patterns'
-import { resolveCycle } from './cycle'
+import { resolveReleaseSequence } from './release-sequence'
 import {
   compareReleaseVersions,
   parseReleaseVersion,
@@ -58,7 +58,7 @@ const ReleaseHistoryLimit = 12
  */
 export async function detectHotFlowState(
   repository: Repository,
-  confirmedCycles: ReadonlyMap<string, string> | undefined,
+  sequenceOverrides: ReadonlyMap<string, number> | undefined,
   branchOverride: IHotFlowBranchOverride = {}
 ): Promise<IHotFlowState> {
   const branches = await getBranches(repository)
@@ -144,7 +144,7 @@ export async function detectHotFlowState(
           currentCandidate,
           integrationRef,
           productionRef,
-          confirmedCycles
+          sequenceOverrides
         )
 
   // Other open releases get the same treatment but without loading their commit
@@ -156,7 +156,7 @@ export async function detectHotFlowState(
         c,
         integrationRef,
         productionRef,
-        confirmedCycles,
+        sequenceOverrides,
         false
       )
     )
@@ -350,7 +350,7 @@ async function buildReleaseState(
   candidate: IReleaseCandidate,
   integrationRef: string,
   productionRef: string,
-  confirmedCycles: ReadonlyMap<string, string> | undefined,
+  sequenceOverrides: ReadonlyMap<string, number> | undefined,
   loadCommits: boolean = true
 ): Promise<IReleaseBranchState> {
   const releaseRef = candidate.branch.name
@@ -377,10 +377,10 @@ async function buildReleaseState(
   return {
     branch: candidate.branch,
     version: candidate.version,
-    cycle: resolveCycle(
+    releaseSequence: resolveReleaseSequence(
       candidate.branch.nameWithoutRemote,
       candidate.version,
-      confirmedCycles
+      sequenceOverrides
     ),
     commits,
     releaseOnlyCommits,

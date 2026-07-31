@@ -10,7 +10,8 @@ import {
  * Three-way reconciliation between git and Azure DevOps.
  *
  * - A = VSOs found in `main..release` (git truth: what is actually there)
- * - B = VSOs tagged with the release's cycle tag in ADO (intent: what was planned)
+ * - B = work items assigned to the release's sequence number in ADO, narrowed to
+ *       this repository (intent: what was planned)
  *
  * The interesting set is B \ A — planned but not merged. That's the failure mode
  * no amount of staring at a commit graph will surface, and it's the reason the
@@ -18,12 +19,11 @@ import {
  */
 export function reconcileWorkItems(
   inRelease: ReadonlyArray<number>,
-  cycleTagged: ReadonlyArray<number>,
-  workItems: ReadonlyMap<number, IWorkItem>,
-  provisional: boolean
+  sequenceAssigned: ReadonlyArray<number>,
+  workItems: ReadonlyMap<number, IWorkItem>
 ): IReconciliation {
   const releaseSet = new Set(inRelease)
-  const taggedSet = new Set(cycleTagged)
+  const taggedSet = new Set(sequenceAssigned)
 
   const items: Array<IReconciledWorkItem> = []
 
@@ -31,7 +31,7 @@ export function reconcileWorkItems(
   let missingCount = 0
   let untaggedCount = 0
 
-  // Everything in the release, split by whether it was planned for this cycle.
+  // Everything in the release, split by whether it was planned for this release.
   for (const id of releaseSet) {
     const presence = taggedSet.has(id)
       ? 'in-release-tagged'
@@ -46,7 +46,7 @@ export function reconcileWorkItems(
     items.push({ id, presence, workItem: workItems.get(id) ?? null })
   }
 
-  // Planned for the cycle but absent from the release.
+  // Assigned to the release but absent from it.
   for (const id of taggedSet) {
     if (releaseSet.has(id)) {
       continue
@@ -65,7 +65,10 @@ export function reconcileWorkItems(
     inReleaseTaggedCount,
     missingCount,
     untaggedCount,
-    provisional,
+
+    // Nothing came back for the sequence, so every count above is trivially zero
+    // rather than genuinely clean.
+    noSequenceMatches: sequenceAssigned.length === 0,
   }
 }
 
@@ -105,14 +108,13 @@ export function reconcileRelease(
 
   return reconcileWorkItems(
     release.vsoNumbers,
-    ado.cycleTaggedIds,
-    ado.workItems,
-    release.cycle === null || !release.cycle.confirmed
+    ado.sequenceAssignedIds,
+    ado.workItems
   )
 }
 
 /**
- * How many work items are tagged for the cycle but absent from the release — the
+ * How many work items are assigned to the release but absent from it — the
  * number that decides whether a release is really ready to ship.
  */
 export function getMissingWorkItemCount(hotFlowState: IHotFlowState): number {
@@ -144,6 +146,8 @@ export function gitOnlyReconciliation(
     inReleaseTaggedCount: inRelease.length,
     missingCount: 0,
     untaggedCount: 0,
-    provisional: false,
+
+    // Nothing to compare against, so this isn't a claim about the sequence.
+    noSequenceMatches: false,
   }
 }

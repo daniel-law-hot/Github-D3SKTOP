@@ -408,8 +408,8 @@ import {
   IReleaseBranchState,
 } from '../../models/hotflow'
 import {
-  getConfirmedReleaseCycles,
-  setConfirmedReleaseCycle,
+  getReleaseSequenceOverrides,
+  setReleaseSequenceOverride,
   getBranchOverride,
   setBranchOverride,
   setMergeMethod,
@@ -4141,10 +4141,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
         log.warn('[AppStore] HotFlow could not refresh pull requests', e)
       )
 
-      const confirmedCycles = getConfirmedReleaseCycles(repository)
+      const sequenceOverrides = getReleaseSequenceOverrides(repository)
       const detected = await detectHotFlowState(
         repository,
-        confirmedCycles,
+        sequenceOverrides,
         getBranchOverride(repository)
       )
 
@@ -4214,38 +4214,38 @@ export class AppStore extends TypedBaseStore<IAppState> {
       // Work items assigned to this release, if we know which release it is.
       // Read from the "Release sequence number" field rather than tags — see
       // getWorkItemIdsForReleaseSequence for why.
-      const cycleTaggedIds =
-        release.cycle === null
+      const sequenceAssignedIds =
+        release.releaseSequence === null
           ? []
           : await getWorkItemIdsForReleaseSequence(
               defaultAdoConfig,
-              release.cycle.tag,
+              release.releaseSequence.value,
               credential
             )
 
       // Detail for everything on either side of the reconciliation.
-      const ids = [...new Set([...release.vsoNumbers, ...cycleTaggedIds])]
+      const ids = [...new Set([...release.vsoNumbers, ...sequenceAssignedIds])]
 
       const workItems = await getWorkItems(defaultAdoConfig, ids, credential)
 
-      // The cycle query is project-wide, and the project spans every repository,
+      // The sequence query is project-wide, and the project spans every repository,
       // so what came back includes other repositories' work. Narrow it using the
       // work items' own commit links — see `work-item-scope.ts` for the rule.
       const shasInRepository = await getCommitsPresentInRepository(
         repository,
-        collectLinkedCommitShas(cycleTaggedIds, workItems)
+        collectLinkedCommitShas(sequenceAssignedIds, workItems)
       )
 
-      const scopedCycleTaggedIds = scopeToRepository(
-        cycleTaggedIds,
+      const scopedAssignedIds = scopeToRepository(
+        sequenceAssignedIds,
         workItems,
         shasInRepository
       )
 
-      if (scopedCycleTaggedIds.length !== cycleTaggedIds.length) {
+      if (scopedAssignedIds.length !== sequenceAssignedIds.length) {
         log.info(
-          `[AppStore] HotFlow scoped cycle ${release.cycle?.tag} from ` +
-            `${cycleTaggedIds.length} to ${scopedCycleTaggedIds.length} work ` +
+          `[AppStore] HotFlow scoped sequence ${release.releaseSequence?.value} from ` +
+            `${sequenceAssignedIds.length} to ${scopedAssignedIds.length} work ` +
             `items for ${repository.name}`
         )
       }
@@ -4256,7 +4256,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
           authMethod:
             credential.kind === 'bearer' ? ('az' as const) : ('pat' as const),
           workItems,
-          cycleTaggedIds: scopedCycleTaggedIds,
+          sequenceAssignedIds: scopedAssignedIds,
           errorMessage: null,
         },
       }))
@@ -4485,17 +4485,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
   }
 
   /**
-   * Confirms (or overrides) which Azure DevOps cycle a release branch belongs
-   * to, and re-runs reconciliation against the new tag.
+   * Overrides the Azure DevOps release sequence number for a release branch, and
+   * re-runs reconciliation against it.
    *
    * This shouldn't be called directly. See `Dispatcher`.
    */
-  public async _setReleaseCycle(
+  public async _setReleaseSequence(
     repository: Repository,
     branchName: string,
-    cycleTag: string
+    releaseSequence: number
   ): Promise<void> {
-    setConfirmedReleaseCycle(repository, branchName, cycleTag)
+    setReleaseSequenceOverride(repository, branchName, releaseSequence)
     await this._refreshHotFlow(repository)
   }
 

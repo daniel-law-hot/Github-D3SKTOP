@@ -63,7 +63,7 @@ import { HotFlowView } from './hotflow'
 import {
   ConnectAdoDialog,
   EditBranchesDialog,
-  EditCycleDialog,
+  EditReleaseSequenceDialog,
   FinishReleaseDialog,
   MergePullRequestDialog,
   StartFeatureDialog,
@@ -2946,14 +2946,15 @@ export class App extends React.Component<IAppProps, IAppState> {
           />
         )
       }
-      case PopupType.HotFlowEditCycle: {
+      case PopupType.HotFlowEditReleaseSequence: {
         return (
-          <EditCycleDialog
-            key="hotflow-edit-cycle"
+          <EditReleaseSequenceDialog
+            key="hotflow-edit-release-sequence"
             repository={popup.repository}
             dispatcher={this.props.dispatcher}
             branchName={popup.branchName}
-            currentTag={popup.currentTag}
+            currentSequence={popup.currentSequence}
+            derivedSequence={popup.derivedSequence}
             onDismissed={onPopupDismissedFn}
           />
         )

@@ -33,6 +33,7 @@ import { ReleaseContents, ReleaseContentsTab } from './release-contents'
 import { ReleaseSummary } from './release-summary'
 import { reconcileRelease } from '../../lib/hotflow/reconcile'
 import { isFeatureBranchName } from '../../lib/hotflow/branch-patterns'
+import { deriveReleaseSequence } from '../../lib/hotflow/release-sequence'
 import { TipState } from '../../models/tip'
 import { BranchType } from '../../models/branch'
 
@@ -282,7 +283,7 @@ export class HotFlowView extends React.Component<
    * The verdict chip. Encoded as icon plus text plus colour, never colour alone.
    *
    * Note this is the *effective* verdict: git can say a release is ready, but if
-   * Azure DevOps knows about work items tagged for the cycle that aren't in the
+   * Azure DevOps knows about work items assigned to the release that aren't in it
    * branch, it isn't.
    */
   private renderVerdict() {
@@ -329,7 +330,7 @@ export class HotFlowView extends React.Component<
 
   /**
    * Combines the git verdict with what Azure DevOps knows. A release that git
-   * thinks is current is still `needs-update` if cycle-tagged work items haven't
+   * thinks is current is still `needs-update` if assigned work items haven't
    * been merged.
    */
   private getEffectiveVerdict(release: IReleaseBranchState): ReleaseVerdict {
@@ -587,15 +588,14 @@ export class HotFlowView extends React.Component<
           selectedTab={this.state.selectedTab}
           onTabChanged={this.onTabChanged}
           onConnectAdo={this.onConnectAdo}
-          onConfirmCycle={this.onConfirmCycle}
+          onEditReleaseSequence={this.onEditReleaseSequence}
           integrationBranchName={this.integrationName}
         />
         <ReleaseSummary
           hotFlowState={this.props.hotFlowState}
           release={release}
           missingWorkItemCount={missingWorkItemCount}
-          onEditCycle={this.onEditCycle}
-          onConfirmCycle={this.onConfirmCycle}
+          onEditReleaseSequence={this.onEditReleaseSequence}
           onViewRelease={this.onViewRelease}
           onEditBranches={this.onEditBranches}
         />
@@ -745,7 +745,7 @@ export class HotFlowView extends React.Component<
     )
   }
 
-  private onEditCycle = () => {
+  private onEditReleaseSequence = () => {
     const release = this.props.hotFlowState.currentRelease
 
     if (release === null) {
@@ -753,28 +753,15 @@ export class HotFlowView extends React.Component<
     }
 
     this.props.dispatcher.showPopup({
-      type: PopupType.HotFlowEditCycle,
+      type: PopupType.HotFlowEditReleaseSequence,
       repository: this.props.repository,
       branchName: release.branch.nameWithoutRemote,
-      currentTag: release.cycle?.tag ?? null,
+      currentSequence: release.releaseSequence?.value ?? null,
+
+      // Recomputed rather than carried, so the dialog's "use that instead" always
+      // offers what the version says right now.
+      derivedSequence: deriveReleaseSequence(release.version),
     })
-  }
-
-  /** Accepts the guessed cycle as-is, which is the common case. */
-  private onConfirmCycle = () => {
-    const release = this.props.hotFlowState.currentRelease
-
-    if (release === null || release.cycle === null) {
-      // Nothing to accept — make them pick one.
-      this.onEditCycle()
-      return
-    }
-
-    this.props.dispatcher.setReleaseCycle(
-      this.props.repository,
-      release.branch.nameWithoutRemote,
-      release.cycle.tag
-    )
   }
 
   /**

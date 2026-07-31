@@ -139,7 +139,7 @@ export type PullRequestKnowledge = 'known' | 'loading' | 'unavailable'
 interface IFlowDiagramProps {
   readonly hotFlowState: IHotFlowState
 
-  /** Number of work items tagged for the cycle but missing from the release. */
+  /** Number of work items assigned to the release but missing from it. */
   readonly missingWorkItemCount: number
 
   /** The most recently shipped version, shown under the production branch. */
@@ -836,12 +836,10 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
     const isBehind = release.behindIntegration > 0
     const needsAttention = isBehind || missingWorkItemCount > 0
 
-    const cycleLabel =
-      release.cycle === null
-        ? 'cycle unknown'
-        : release.cycle.confirmed
-        ? `cycle ${release.cycle.cycle}`
-        : `cycle ${release.cycle.cycle}?`
+    const sequenceLabel =
+      release.releaseSequence === null
+        ? 'no sequence'
+        : `seq ${release.releaseSequence.value}`
 
     return (
       <g>
@@ -872,7 +870,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           {`${release.aheadOfProduction} ahead of ${this.productionName}`}
         </text>
         <text className="hotflow-text xs dim" x={releaseX + 16} y={midY + 20}>
-          {`${release.vsoNumbers.length} work items · ${cycleLabel}`}
+          {`${release.vsoNumbers.length} work items · ${sequenceLabel}`}
         </text>
       </g>
     )
