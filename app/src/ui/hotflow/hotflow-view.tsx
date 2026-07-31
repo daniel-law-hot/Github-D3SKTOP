@@ -480,6 +480,15 @@ export class HotFlowView extends React.Component<
         ? hotFlowState.releaseHistory[0].tagName
         : null
 
+    // With no release branch the diagram's middle is a placeholder and the drift,
+    // merge-and-tag and finish stages measure nothing — the band would be a
+    // schematic of a flow that isn't running. The page below says so instead, and
+    // carries its own Start release branch button, so nothing is lost by dropping
+    // the band and its resizer.
+    if (release === null) {
+      return this.renderNoRelease()
+    }
+
     return (
       <>
         <div
@@ -510,9 +519,7 @@ export class HotFlowView extends React.Component<
           onHeightChanged={this.onBandHeightChanged}
           onReset={this.onBandHeightReset}
         />
-        {release === null
-          ? this.renderNoRelease()
-          : this.renderReleaseBody(release, missingWorkItemCount)}
+        {this.renderReleaseBody(release, missingWorkItemCount)}
       </>
     )
   }
@@ -662,6 +669,7 @@ export class HotFlowView extends React.Component<
           onEditReleaseSequence={this.onEditReleaseSequence}
           onViewRelease={this.onViewRelease}
           onEditBranches={this.onEditBranches}
+          noSequenceMatches={this.getReconciliation(release).noSequenceMatches}
           selectedHistoryTag={this.state.selectedHistoryTag}
           onSelectHistoryRelease={this.onSelectHistoryRelease}
         />

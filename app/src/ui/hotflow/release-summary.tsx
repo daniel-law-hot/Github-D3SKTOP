@@ -9,6 +9,8 @@ import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import { LinkButton } from '../lib/link-button'
 import { RelativeTime } from '../relative-time'
+import { TooltippedContent } from '../lib/tooltipped-content'
+import { TooltipDirection } from '../lib/tooltip'
 import classNames from 'classnames'
 
 interface IReleaseSummaryProps {
@@ -18,6 +20,13 @@ interface IReleaseSummaryProps {
   readonly onEditReleaseSequence: () => void
   readonly onViewRelease: (release: IReleaseBranchState) => void
   readonly onEditBranches: () => void
+
+  /**
+   * True when Azure DevOps answered but nothing is assigned to this release's
+   * sequence number. False when ADO is unavailable — that's not knowing rather
+   * than knowing there's nothing.
+   */
+  readonly noSequenceMatches: boolean
 
   /** The shipped release being inspected, so its row reads as selected. */
   readonly selectedHistoryTag: string | null
@@ -137,9 +146,13 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
    * disclosure, and it's right wherever the version's cycle segment is the
    * calendar cycle. `edited` marks the case where someone has changed it, so an
    * unexpected number has a visible reason.
+   *
+   * A number that matched nothing gets a warning marker. The banner over the work
+   * item list says the same thing, but the banner is only on that tab and the
+   * number itself is what would need changing — so the mark belongs next to it too.
    */
   private renderReleaseSequence() {
-    const { release } = this.props
+    const { release, noSequenceMatches } = this.props
 
     if (release.releaseSequence === null) {
       return (
@@ -154,6 +167,20 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
 
     return (
       <span className="hotflow-sequence">
+        {noSequenceMatches && (
+          <TooltippedContent
+            className="hotflow-sequence-warning"
+            tooltip={
+              `No work items in this repository are assigned to ` +
+              `${release.releaseSequence.value}, so there's nothing to reconcile ` +
+              `this release against. Either the number is wrong, or the work ` +
+              `items haven't had their Release sequence number set.`
+            }
+            direction={TooltipDirection.SOUTH}
+          >
+            <Octicon symbol={octicons.alert} />
+          </TooltippedContent>
+        )}
         <LinkButton
           className="hotflow-sequence-value num"
           onClick={this.props.onEditReleaseSequence}

@@ -1141,6 +1141,25 @@ body.theme-dark {
   font-variant-numeric: tabular-nums;
 }
 
+/**
+ * Marks a sequence number that matched no work items.
+ *
+ * Sits before the number rather than after it, so it reads as qualifying the value
+ * that follows and doesn't get pushed off the end of the row by the `edited` tag.
+ */
+.hotflow-sequence-warning {
+  display: inline-flex;
+  align-items: center;
+  color: var(--hotflow-warn-color);
+
+  // The global reset's `cursor: default` already applies; the point is only that
+  // hovering it reveals the explanation.
+  .octicon {
+    width: 13px;
+    height: 13px;
+  }
+}
+
 // Marks a number someone typed, so an unexpected one has a visible reason.
 .hotflow-sequence-edited {
   font-size: var(--font-size-xs);
