@@ -2,6 +2,8 @@ import * as React from 'react'
 import { Repository } from '../../../models/repository'
 import { Dispatcher } from '../../dispatcher'
 import { IHotFlowState } from '../../../models/hotflow'
+import { IBranchesState, ICompareState } from '../../../lib/app-state'
+import { TipState } from '../../../models/tip'
 import { Dialog, DialogContent, DialogError, DialogFooter } from '../../dialog'
 import { OkCancelButtonGroup } from '../../dialog/ok-cancel-button-group'
 import { Ref } from '../../lib/ref'
@@ -18,6 +20,14 @@ interface IUpdateReleaseDialogProps {
   readonly repository: Repository
   readonly dispatcher: Dispatcher
   readonly hotFlowState: IHotFlowState
+
+  /**
+   * Needed to confirm the checkout actually happened before merging, and to pass
+   * the same merge status `Branch -> Update from develop` passes.
+   */
+  readonly branchesState: IBranchesState
+  readonly compareState: ICompareState
+
   readonly onDismissed: () => void
 }
 
@@ -195,12 +205,39 @@ export class UpdateReleaseDialog extends React.Component<
     // Merging happens on the release branch, so make sure we're on it first.
     await dispatcher.checkoutBranch(repository, release.branch)
 
-    // mergeStatus null means "we haven't pre-computed a merge preview"; Desktop
-    // handles conflicts from the merge itself either way.
-    await dispatcher.mergeBranch(repository, integrationBranch, null)
+    // `checkoutBranch` resolves whether or not it switched: with uncommitted
+    // changes it shows the stash prompt and returns, leaving HEAD where it was.
+    // Merging then would put the integration branch into whatever is actually
+    // checked out — main, or a feature branch — so this has to be verified rather
+    // than assumed. The prompt is on screen; the user can come back.
+    if (!this.isOnBranch(release.branch.nameWithoutRemote)) {
+      this.setState({ isMerging: false })
+      this.props.onDismissed()
+      return
+    }
+
+    // Matches `Branch -> Update from develop`. Initialising the operation is what
+    // registers it as a merge in progress, and that's what gives a conflict
+    // Desktop's usual resolution flow instead of leaving the working directory
+    // conflicted with nothing on screen. It throws on an invalid tip, which the
+    // check above has already ruled out.
+    dispatcher.initializeMergeOperation(repository, false, integrationBranch)
+
+    await dispatcher.mergeBranch(
+      repository,
+      integrationBranch,
+      this.props.compareState.mergeStatus
+    )
 
     await dispatcher.refreshHotFlow(repository)
 
     this.props.onDismissed()
+  }
+
+  /** Whether HEAD is on the named branch, by its short name. */
+  private isOnBranch(name: string): boolean {
+    const { tip } = this.props.branchesState
+
+    return tip.kind === TipState.Valid && tip.branch.nameWithoutRemote === name
   }
 }

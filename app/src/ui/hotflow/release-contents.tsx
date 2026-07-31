@@ -156,9 +156,17 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
    * it queried matched anything at all.
    */
   private renderBanner() {
-    const { ado, reconciliation, selectedTab } = this.props
+    const { ado, reconciliation, selectedTab, historyRelease } = this.props
 
     if (selectedTab !== 'work-items') {
+      return null
+    }
+
+    // Every banner below is a statement about the *current* release — its
+    // reconciliation, its sequence number. None of them are true of a release that
+    // shipped months ago, and showing them under a history header attributes the
+    // current release's problems to the wrong release.
+    if (historyRelease !== null) {
       return null
     }
 

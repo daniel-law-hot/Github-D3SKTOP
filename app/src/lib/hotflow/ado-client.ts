@@ -204,11 +204,16 @@ export interface IWorkItemRelation {
 }
 
 interface IWorkItemsBatchResponse {
+  /**
+   * Entries are `null` for ids Azure DevOps couldn't resolve — that's what
+   * `errorPolicy: 'omit'` does instead of failing the batch. Typed as nullable so
+   * the reader below has to account for them.
+   */
   readonly value?: ReadonlyArray<{
     readonly id: number
     readonly fields?: Record<string, unknown>
     readonly relations?: ReadonlyArray<IWorkItemRelation>
-  }>
+  } | null>
 }
 
 /**
@@ -337,13 +342,26 @@ export async function getWorkItems(
     // `$expand` and an explicit `fields` list are mutually exclusive — asking for
     // both is a 400 — so this takes every field in exchange for the relations,
     // which are the only thing that says which repository a work item belongs to.
+    //
+    // `errorPolicy: 'omit'` is not optional. Without it a single id that Azure
+    // DevOps can't resolve makes the *whole batch* 404, so one stray number in one
+    // commit message wipes out the detail for every work item alongside it. VSO
+    // numbers are read out of commit text, so stray numbers are a matter of when,
+    // not if — HOTWebsites' 1.2026.10 carries a `1004496` that took the other nine
+    // work items down with it.
     const response = await postJson<IWorkItemsBatchResponse>(
       url,
-      { ids: chunk, $expand: 'relations' },
+      { ids: chunk, $expand: 'relations', errorPolicy: 'omit' },
       credential
     )
 
     for (const item of response.value ?? []) {
+      // An id that didn't resolve. The caller shows the bare number for it, which
+      // is the honest outcome — we asked and Azure DevOps has nothing.
+      if (item === null) {
+        continue
+      }
+
       const rawTags = readStringField(item.fields, 'System.Tags')
 
       const workItem: IWorkItem = {

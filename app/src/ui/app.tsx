@@ -2869,6 +2869,8 @@ export class App extends React.Component<IAppProps, IAppState> {
             repository={popup.repository}
             dispatcher={this.props.dispatcher}
             hotFlowState={state.hotFlowState}
+            branchesState={state.branchesState}
+            compareState={state.compareState}
             onDismissed={onPopupDismissedFn}
           />
         )
