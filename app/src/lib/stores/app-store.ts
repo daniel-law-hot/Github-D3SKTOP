@@ -4485,6 +4485,55 @@ export class AppStore extends TypedBaseStore<IAppState> {
   }
 
   /**
+   * Loads Azure DevOps detail for a specific set of work item ids, merging it into
+   * what's already cached.
+   *
+   * Used when inspecting a shipped release: its VSOs come from git, but the titles
+   * and states have never been fetched, since the refresh only ever asks about the
+   * current release. Merges rather than replaces so switching between releases
+   * accumulates detail instead of discarding it, and `getWorkItems` caches, so
+   * going back to a release already looked at costs nothing.
+   *
+   * Best-effort: a failure leaves the ids showing bare, which is what they'd show
+   * anyway.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _loadHotFlowWorkItemDetail(
+    repository: Repository,
+    ids: ReadonlyArray<number>
+  ): Promise<void> {
+    const state = this.repositoryStateCache.get(repository)
+
+    // Anything already known needs no request.
+    const needed = ids.filter(id => !state.hotFlowState.ado.workItems.has(id))
+
+    if (needed.length === 0) {
+      return
+    }
+
+    const credential = await getAdoCredential(defaultAdoConfig.organisation)
+
+    if (credential === null) {
+      return
+    }
+
+    try {
+      const fetched = await getWorkItems(defaultAdoConfig, needed, credential)
+
+      this.repositoryStateCache.updateHotFlowState(repository, s => ({
+        ado: {
+          ...s.ado,
+          workItems: new Map([...s.ado.workItems, ...fetched]),
+        },
+      }))
+      this.emitUpdate()
+    } catch (e) {
+      log.warn('[AppStore] HotFlow could not load work item detail', e)
+    }
+  }
+
+  /**
    * Overrides the Azure DevOps release sequence number for a release branch, and
    * re-runs reconciliation against it.
    *

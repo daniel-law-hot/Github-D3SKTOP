@@ -4,6 +4,7 @@ import {
   IAdoState,
   IReconciliation,
   IReleaseBranchState,
+  IShippedRelease,
 } from '../../models/hotflow'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
@@ -25,6 +26,17 @@ interface IReleaseContentsProps {
 
   /** The resolved integration branch name, for copy. */
   readonly integrationBranchName: string
+
+  /**
+   * A shipped release to show instead of the current one, or null for normal.
+   *
+   * Its contents come from git — the commits between the tag below it and it — so
+   * this is a historical record rather than a reconciliation. Nothing is
+   * outstanding in a release that already shipped.
+   */
+  readonly historyRelease: IShippedRelease | null
+
+  readonly onCloseHistory: () => void
 }
 
 /**
@@ -45,50 +57,84 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
   }
 
   private renderTabs() {
-    const { release, reconciliation, selectedTab } = this.props
+    const { release, reconciliation, selectedTab, historyRelease } = this.props
 
+    // A shipped release has no drift — it was merged and tagged, so there's
+    // nothing for it to be behind. Its work item list is also just its contents,
+    // with nothing outstanding to warn about.
     const tabs: ReadonlyArray<{
       readonly id: ReleaseContentsTab
       readonly label: string
       readonly count: number
       readonly warn?: boolean
-    }> = [
-      {
-        id: 'work-items',
-        label: 'Work items',
-        count: reconciliation.items.length,
-        warn: reconciliation.missingCount > 0,
-      },
-      { id: 'commits', label: 'Commits', count: release.commits.length },
-      {
-        id: 'drift',
-        label: 'Drift',
-        count: release.behindIntegration,
-        warn: release.behindIntegration > 0,
-      },
-    ]
+    }> =
+      historyRelease !== null
+        ? [
+            {
+              id: 'work-items',
+              label: 'Work items',
+              count: historyRelease.vsoNumbers.length,
+            },
+            {
+              id: 'commits',
+              label: 'Commits',
+              count: historyRelease.commits.length,
+            },
+          ]
+        : [
+            {
+              id: 'work-items',
+              label: 'Work items',
+              count: reconciliation.items.length,
+              warn: reconciliation.missingCount > 0,
+            },
+            { id: 'commits', label: 'Commits', count: release.commits.length },
+            {
+              id: 'drift',
+              label: 'Drift',
+              count: release.behindIntegration,
+              warn: release.behindIntegration > 0,
+            },
+          ]
 
     return (
-      <div className="hotflow-tabs" role="tablist">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            role="tab"
-            type="button"
-            aria-selected={selectedTab === tab.id}
-            className={classNames('hotflow-tab', {
-              selected: selectedTab === tab.id,
-            })}
-            onClick={this.onTabClick(tab.id)}
-          >
-            {tab.label}
-            <span
-              className={classNames('hotflow-tab-count', { warn: tab.warn })}
+      <div className="hotflow-tabs">
+        <div className="hotflow-tab-strip" role="tablist">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              role="tab"
+              type="button"
+              aria-selected={selectedTab === tab.id}
+              className={classNames('hotflow-tab', {
+                selected: selectedTab === tab.id,
+              })}
+              onClick={this.onTabClick(tab.id)}
             >
-              {tab.count}
-            </span>
-          </button>
-        ))}
+              {tab.label}
+              <span
+                className={classNames('hotflow-tab-count', { warn: tab.warn })}
+              >
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {historyRelease !== null && (
+          <div className="hotflow-history-banner">
+            <Octicon className="dim" symbol={octicons.tag} />
+            <span className="mono">{historyRelease.tagName}</span>
+            <span className="dim">shipped</span>
+            <Button
+              className="hotflow-icon-button"
+              onClick={this.props.onCloseHistory}
+              ariaLabel={`Stop showing ${historyRelease.tagName} and return to the current release`}
+            >
+              <Octicon symbol={octicons.x} />
+            </Button>
+          </div>
+        )}
       </div>
     )
   }
@@ -191,7 +237,18 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
   }
 
   private renderTabContent() {
-    switch (this.props.selectedTab) {
+    const { historyRelease, selectedTab } = this.props
+
+    // A shipped release only ever has contents, so both its tabs read from it and
+    // 'drift' — which it can't have — falls back to its work items rather than
+    // rendering the current release's drift under a history header.
+    if (historyRelease !== null) {
+      return selectedTab === 'commits'
+        ? this.renderCommits(historyRelease.commits, 'commits')
+        : this.renderHistoryWorkItems(historyRelease)
+    }
+
+    switch (selectedTab) {
       case 'work-items':
         return this.renderWorkItems()
       case 'commits':
@@ -201,6 +258,59 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
       default:
         return null
     }
+  }
+
+  /**
+   * The work items a shipped release carried.
+   *
+   * Deliberately not a reconciliation: there's nothing to reconcile against once a
+   * release has shipped, and "assigned but not merged" is meaningless in the past
+   * tense. Every row is simply something that went out, so they all share one
+   * presence and the legend is dropped.
+   */
+  private renderHistoryWorkItems(historyRelease: IShippedRelease) {
+    const { ado } = this.props
+
+    if (historyRelease.vsoNumbers.length === 0) {
+      return (
+        <div className="hotflow-empty-list">
+          No VSO numbers found in the {historyRelease.commits.length} commits{' '}
+          {historyRelease.tagName} shipped. HotFlow reads them from branch names
+          and commit messages, so a release merged without them reads as empty
+          here.
+        </div>
+      )
+    }
+
+    return (
+      <div className="hotflow-table-scroll">
+        <table className="hotflow-table">
+          <thead>
+            <tr>
+              <th className="hotflow-wi-glyph">
+                <span className="sr-only">Status</span>
+              </th>
+              <th className="hotflow-wi-id">VSO</th>
+              <th className="hotflow-wi-type">Type</th>
+              <th>Title</th>
+              <th className="hotflow-wi-state">State</th>
+            </tr>
+          </thead>
+          <tbody>
+            {historyRelease.vsoNumbers.map(id => (
+              <WorkItemRow
+                key={id}
+                item={{
+                  id,
+                  presence: 'in-release-tagged',
+                  workItem: ado.workItems.get(id) ?? null,
+                }}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
   }
 
   private renderWorkItems() {

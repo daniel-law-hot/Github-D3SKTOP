@@ -348,6 +348,19 @@ export class Dispatcher {
   }
 
   /**
+   * Load Azure DevOps detail for specific work item ids.
+   *
+   * For inspecting a shipped release, whose VSOs come from git but whose titles
+   * have never been fetched — the refresh only asks about the current release.
+   */
+  public loadHotFlowWorkItemDetail(
+    repository: Repository,
+    ids: ReadonlyArray<number>
+  ): Promise<void> {
+    return this.appStore._loadHotFlowWorkItemDetail(repository, ids)
+  }
+
+  /**
    * Override the Azure DevOps release sequence number for a release branch.
    *
    * HotFlow derives this from the version — `1.2026.17` gives 202617 — which holds

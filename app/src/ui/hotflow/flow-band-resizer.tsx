@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { clamp } from '../../lib/clamp'
 import { getNumber, setNumber } from '../../lib/local-storage'
+import { minDiagramHeight } from './flow-diagram'
 
 /**
  * A horizontal drag bar for resizing the flow band above it.
@@ -12,8 +13,30 @@ import { getNumber, setNumber } from '../../lib/local-storage'
 
 const storageKey = 'hotflow-flow-band-height'
 
+/**
+ * Everything in the band that isn't the diagram, mirroring `.hotflow-flow-band`
+ * in `_hotflow.scss`:
+ *
+ *   10  padding-top          --spacing
+ *    5  padding-bottom       --spacing-half
+ *    5  gap above the actions --spacing-half
+ *   25  the action row        --button-height
+ *   12  horizontal scrollbar  the diagram is always wider than the panel
+ *
+ * Shared with `maxStubs` so the row count and the minimum height are derived from
+ * the same number rather than two guesses at it.
+ */
+export const FlowBandChromeHeight = 57
+
+/**
+ * The floor is the diagram's own minimum plus the chrome, because below that the
+ * diagram has already bottomed out and the only thing left to give is the action
+ * row — which the band's `overflow: hidden` then clips, hiding Start feature and
+ * the rest with no indication they're there.
+ */
+const MinFlowBandHeight = minDiagramHeight + FlowBandChromeHeight
+
 export const DefaultFlowBandHeight = 260
-const MinFlowBandHeight = 150
 const MaxFlowBandHeight = 700
 
 /** Nudge per arrow keypress. */

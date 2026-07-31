@@ -266,7 +266,20 @@ export interface IShippedRelease {
   readonly tagName: string
   readonly sha: string
   readonly shippedAt: Date | null
-  readonly vsoCount: number
+
+  /**
+   * What this release introduced — the commits between the tag below it and this
+   * one.
+   *
+   * Kept rather than discarded because they're loaded anyway to count the VSOs, so
+   * holding them makes inspecting a past release free rather than another round of
+   * git. Empty for the oldest release in the window, which has no tag beneath it to
+   * diff against.
+   */
+  readonly commits: ReadonlyArray<Commit>
+
+  /** The VSO numbers those commits reference, ascending. */
+  readonly vsoNumbers: ReadonlyArray<number>
 }
 
 /** How HotFlow is talking to Azure DevOps, if at all. */

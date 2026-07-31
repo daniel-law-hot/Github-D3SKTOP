@@ -563,7 +563,8 @@ async function collectReleaseHistory(
       shippedAt:
         parsedDate !== null && !isNaN(parsedDate.valueOf()) ? parsedDate : null,
       // Filled in below, once we know the adjacent tag to diff against.
-      vsoCount: 0,
+      commits: [],
+      vsoNumbers: [],
     })
   }
 
@@ -572,8 +573,10 @@ async function collectReleaseHistory(
 
   const trimmed = releases.slice(0, ReleaseHistoryLimit)
 
-  // Count the VSOs each release introduced, by diffing against the tag below it.
-  const withCounts = await Promise.all(
+  // What each release introduced, by diffing against the tag below it. The
+  // commits are kept rather than reduced to a count, so inspecting a past release
+  // costs nothing more than this pass already does.
+  const withContents = await Promise.all(
     trimmed.map(async (release, index) => {
       const previous = trimmed[index + 1]
 
@@ -589,12 +592,13 @@ async function collectReleaseHistory(
 
       return {
         ...release,
-        vsoCount: extractVsoNumbersFromCommits(commits).length,
+        commits,
+        vsoNumbers: extractVsoNumbersFromCommits(commits),
       }
     })
   )
 
-  return withCounts
+  return withContents
 }
 
 /**

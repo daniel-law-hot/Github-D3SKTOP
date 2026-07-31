@@ -9,6 +9,7 @@ import {
   IFeatureLaneEntry,
   IReconciliation,
   IReleaseBranchState,
+  IShippedRelease,
   ReleaseVerdict,
 } from '../../models/hotflow'
 import { PopupType } from '../../models/popup'
@@ -25,6 +26,7 @@ import {
 } from './flow-diagram'
 import {
   DefaultFlowBandHeight,
+  FlowBandChromeHeight,
   FlowBandResizer,
   getStoredFlowBandHeight,
   storeFlowBandHeight,
@@ -60,6 +62,14 @@ interface IHotFlowViewState {
 
   /** Height of the flow band, in pixels. Dragged, and remembered. */
   readonly bandHeight: number
+
+  /**
+   * The shipped release being inspected, by tag, or null for the current one.
+   *
+   * Held by tag rather than by object so a refresh that rebuilds the history
+   * doesn't leave this pointing at a stale copy — the tag is what's stable.
+   */
+  readonly selectedHistoryTag: string | null
 }
 
 /**
@@ -79,7 +89,66 @@ export class HotFlowView extends React.Component<
     this.state = {
       selectedTab: 'work-items',
       bandHeight: getStoredFlowBandHeight(),
+      selectedHistoryTag: null,
     }
+  }
+
+  /**
+   * The shipped release being inspected, resolved from the tag each render.
+   *
+   * Returns null when the tag no longer appears in the history — a refresh can
+   * drop it off the end of the window — so the panel falls back to the current
+   * release rather than showing nothing.
+   */
+  private get historyRelease(): IShippedRelease | null {
+    const { selectedHistoryTag } = this.state
+
+    if (selectedHistoryTag === null) {
+      return null
+    }
+
+    return (
+      this.props.hotFlowState.releaseHistory.find(
+        r => r.tagName === selectedHistoryTag
+      ) ?? null
+    )
+  }
+
+  /**
+   * Opens a shipped release in the contents panel.
+   *
+   * Its commits are already loaded, but its work item detail never has been — the
+   * refresh only asks Azure DevOps about the current release — so that's requested
+   * here. Un-awaited: the ids render immediately and the titles fill in when they
+   * arrive.
+   */
+  private onSelectHistoryRelease = (release: IShippedRelease) => {
+    // Clicking the open one again closes it, which is what a toggle in a list of
+    // one selectable thing should do.
+    if (this.state.selectedHistoryTag === release.tagName) {
+      this.onCloseHistory()
+      return
+    }
+
+    this.setState({
+      selectedHistoryTag: release.tagName,
+
+      // Drift doesn't exist for a shipped release, so don't land on a tab that
+      // isn't there.
+      selectedTab:
+        this.state.selectedTab === 'drift'
+          ? 'work-items'
+          : this.state.selectedTab,
+    })
+
+    this.props.dispatcher.loadHotFlowWorkItemDetail(
+      this.props.repository,
+      release.vsoNumbers
+    )
+  }
+
+  private onCloseHistory = () => {
+    this.setState({ selectedHistoryTag: null })
   }
 
   private get integrationName(): string {
@@ -120,9 +189,7 @@ export class HotFlowView extends React.Component<
    * horizontal scrollbar.
    */
   private get maxStubs(): number {
-    const bandChrome = 60
-
-    return stubsForHeight(this.state.bandHeight - bandChrome)
+    return stubsForHeight(this.state.bandHeight - FlowBandChromeHeight)
   }
 
   /**
@@ -585,6 +652,8 @@ export class HotFlowView extends React.Component<
           onConnectAdo={this.onConnectAdo}
           onEditReleaseSequence={this.onEditReleaseSequence}
           integrationBranchName={this.integrationName}
+          historyRelease={this.historyRelease}
+          onCloseHistory={this.onCloseHistory}
         />
         <ReleaseSummary
           hotFlowState={this.props.hotFlowState}
@@ -593,6 +662,8 @@ export class HotFlowView extends React.Component<
           onEditReleaseSequence={this.onEditReleaseSequence}
           onViewRelease={this.onViewRelease}
           onEditBranches={this.onEditBranches}
+          selectedHistoryTag={this.state.selectedHistoryTag}
+          onSelectHistoryRelease={this.onSelectHistoryRelease}
         />
       </div>
     )

@@ -747,9 +747,16 @@ body.theme-dark {
 
 .hotflow-tabs {
   display: flex;
+  align-items: center;
   flex-shrink: 0;
   padding: 0 var(--spacing-half);
   border-bottom: 1px solid var(--box-border-color);
+}
+
+// Holds the tabs themselves, so the history banner can take the space beyond them.
+.hotflow-tab-strip {
+  display: flex;
+  min-width: 0;
 }
 
 .hotflow-tab {
@@ -1173,23 +1180,100 @@ body.theme-dark {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 2px;
 
   li {
     display: flex;
-    align-items: center;
-    gap: 7px;
     font-size: var(--font-size-sm);
+  }
+}
+
+/**
+ * A shipped release, as a row you can open.
+ *
+ * A button spanning the whole row rather than a link on the tag: the date and VSO
+ * count are part of what you're choosing, so the row is the target. Unlike the
+ * feature stubs — where a full-width target would have covered the branch name it
+ * was offering — nothing here gets obscured, since the hover only tints a
+ * background the row didn't have.
+ */
+.hotflow-history-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 3px var(--spacing-half);
+  margin: 0 calc(var(--spacing-half) * -1);
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text-color);
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+
+  * {
+    cursor: pointer;
   }
 
   .mono {
+    font-family: var(--font-family-monospace);
     font-weight: var(--font-weight-semibold);
     min-width: 62px;
+  }
+
+  &:hover {
+    background: var(--box-alt-background-color);
+  }
+
+  &.selected {
+    background: var(--hotflow-focus-background);
+    border-color: var(--hotflow-focus-line);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--focus-color);
+    outline-offset: -1px;
+  }
+
+  // The oldest release in the window has no tag beneath it to diff against, so
+  // there's nothing to open. Left legible — it still shipped.
+  &.empty {
+    cursor: default;
+
+    * {
+      cursor: default;
+    }
+
+    &:hover {
+      background: none;
+    }
   }
 }
 
 .hotflow-history-count {
   margin-left: auto;
+}
+
+/**
+ * The bar identifying which shipped release the panel is showing.
+ *
+ * Sits at the right-hand end of the tab strip, so the way out is on the same line
+ * as the tabs it replaced — closing returns you to the current release.
+ */
+.hotflow-history-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-half);
+  margin-left: auto;
+  padding-right: var(--spacing-half);
+  font-size: var(--font-size-sm);
+
+  .mono {
+    font-family: var(--font-family-monospace);
+    font-weight: var(--font-weight-semibold);
+  }
 }
 
 // ── blocked / empty states ────────────────────────────────────────────────────

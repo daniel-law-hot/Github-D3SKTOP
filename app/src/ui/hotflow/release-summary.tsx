@@ -3,6 +3,7 @@ import {
   IHotFlowState,
   IResolvedBranch,
   IReleaseBranchState,
+  IShippedRelease,
 } from '../../models/hotflow'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
@@ -17,6 +18,11 @@ interface IReleaseSummaryProps {
   readonly onEditReleaseSequence: () => void
   readonly onViewRelease: (release: IReleaseBranchState) => void
   readonly onEditBranches: () => void
+
+  /** The shipped release being inspected, so its row reads as selected. */
+  readonly selectedHistoryTag: string | null
+
+  readonly onSelectHistoryRelease: (release: IShippedRelease) => void
 }
 
 /**
@@ -235,6 +241,10 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
     )
   }
 
+  private onSelectHistory = (release: IShippedRelease) => () => {
+    this.props.onSelectHistoryRelease(release)
+  }
+
   private onViewRelease = (release: IReleaseBranchState) => () => {
     this.props.onViewRelease(release)
   }
@@ -257,24 +267,45 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
       <>
         <h3 className="hotflow-summary-heading">Release history</h3>
         <ul className="hotflow-history">
-          {releaseHistory.map(release => (
-            <li key={release.tagName}>
-              <Octicon className="dim" symbol={octicons.tag} />
-              <span className="mono">{release.tagName}</span>
-              <span className="dim">
-                {release.shippedAt !== null ? (
-                  <RelativeTime date={release.shippedAt} />
-                ) : (
-                  '—'
-                )}
-              </span>
-              {release.vsoCount > 0 && (
-                <span className="dim num hotflow-history-count">
-                  {release.vsoCount} VSOs
-                </span>
-              )}
-            </li>
-          ))}
+          {releaseHistory.map(release => {
+            // The oldest release in the window has no tag beneath it to diff
+            // against, so there's nothing to open.
+            const hasContents = release.commits.length > 0
+
+            return (
+              <li key={release.tagName}>
+                <button
+                  type="button"
+                  className={classNames('hotflow-history-row', {
+                    selected: release.tagName === this.props.selectedHistoryTag,
+                    empty: !hasContents,
+                  })}
+                  disabled={!hasContents}
+                  onClick={this.onSelectHistory(release)}
+                  aria-label={
+                    hasContents
+                      ? `Show what shipped in ${release.tagName}`
+                      : `${release.tagName} — nothing to compare against`
+                  }
+                >
+                  <Octicon className="dim" symbol={octicons.tag} />
+                  <span className="mono">{release.tagName}</span>
+                  <span className="dim">
+                    {release.shippedAt !== null ? (
+                      <RelativeTime date={release.shippedAt} />
+                    ) : (
+                      '—'
+                    )}
+                  </span>
+                  {release.vsoNumbers.length > 0 && (
+                    <span className="dim num hotflow-history-count">
+                      {release.vsoNumbers.length} VSOs
+                    </span>
+                  )}
+                </button>
+              </li>
+            )
+          })}
         </ul>
       </>
     )

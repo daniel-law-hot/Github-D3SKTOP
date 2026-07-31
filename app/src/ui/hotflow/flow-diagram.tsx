@@ -50,6 +50,15 @@ export const DiagramGeometry = {
   /** Space the caption line under the stubs occupies. */
   captionHeight: 34,
 
+  /**
+   * The height the main row needs even with a single stub.
+   *
+   * The develop → release → main boxes and their connectors don't shrink, so the
+   * diagram has a floor regardless of how few branches are drawn. This is what
+   * `minDiagramHeight` is built from.
+   */
+  minContentHeight: 84,
+
   /** Width of each button in the action row, so the arrows can be sized. */
   actionButtonWidth: 168,
 
@@ -75,6 +84,16 @@ export const diagramWidth = productionRight + G.inset
 
 /** Connectors stop short of the box they point at, leaving room for the head. */
 const edgeGap = 6
+
+/**
+ * The shortest the diagram ever renders, with one stub drawn.
+ *
+ * The band can't usefully be dragged below this plus its own chrome: the diagram
+ * has already bottomed out, so the only thing left to give is the action row,
+ * which then gets clipped by the band's `overflow: hidden`.
+ */
+export const minDiagramHeight =
+  G.minContentHeight + G.captionHeight + G.padding * 2
 
 /**
  * The action row's geometry, derived from the diagram's own columns.
@@ -304,8 +323,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
     const count = Math.max(this.shownEntries.length, 1)
     const stackHeight = count * G.stubHeight + (count - 1) * G.stubGap
 
-    // The main row needs 84 units even when only one stub is present.
-    const contentHeight = Math.max(stackHeight, 84)
+    const contentHeight = Math.max(stackHeight, G.minContentHeight)
 
     return {
       height: contentHeight + G.captionHeight + G.padding * 2,
