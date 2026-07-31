@@ -331,16 +331,26 @@ export function describeFinishReleaseCommands(
   return commands
 }
 
-/** The commands for updating a release from the integration branch. */
+/**
+ * The commands for updating a release from the integration branch.
+ *
+ * `mergeRef` is passed rather than rebuilt from `integrationName` because this
+ * preview is a promise about what will run, and it drifted from reality once
+ * already — it claimed a fetch and a push that didn't happen, and an
+ * `origin/`-prefixed merge when the local branch was being merged. The caller
+ * hands over the ref it's actually going to use.
+ */
 export function describeUpdateReleaseCommands(
   release: IReleaseBranchState,
-  integrationName: string
+  mergeRef: string
 ): ReadonlyArray<string> {
+  const branchName = release.branch.nameWithoutRemote
+
   return [
     `git fetch origin`,
-    `git checkout ${release.branch.nameWithoutRemote}`,
-    `git merge origin/${integrationName}`,
-    `git push origin ${release.branch.nameWithoutRemote}`,
+    `git checkout ${branchName}`,
+    `git merge ${mergeRef}`,
+    `git push origin ${branchName}`,
   ]
 }
 

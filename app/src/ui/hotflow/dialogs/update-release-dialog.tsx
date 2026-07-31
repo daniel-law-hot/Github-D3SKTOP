@@ -4,6 +4,8 @@ import { Dispatcher } from '../../dispatcher'
 import { IHotFlowState } from '../../../models/hotflow'
 import { IBranchesState, ICompareState } from '../../../lib/app-state'
 import { TipState } from '../../../models/tip'
+import { Branch, BranchType } from '../../../models/branch'
+import { FetchType } from '../../../models/fetch'
 import { Dialog, DialogContent, DialogError, DialogFooter } from '../../dialog'
 import { OkCancelButtonGroup } from '../../dialog/ok-cancel-button-group'
 import { Ref } from '../../lib/ref'
@@ -176,7 +178,10 @@ export class UpdateReleaseDialog extends React.Component<
           <CommandPreview
             commands={describeUpdateReleaseCommands(
               release,
-              this.props.hotFlowState.integrationBranchName
+              this.props.hotFlowState.integrationBranch === null
+                ? this.props.hotFlowState.integrationBranchName
+                : this.mergeSource(this.props.hotFlowState.integrationBranch)
+                    .name
             )}
           />
         </DialogContent>
@@ -202,6 +207,12 @@ export class UpdateReleaseDialog extends React.Component<
 
     this.setState({ isMerging: true })
 
+    // Fetch first, or this merges whatever the local integration branch last
+    // pulled. The diagram can say "2 behind" while the remote has moved further,
+    // and updating a release from a stale copy of develop is the failure this
+    // whole action exists to prevent.
+    await dispatcher.fetch(repository, FetchType.UserInitiatedTask)
+
     // Merging happens on the release branch, so make sure we're on it first.
     await dispatcher.checkoutBranch(repository, release.branch)
 
@@ -221,17 +232,51 @@ export class UpdateReleaseDialog extends React.Component<
     // Desktop's usual resolution flow instead of leaving the working directory
     // conflicted with nothing on screen. It throws on an invalid tip, which the
     // check above has already ruled out.
-    dispatcher.initializeMergeOperation(repository, false, integrationBranch)
+    const mergeSource = this.mergeSource(integrationBranch)
+
+    dispatcher.initializeMergeOperation(repository, false, mergeSource)
 
     await dispatcher.mergeBranch(
       repository,
-      integrationBranch,
+      mergeSource,
       this.props.compareState.mergeStatus
     )
+
+    // Merging into a release branch nobody else can see achieves nothing — the
+    // people testing the release are looking at the remote. Skipped when the merge
+    // left conflicts behind, since pushing a conflicted tree isn't possible and
+    // Desktop's resolution flow now owns the operation.
+    if (this.isOnBranch(release.branch.nameWithoutRemote)) {
+      await dispatcher.push(repository)
+    }
 
     await dispatcher.refreshHotFlow(repository)
 
     this.props.onDismissed()
+  }
+
+  /**
+   * The ref to merge: the integration branch's remote counterpart when it has one.
+   *
+   * A fetch updates `origin/develop`, never the local `develop` — so merging the
+   * local branch would make the fetch above pointless and quietly bring in less
+   * than the remote holds. Falls back to the resolved branch when there's no
+   * remote counterpart, which is the case for a repository that only has local
+   * branches.
+   */
+  private mergeSource(integrationBranch: Branch): Branch {
+    if (integrationBranch.type === BranchType.Remote) {
+      return integrationBranch
+    }
+
+    const remote = this.props.branchesState.allBranches.find(
+      b =>
+        b.type === BranchType.Remote &&
+        !b.isDesktopForkRemoteBranch &&
+        b.nameWithoutRemote === integrationBranch.nameWithoutRemote
+    )
+
+    return remote ?? integrationBranch
   }
 
   /** Whether HEAD is on the named branch, by its short name. */
