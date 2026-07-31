@@ -194,6 +194,7 @@ export async function detectHotFlowState(
     otherOpenReleases,
     releaseHistory,
     openFeatureBranches: featureBranches,
+    featureBranchVsos: collectFeatureBranchVsos(branches),
     unreleasedCommitCount: unreleased.commitCount,
     unreleasedVsoCount: unreleased.vsoCount,
     nextVersion: computeNextVersion(releaseCandidates, releaseHistory),
@@ -452,6 +453,38 @@ async function collectUnreleased(
     commitCount: commits.length,
     vsoCount: extractVsoNumbersFromCommits(commits).length,
   }
+}
+
+/**
+ * Every VSO number that has a feature branch in this repository.
+ *
+ * Deliberately every `feature/*` ref rather than the unmerged ones
+ * `collectFeatureBranches` returns: this answers "does this repository own this
+ * work item", and owning it doesn't stop being true when the branch merges. A
+ * branch merged into develop but not yet into the release is exactly the case the
+ * reconciliation needs to warn about.
+ *
+ * Free — the branch list is already loaded for alias resolution, so this is string
+ * parsing rather than another git call.
+ */
+function collectFeatureBranchVsos(
+  branches: ReadonlyArray<Branch>
+): ReadonlyArray<number> {
+  const vsos = new Set<number>()
+
+  for (const branch of branches) {
+    if (branch.isDesktopForkRemoteBranch) {
+      continue
+    }
+
+    const parsed = parseFeatureBranchName(branch.nameWithoutRemote)
+
+    if (parsed !== null) {
+      vsos.add(parsed.vso)
+    }
+  }
+
+  return [...vsos].sort((a, b) => a - b)
 }
 
 /**

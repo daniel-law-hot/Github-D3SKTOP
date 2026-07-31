@@ -1,115 +1,82 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert'
-import { IWorkItem } from '../../../src/models/hotflow'
-import {
-  collectLinkedCommitShas,
-  scopeToRepository,
-} from '../../../src/lib/hotflow/work-item-scope'
+import { scopeToRepository } from '../../../src/lib/hotflow/work-item-scope'
 
-function workItem(id: number, shas: ReadonlyArray<string>): IWorkItem {
-  return {
-    id,
-    title: `Work item ${id}`,
-    workItemType: 'Bug',
-    state: 'Ready for UAT',
-    assignedTo: null,
-    tags: [],
-    releaseSequence: 202617,
-    linkedCommitShas: shas,
-  }
-}
+describe('hotflow/work-item-scope', () => {
+  describe('scopeToRepository', () => {
+    it('keeps a work item with a feature branch in this repository', () => {
+      assert.deepStrictEqual(
+        scopeToRepository([104402], new Set([104402]), new Set()),
+        [104402]
+      )
+    })
 
-function itemMap(...items: ReadonlyArray<IWorkItem>) {
-  return new Map(items.map(i => [i.id, i]))
-}
+    it("drops another repository's work item", () => {
+      // The real case: NimbleObt's release/1.2026.15 listed "Expedia: Margin
+      // Manager", "CO Itinerary v2" and "StubaWebApi - Automated saving" as work it
+      // was missing. Sequence 202615 carries twenty work items across a dozen
+      // repositories and NimbleObt has a branch for none of them.
+      const assigned = [99289, 104600, 104894]
 
-describe('collectLinkedCommitShas', () => {
-  it('gathers shas across the given ids', () => {
-    const items = itemMap(workItem(1, ['aaa', 'bbb']), workItem(2, ['ccc']))
+      assert.deepStrictEqual(
+        scopeToRepository(assigned, new Set([106500, 106501]), new Set()),
+        []
+      )
+    })
 
-    assert.deepStrictEqual([...collectLinkedCommitShas([1, 2], items)].sort(), [
-      'aaa',
-      'bbb',
-      'ccc',
-    ])
-  })
+    it('keeps a work item the release already contains, with no branch', () => {
+      // Being in `production..release` is proof beyond argument, and branches get
+      // deleted once they merge. Without this clause a tidied-up branch would move
+      // an item from "in release and assigned" to "in release, not assigned".
+      assert.deepStrictEqual(
+        scopeToRepository([104402], new Set(), new Set([104402])),
+        [104402]
+      )
+    })
 
-  it('deduplicates a commit two work items both link', () => {
-    const items = itemMap(workItem(1, ['shared']), workItem(2, ['shared']))
+    it('keeps an item that qualifies both ways only once', () => {
+      assert.deepStrictEqual(
+        scopeToRepository([104402], new Set([104402]), new Set([104402])),
+        [104402]
+      )
+    })
 
-    assert.deepStrictEqual(collectLinkedCommitShas([1, 2], items), ['shared'])
-  })
+    it('drops an item with neither a branch nor a place in the release', () => {
+      assert.deepStrictEqual(
+        scopeToRepository([99289], new Set([104402]), new Set([106884])),
+        []
+      )
+    })
 
-  it('ignores ids with no detail', () => {
-    const items = itemMap(workItem(1, ['aaa']))
+    it('keeps input order', () => {
+      const owned = new Set([300, 100])
 
-    assert.deepStrictEqual(collectLinkedCommitShas([1, 999], items), ['aaa'])
-  })
-})
+      assert.deepStrictEqual(
+        scopeToRepository([300, 200, 100], owned, new Set()),
+        [300, 100]
+      )
+    })
 
-describe('scopeToRepository', () => {
-  it('keeps a work item whose commit is in this repository', () => {
-    const items = itemMap(workItem(104402, ['ours']))
+    it('handles an empty assigned list', () => {
+      assert.deepStrictEqual(
+        scopeToRepository([], new Set([104402]), new Set([104402])),
+        []
+      )
+    })
 
-    assert.deepStrictEqual(
-      scopeToRepository([104402], items, new Set(['ours'])),
-      [104402]
-    )
-  })
+    it('drops everything when the repository owns nothing', () => {
+      assert.deepStrictEqual(
+        scopeToRepository([1, 2, 3], new Set(), new Set()),
+        []
+      )
+    })
 
-  it("drops a work item whose commits are all another repository's", () => {
-    // The real case: 106916 links commits in AmadeusWebApi and
-    // ContentOrchestration.Contracts, none in ContentOrchestration.
-    const items = itemMap(workItem(106916, ['in-awa', 'in-contracts']))
+    it('does not mutate the input', () => {
+      const assigned = [3, 1, 2]
 
-    assert.deepStrictEqual(
-      scopeToRepository([106916], items, new Set(['ours'])),
-      []
-    )
-  })
+      scopeToRepository(assigned, new Set([1]), new Set())
 
-  it('keeps a work item with one commit here and others elsewhere', () => {
-    const items = itemMap(workItem(1, ['in-awa', 'ours']))
-
-    assert.deepStrictEqual(scopeToRepository([1], items, new Set(['ours'])), [
-      1,
-    ])
-  })
-
-  it('drops a work item with no commit links anywhere', () => {
-    // The real case: sequence 202615 carries twenty work items across a dozen
-    // repositories, and the unstarted ones have nothing tying them to any of
-    // them. Keeping them showed "Expedia: Margin Manager" as assigned-but-not-
-    // merged in NimbleObt.
-    const items = itemMap(workItem(1, []))
-
-    assert.deepStrictEqual(scopeToRepository([1], items, new Set()), [])
-  })
-
-  it('drops an id Azure DevOps returned no detail for', () => {
-    // `errorPolicy: 'omit'` means absent is an answer, not a failed request.
-    assert.deepStrictEqual(scopeToRepository([1], itemMap(), new Set()), [])
-  })
-
-  it('keeps input order', () => {
-    const items = itemMap(
-      workItem(3, ['ours']),
-      workItem(1, ['also-ours']),
-      workItem(2, ['theirs'])
-    )
-
-    assert.deepStrictEqual(
-      scopeToRepository([3, 1, 2], items, new Set(['ours', 'also-ours'])),
-      [3, 1]
-    )
-  })
-
-  it('drops nothing when every sha resolves', () => {
-    const items = itemMap(workItem(1, ['a']), workItem(2, ['b']))
-
-    assert.deepStrictEqual(
-      scopeToRepository([1, 2], items, new Set(['a', 'b'])),
-      [1, 2]
-    )
+      assert.deepStrictEqual(assigned, [3, 1, 2])
+    })
   })
 })

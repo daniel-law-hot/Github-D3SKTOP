@@ -421,11 +421,7 @@ import {
   getWorkItemIdsForReleaseSequence,
   getWorkItems,
 } from '../hotflow/ado-client'
-import {
-  collectLinkedCommitShas,
-  scopeToRepository,
-} from '../hotflow/work-item-scope'
-import { getCommitsPresentInRepository } from '../hotflow/commit-membership'
+import { scopeToRepository } from '../hotflow/work-item-scope'
 
 const LastSelectedRepositoryIDKey = 'last-selected-repository-id'
 
@@ -4223,24 +4219,22 @@ export class AppStore extends TypedBaseStore<IAppState> {
               credential
             )
 
-      // Detail for everything on either side of the reconciliation.
-      const ids = [...new Set([...release.vsoNumbers, ...sequenceAssignedIds])]
-
-      const workItems = await getWorkItems(defaultAdoConfig, ids, credential)
-
-      // The sequence query is project-wide, and the project spans every repository,
-      // so what came back includes other repositories' work. Narrow it using the
-      // work items' own commit links — see `work-item-scope.ts` for the rule.
-      const shasInRepository = await getCommitsPresentInRepository(
-        repository,
-        collectLinkedCommitShas(sequenceAssignedIds, workItems)
-      )
-
+      // The sequence query is project-wide and the project spans every repository,
+      // so what came back includes other repositories' work. A `feature/{vso}`
+      // branch here, or the release already containing it, is what makes it ours —
+      // see `work-item-scope.ts`.
       const scopedAssignedIds = scopeToRepository(
         sequenceAssignedIds,
-        workItems,
-        shasInRepository
+        new Set(state.hotFlowState.featureBranchVsos),
+        new Set(release.vsoNumbers)
       )
+
+      // Detail for everything on either side of the reconciliation. Scoped first,
+      // so a cycle carrying twenty other repositories' work items doesn't have all
+      // twenty fetched to be thrown away.
+      const ids = [...new Set([...release.vsoNumbers, ...scopedAssignedIds])]
+
+      const workItems = await getWorkItems(defaultAdoConfig, ids, credential)
 
       if (scopedAssignedIds.length !== sequenceAssignedIds.length) {
         log.info(

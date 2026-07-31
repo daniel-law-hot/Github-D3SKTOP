@@ -129,20 +129,6 @@ export interface IWorkItem {
    * This, not `System.Tags`, is how House of Travel records the release.
    */
   readonly releaseSequence: number | null
-
-  /**
-   * Commit SHAs from the work item's Development links, across every repository.
-   *
-   * The only field that says which repository a work item's work actually
-   * happened in. Nothing else does: the whole organisation is one Azure DevOps
-   * project, area paths lump sibling repositories together, and tags are free
-   * text. Resolving these against the local object database is how HotFlow keeps
-   * another repository's work out of this release — see `work-item-scope.ts`.
-   *
-   * Empty means nobody has started it anywhere, which is not the same as it
-   * belonging elsewhere.
-   */
-  readonly linkedCommitShas: ReadonlyArray<string>
 }
 
 /**
@@ -343,6 +329,17 @@ export interface IHotFlowState {
   readonly releaseHistory: ReadonlyArray<IShippedRelease>
   readonly openFeatureBranches: ReadonlyArray<IFeatureBranchState>
 
+  /**
+   * Every VSO number with a `feature/{vso}-…` branch in this repository, merged or
+   * not, local or remote.
+   *
+   * This is how a work item is attributed to a repository — see
+   * `work-item-scope.ts`. Deliberately not limited to `openFeatureBranches`:
+   * ownership doesn't lapse when a branch merges, and a branch merged into develop
+   * but not yet into the release is precisely the case worth warning about.
+   */
+  readonly featureBranchVsos: ReadonlyArray<number>
+
   /** Commits in `production..integration` — the full unreleased backlog. */
   readonly unreleasedCommitCount: number
   readonly unreleasedVsoCount: number
@@ -384,6 +381,7 @@ export const defaultHotFlowState: IHotFlowState = {
   otherOpenReleases: [],
   releaseHistory: [],
   openFeatureBranches: [],
+  featureBranchVsos: [],
   unreleasedCommitCount: 0,
   unreleasedVsoCount: 0,
   nextVersion: null,

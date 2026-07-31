@@ -15,7 +15,6 @@ function workItem(id: number, title: string): IWorkItem {
     assignedTo: null,
     tags: [],
     releaseSequence: 202609,
-    linkedCommitShas: [],
   }
 }
 
