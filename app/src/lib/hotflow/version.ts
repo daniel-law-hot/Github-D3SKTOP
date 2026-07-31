@@ -126,6 +126,32 @@ export function compareReleaseVersions(
 }
 
 /**
+ * Whether two versions identify the same release.
+ *
+ * Not `compareReleaseVersions(a, b) === 0`. That tie-breaks on the raw string to
+ * keep sorting total, which makes it the wrong tool here: `1.2026.07` and
+ * `1.2026.7` are one release written two ways, and a tag written one way has to
+ * match a branch written the other.
+ *
+ * A missing segment is absent rather than zero, so `1.2026.16` and `1.2026.16.1`
+ * stay distinct — the second is a hotfix of the first, not the same release.
+ */
+export function isSameReleaseVersion(
+  a: IReleaseVersion,
+  b: IReleaseVersion
+): boolean {
+  const length = Math.max(a.segments.length, b.segments.length)
+
+  for (let i = 0; i < length; i++) {
+    if (a.segments[i] !== b.segments[i]) {
+      return false
+    }
+  }
+
+  return true
+}
+
+/**
  * Increments the trailing numeric segment to suggest the next version.
  *
  * `1.2026.9` -> `1.2026.10`. Returns null when there's no trailing number to

@@ -34,6 +34,8 @@ import {
   parseReleaseBranchName,
 } from './branch-patterns'
 import { resolveReleaseSequence } from './release-sequence'
+import { pickCurrentRelease } from './pick-release'
+import { getSymbolicRef } from '../git/refs'
 import {
   compareReleaseVersions,
   parseReleaseVersion,
@@ -120,21 +122,36 @@ export async function detectHotFlowState(
   const integrationRef = integrationBranch.name
   const productionRef = productionBranch.name
 
-  const [releaseCandidates, releaseHistory, unreleased, featureBranches] =
-    await Promise.all([
-      collectReleaseBranches(repository, branches, productionRef),
-      collectReleaseHistory(repository, productionRef),
-      collectUnreleased(repository, productionRef, integrationRef),
-      collectFeatureBranches(repository, branches, integrationRef),
-    ])
+  const [
+    releaseCandidates,
+    releaseHistory,
+    unreleased,
+    featureBranches,
+    headRef,
+  ] = await Promise.all([
+    collectReleaseBranches(repository, branches, productionRef),
+    collectReleaseHistory(repository, productionRef),
+    collectUnreleased(repository, productionRef, integrationRef),
+    collectFeatureBranches(repository, branches, integrationRef),
+    getSymbolicRef(repository, 'HEAD'),
+  ])
 
-  // Unshipped releases, lowest version first — the lowest is what ships next.
-  const unshipped = releaseCandidates
-    .filter(c => c.aheadOfProduction > 0)
-    .sort((a, b) => compareReleaseVersions(a.version, b.version))
+  // `refs/heads/release/1.2026.17` -> `release/1.2026.17`. Null on a detached
+  // HEAD, which simply means there's no explicit choice to honour.
+  const checkedOutBranchName =
+    headRef === null ? null : headRef.replace(/^refs\/heads\//, '')
 
-  const currentCandidate = unshipped.length > 0 ? unshipped[0] : null
-  const otherCandidates = unshipped.slice(1)
+  const { current: currentCandidate, others: otherCandidates } =
+    pickCurrentRelease(
+      // `nameWithoutRemote`, because that's the form HEAD reports — a local
+      // `release/1.2026.17` rather than `origin/release/1.2026.17`.
+      releaseCandidates.map(c => ({
+        ...c,
+        branchName: c.branch.nameWithoutRemote,
+      })),
+      releaseHistory.map(h => h.version),
+      checkedOutBranchName
+    )
 
   const currentRelease =
     currentCandidate === null
