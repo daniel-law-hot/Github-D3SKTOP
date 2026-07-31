@@ -13,7 +13,7 @@ import * as path from 'path'
 import { spawn } from 'child_process'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
-import { gt as semverGt, valid as semverValid } from 'semver'
+import { isComparableVersion, isNewerVersion } from '../lib/app-version'
 import { EndpointToken } from '../lib/endpoint-token'
 import { getDotComAPIEndpoint } from '../lib/api'
 
@@ -63,13 +63,14 @@ export class GitHubReleaseUpdater extends EventEmitter {
       const currentVersion = app.getVersion()
       const latestVersion = stripTagPrefix(release.tag_name)
 
-      if (!semverValid(latestVersion)) {
+      if (!isComparableVersion(latestVersion)) {
         throw new Error(
-          `Latest release tag "${release.tag_name}" is not a valid semver`
+          `Latest release tag "${release.tag_name}" is not a version this build ` +
+            `can order — expected up to four numbers, or semver`
         )
       }
 
-      if (!semverGt(latestVersion, currentVersion)) {
+      if (!isNewerVersion(latestVersion, currentVersion)) {
         this.emit('update-not-available')
         return
       }
@@ -234,7 +235,9 @@ export class GitHubReleaseUpdater extends EventEmitter {
       // Asset URLs redirect to a presigned S3 URL — only send our auth on the
       // first hop, not the redirect (S3 rejects unknown Authorization headers).
       const res = await fetch(url, {
-        headers: { 'User-Agent': `GitHubDesktop/${app.getVersion()} (Windows)` },
+        headers: {
+          'User-Agent': `GitHubDesktop/${app.getVersion()} (Windows)`,
+        },
         redirect: 'follow',
       })
 
