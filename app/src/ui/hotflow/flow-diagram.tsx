@@ -1,6 +1,7 @@
 import * as React from 'react'
 import {
   ApprovalsForReady,
+  IFeatureLaneEntry,
   IHotFlowState,
   IPullRequestApproval,
   IReleaseBranchState,
@@ -105,25 +106,6 @@ export function stubsForHeight(height: number): number {
 
 function clampStubCount(count: number): number {
   return Math.max(1, Math.min(count, 24))
-}
-
-/**
- * One feature branch in the lane feeding the integration branch.
- *
- * Sourced from git, because branches are always visible whereas pull request
- * data is only present once Desktop has fetched it from the API. The pull
- * request number annotates a branch when we happen to know it — it never decides
- * whether the branch is shown.
- */
-export interface IFeatureLaneEntry {
-  readonly branchName: string
-  readonly pullRequestNumber: number | null
-
-  /**
-   * True when only the remote has this branch, so checking it out creates a
-   * local one. Worth saying out loud rather than surprising someone with it.
-   */
-  readonly isRemoteOnly: boolean
 }
 
 /**

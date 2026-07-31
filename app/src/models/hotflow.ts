@@ -157,6 +157,33 @@ export interface IPullRequestApproval {
 /** Approvals at or above this count are treated as ready to merge. */
 export const ApprovalsForReady = 2
 
+/**
+ * One feature branch in the lane feeding the integration branch.
+ *
+ * Sourced from git, because branches are always visible whereas pull request data
+ * is only present once Desktop has fetched it from the API. The pull request
+ * number annotates a branch when we happen to know it — it never decides whether
+ * the branch is shown.
+ */
+export interface IFeatureLaneEntry {
+  readonly branchName: string
+  readonly pullRequestNumber: number | null
+
+  /**
+   * True when only the remote has this branch, so checking it out creates a
+   * local one. Worth saying out loud rather than surprising someone with it.
+   */
+  readonly isRemoteOnly: boolean
+
+  /**
+   * The VSO number from the branch name, or null when it doesn't carry one.
+   *
+   * Drives the lane's order. Null for a branch named off-convention, which sorts
+   * last rather than as zero — it isn't the oldest work, it's unidentified work.
+   */
+  readonly vso: number | null
+}
+
 /** Which side(s) of the git/ADO reconciliation a work item appeared on. */
 export type WorkItemPresence =
   /** In the release branch and tagged for the cycle. The happy path. */

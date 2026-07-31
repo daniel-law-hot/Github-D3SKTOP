@@ -6,6 +6,7 @@ import {
   IHotFlowState,
   IntegrationBranchAliases,
   ProductionBranchAliases,
+  IFeatureLaneEntry,
   IReconciliation,
   IReleaseBranchState,
   ReleaseVerdict,
@@ -18,7 +19,6 @@ import { RelativeTime } from '../relative-time'
 import {
   DiagramGeometry,
   FlowDiagram,
-  IFeatureLaneEntry,
   PullRequestKnowledge,
   actionArrowWidth,
   stubsForHeight,
@@ -32,7 +32,11 @@ import {
 import { ReleaseContents, ReleaseContentsTab } from './release-contents'
 import { ReleaseSummary } from './release-summary'
 import { reconcileRelease } from '../../lib/hotflow/reconcile'
-import { isFeatureBranchName } from '../../lib/hotflow/branch-patterns'
+import {
+  isFeatureBranchName,
+  parseFeatureBranchName,
+} from '../../lib/hotflow/branch-patterns'
+import { sortFeatureLane } from '../../lib/hotflow/feature-lane'
 import { deriveReleaseSequence } from '../../lib/hotflow/release-sequence'
 import { TipState } from '../../models/tip'
 import { BranchType } from '../../models/branch'
@@ -123,12 +127,12 @@ export class HotFlowView extends React.Component<
 
   /**
    * The feature branches feeding the integration branch, those with an open pull
-   * request first.
+   * request first and ordered by VSO number within that.
    *
    * Sourced from git rather than from the pull request list. Desktop only knows
    * about pull requests once it has fetched them from the API, so keying the lane
    * on them makes real branches disappear — the branch is the fact, the pull
-   * request is an annotation on it.
+   * request is an annotation on it. See `compareFeatureLaneEntries` for the order.
    */
   private get featureLane(): ReadonlyArray<IFeatureLaneEntry> {
     const integrationName = this.props.hotFlowState.integrationBranchName
@@ -140,27 +144,18 @@ export class HotFlowView extends React.Component<
         .map(pr => [pr.head.ref, pr.pullRequestNumber] as const)
     )
 
-    const entries = this.props.hotFlowState.openFeatureBranches.map(feature => {
-      const name = feature.branch.nameWithoutRemote
+    return sortFeatureLane(
+      this.props.hotFlowState.openFeatureBranches.map(feature => {
+        const name = feature.branch.nameWithoutRemote
 
-      return {
-        branchName: name,
-        pullRequestNumber: pullRequests.get(name) ?? null,
-        isRemoteOnly: feature.branch.type === BranchType.Remote,
-      }
-    })
-
-    // Anything with a pull request is closer to landing, so it goes first.
-    return [...entries].sort((a, b) => {
-      const aHasPr = a.pullRequestNumber !== null
-      const bHasPr = b.pullRequestNumber !== null
-
-      if (aHasPr !== bHasPr) {
-        return aHasPr ? -1 : 1
-      }
-
-      return a.branchName.localeCompare(b.branchName)
-    })
+        return {
+          branchName: name,
+          pullRequestNumber: pullRequests.get(name) ?? null,
+          isRemoteOnly: feature.branch.type === BranchType.Remote,
+          vso: parseFeatureBranchName(name)?.vso ?? null,
+        }
+      })
+    )
   }
 
   /** The checked out branch, or null when the tip is detached or unborn. */
