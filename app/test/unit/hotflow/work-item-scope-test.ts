@@ -76,27 +76,30 @@ describe('scopeToRepository', () => {
     ])
   })
 
-  it('keeps a work item nobody has started anywhere', () => {
-    // No links at all is not evidence of belonging elsewhere, and hiding it
-    // would make the release look readier than it is.
+  it('drops a work item with no commit links anywhere', () => {
+    // The real case: sequence 202615 carries twenty work items across a dozen
+    // repositories, and the unstarted ones have nothing tying them to any of
+    // them. Keeping them showed "Expedia: Margin Manager" as assigned-but-not-
+    // merged in NimbleObt.
     const items = itemMap(workItem(1, []))
 
-    assert.deepStrictEqual(scopeToRepository([1], items, new Set()), [1])
+    assert.deepStrictEqual(scopeToRepository([1], items, new Set()), [])
   })
 
-  it('keeps an id Azure DevOps returned no detail for', () => {
-    assert.deepStrictEqual(scopeToRepository([1], itemMap(), new Set()), [1])
+  it('drops an id Azure DevOps returned no detail for', () => {
+    // `errorPolicy: 'omit'` means absent is an answer, not a failed request.
+    assert.deepStrictEqual(scopeToRepository([1], itemMap(), new Set()), [])
   })
 
   it('keeps input order', () => {
     const items = itemMap(
       workItem(3, ['ours']),
-      workItem(1, []),
+      workItem(1, ['also-ours']),
       workItem(2, ['theirs'])
     )
 
     assert.deepStrictEqual(
-      scopeToRepository([3, 1, 2], items, new Set(['ours'])),
+      scopeToRepository([3, 1, 2], items, new Set(['ours', 'also-ours'])),
       [3, 1]
     )
   })

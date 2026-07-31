@@ -152,9 +152,26 @@ export function getReleaseRepo() {
 }
 
 export function shouldMakeDelta() {
-  // Only production and beta channels include deltas. Test releases aren't
-  // necessarily sequential so deltas wouldn't make sense.
-  return ['production', 'beta'].includes(getChannel())
+  // Never, in this fork.
+  //
+  // Squirrel builds a delta by downloading the previous release from
+  // `remoteReleases`, which is `getUpdatesURL()` — and that still points at
+  // upstream's deployment API for `desktop/desktop`. Asking it produced two
+  // concrete problems, not just a missing delta:
+  //
+  //  - It downloaded upstream's 294 MB `GitHubDesktop-3.6.3-full.nupkg` and then
+  //    couldn't diff it against a package named `D3SKTOP`, so no delta was
+  //    written — and `package.ts` then crashed renaming a file that didn't exist,
+  //    taking the portable zip down with it.
+  //  - Worse, it merged upstream's entire release history into `RELEASES`. That
+  //    manifest advertised `GitHubDesktop-*` packages this fork never publishes,
+  //    and 3.6.3 sorts above 1.2026.10 — so an installed D3SKTOP reading it could
+  //    have decided real GitHub Desktop was a newer version of itself.
+  //
+  // None of it was needed either way: this fork replaced Squirrel's updater with
+  // its own, which polls `getReleaseRepo()` and downloads the portable zip. Deltas
+  // aren't part of that path.
+  return false
 }
 
 /**

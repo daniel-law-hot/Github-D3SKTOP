@@ -28,14 +28,12 @@ console.log('Compiling updater TypeScript…')
 const tscBin = process.platform === 'win32' ? 'tsc.cmd' : 'tsc'
 run(tscBin, ['-p', updaterRoot], repoRoot)
 
-console.log('Bundling updater into a single Windows executable via @yao-pkg/pkg…')
+console.log(
+  'Bundling updater into a single Windows executable via @yao-pkg/pkg…'
+)
 const pkgBin = process.platform === 'win32' ? 'pkg.cmd' : 'pkg'
 const entry = path.join(updaterRoot, 'build', 'main.js')
 const out = path.join(distRoot, 'updater.exe')
-run(
-  pkgBin,
-  ['--targets', 'node22-win-x64', '--output', out, entry],
-  repoRoot
-)
+run(pkgBin, ['--targets', 'node22-win-x64', '--output', out, entry], repoRoot)
 
 console.log(`Updater bundled at ${out}`)

@@ -619,10 +619,22 @@ async function collectReleaseHistory(
 }
 
 /**
- * The version a new release branch would be cut as.
+ * A suggestion for the version a new release branch would be cut as.
  *
- * Derived from this repository's own highest known version — never from the
- * calendar — because repos version independently of each other.
+ * The highest version this repository knows about, plus one. Only ever a pre-fill
+ * for an editable field, and it is regularly wrong — deliberately so, because it
+ * can't be right from git alone.
+ *
+ * The third segment is the calendar cycle, not a per-repository counter: 1.2026.17
+ * is cycle 17 of 2026, which is where the Azure DevOps release sequence 202617
+ * comes from. A repository that skips a cycle therefore skips a number.
+ * ExpediaWebApi last released in cycle 15 and its next release is 1.2026.17, while
+ * this returns 1.2026.16 — nothing in its own history records that cycle 16 came
+ * and went without it.
+ *
+ * Guessing better would mean asking Azure DevOps which cycle is current, and a
+ * confident wrong answer is worse than an obvious one in a field you're already
+ * expected to check.
  */
 function computeNextVersion(
   candidates: ReadonlyArray<IReleaseCandidate>,

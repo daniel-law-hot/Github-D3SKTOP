@@ -14,19 +14,32 @@ import { IWorkItem } from '../../models/hotflow'
  * nobody fills in consistently. The only field that says where the work happened
  * is the Development links, so that's what this uses.
  *
- * The rule, deliberately asymmetric:
+ * The rule: a work item needs a commit in this repository to count.
  *
  *  - links resolve here            → keep. It's ours.
- *  - links, none of which are ours → drop. Proven to be another repository's.
- *  - no links at all               → keep. Nobody has started it anywhere, and
- *                                    "planned but not begun" is the single most
- *                                    useful thing this view can tell you about a
- *                                    release. Dropping it would make the release
- *                                    look readier than it is.
+ *  - links, none of which are ours → drop. It's another repository's.
+ *  - no links at all               → drop. Nothing attributes it to anywhere.
  *
- * Only positive evidence excludes anything, because a false negative here hides
- * work that isn't done, which is exactly the failure the reconciliation exists to
- * catch.
+ * That last case used to be kept, on the reasoning that "planned but nobody has
+ * started it" is the most useful thing this view can say and that dropping it
+ * would make a release look readier than it is. The volume killed it. A cycle
+ * carries around twenty work items across a dozen repositories, and every
+ * unstarted one appeared in all of them — NimbleObt's release showed "Expedia:
+ * Margin Manager", "CO Itinerary v2" and "StubaWebApi - Automated saving" as
+ * assigned-but-not-merged, which reads as this repository missing work it never
+ * owned.
+ *
+ * The reasoning was wrong, not just outweighed. An item with no commits anywhere
+ * isn't evidence about *this* repository — it's evidence about the cycle. Showing
+ * it in every repository is a false positive in all but one of them, and there's
+ * no way to tell which one that is. So "assigned but not merged" now means
+ * something precise and trustworthy: this repository has commits for it, and they
+ * aren't in the release yet.
+ *
+ * The cost is real and worth naming: a work item planned for this repository that
+ * nobody has begun is invisible here. Nothing in git or Azure DevOps ties it to a
+ * repository, so HotFlow can't claim it either way — and a warning that fires in
+ * eleven wrong places to be right in one isn't a warning.
  */
 
 /**
@@ -62,18 +75,15 @@ export function scopeToRepository(
   shasInRepository: ReadonlySet<string>
 ): ReadonlyArray<number> {
   return ids.filter(id => {
+    // No detail came back for it. The batch asks with `errorPolicy: 'omit'`, so an
+    // absent entry means Azure DevOps has no such work item rather than that the
+    // request failed — a failure takes the whole reconciliation to git-only. With
+    // nothing to attribute, it doesn't belong to this repository either.
     const workItem = workItems.get(id)
 
-    // No detail came back for it — ADO didn't return the item, so we know
-    // nothing. Not grounds for hiding it.
-    if (workItem === undefined) {
-      return true
-    }
-
-    if (workItem.linkedCommitShas.length === 0) {
-      return true
-    }
-
-    return workItem.linkedCommitShas.some(sha => shasInRepository.has(sha))
+    return (
+      workItem !== undefined &&
+      workItem.linkedCommitShas.some(sha => shasInRepository.has(sha))
+    )
   })
 }

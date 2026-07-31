@@ -114,7 +114,9 @@ function packageWindows() {
   // gets silently dropped from the installer. Pass it explicitly via
   // additionalFiles so it ends up next to D3SKTOP.exe. The `@types/electron-
   // winstaller` definitions are outdated and don't expose this option, so cast.
-  ;(options as electronInstaller.Options & { additionalFiles: unknown }).additionalFiles = [
+  ;(
+    options as electronInstaller.Options & { additionalFiles: unknown }
+  ).additionalFiles = [
     { src: 'updater.exe', target: 'lib\\net45\\updater.exe' },
   ]
 
@@ -162,6 +164,17 @@ function packageWindows() {
         const from = join(outputDir, `${prefix}-${kind}.nupkg`)
         const to = join(outputDir, `${prefix}-${arch}-${kind}.nupkg`)
 
+        // Squirrel writes a delta only when it managed to download a previous
+        // release to diff against, so `shouldMakeDelta()` states intent rather
+        // than outcome. Renaming unconditionally meant one absent package
+        // rejected this whole chain and the portable zip below never got made —
+        // with the installers already sitting on disk, looking like a total
+        // failure when almost everything had succeeded.
+        if (!existsSync(from)) {
+          console.log(`No ${kind} package was produced; nothing to rename.`)
+          continue
+        }
+
         console.log(`Renaming ${from} to ${to}`)
         await rename(from, to)
       }
@@ -177,11 +190,9 @@ function packageWindows() {
         rmSync(zipPath)
       }
       console.log(`Creating portable zip ${zipName}…`)
-      cp.execFileSync(
-        'tar.exe',
-        ['-a', '-cf', zipPath, '-C', distPath, '.'],
-        { stdio: 'inherit' }
-      )
+      cp.execFileSync('tar.exe', ['-a', '-cf', zipPath, '-C', distPath, '.'], {
+        stdio: 'inherit',
+      })
     })
     .catch(e => {
       console.error(`Error packaging: ${e}`)

@@ -35,9 +35,11 @@ interface IStartReleaseDialogState {
 /**
  * Cut a new release branch off the integration branch.
  *
- * The version is pre-filled by incrementing this repository's own highest known
- * version — never from the calendar, because repos version independently of each
- * other.
+ * The version is pre-filled from this repository's highest known version plus one,
+ * and it's a suggestion rather than an answer — the third segment is the calendar
+ * cycle, so a repository that skipped a cycle skipped a number and the pre-fill
+ * will be low. See `computeNextVersion`. The field is editable for exactly that
+ * reason, and the branch name preview and preflight checks follow what's typed.
  */
 export class StartReleaseDialog extends React.Component<
   IStartReleaseDialogProps,
