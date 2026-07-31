@@ -657,7 +657,6 @@ export class HotFlowView extends React.Component<
           selectedTab={this.state.selectedTab}
           onTabChanged={this.onTabChanged}
           onConnectAdo={this.onConnectAdo}
-          onEditReleaseSequence={this.onEditReleaseSequence}
           integrationBranchName={this.integrationName}
           historyRelease={this.historyRelease}
           onCloseHistory={this.onCloseHistory}

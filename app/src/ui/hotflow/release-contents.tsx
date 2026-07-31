@@ -22,7 +22,6 @@ interface IReleaseContentsProps {
   readonly selectedTab: ReleaseContentsTab
   readonly onTabChanged: (tab: ReleaseContentsTab) => void
   readonly onConnectAdo: () => void
-  readonly onEditReleaseSequence: () => void
 
   /** The resolved integration branch name, for copy. */
   readonly integrationBranchName: string
@@ -143,13 +142,6 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
     this.props.onTabChanged(tab)
   }
 
-  /** The sequence number the reconciliation queried, for the banner copy. */
-  private get releaseSequenceLabel(): string {
-    return (
-      this.props.release.releaseSequence?.value.toString() ?? 'this release'
-    )
-  }
-
   /**
    * The banner above the list, which is where HotFlow is honest about how much it
    * actually knows: whether Azure DevOps answered, and whether the sequence number
@@ -209,24 +201,11 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
       )
     }
 
-    // Nothing matched the sequence number, so "no work items missing" below would
-    // be true and useless. The sequence is derived from the version, so the
-    // likelier reading is that the number is wrong.
+    // Nothing matched the sequence number. Said once, on the Release sequence row
+    // in the properties pane — that's where the number lives and where it would be
+    // changed, and a banner here as well was the same sentence twice.
     if (reconciliation.noSequenceMatches) {
-      return (
-        <div className="hotflow-banner warn">
-          <Octicon symbol={octicons.alert} />
-          <span>
-            No work items are assigned to{' '}
-            <span className="num">{this.releaseSequenceLabel}</span> in this
-            repository, so nothing can be reconciled against it. Check the
-            number if you expected some.
-          </span>
-          <Button onClick={this.props.onEditReleaseSequence}>
-            Change number
-          </Button>
-        </div>
-      )
+      return null
     }
 
     if (reconciliation.missingCount === 0 && reconciliation.items.length > 0) {
