@@ -8,6 +8,7 @@ import {
 } from '../../models/hotflow'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
+import { Branch, BranchType } from '../../models/branch'
 import { Tooltip } from '../lib/tooltip'
 import { createObservableRef } from '../lib/observable-ref'
 
@@ -182,51 +183,56 @@ interface IFlowDiagramProps {
 
   /** Invoked when a feature stub is clicked. */
   readonly onCheckoutBranch: (entry: IFeatureLaneEntry) => void
+
+  /**
+   * Invoked when a node's name is clicked — develop, the release branch, or main.
+   * Separate from `onCheckoutBranch` because these carry a `Branch` outright,
+   * whereas a lane entry only carries a name to look up.
+   */
+  readonly onCheckoutRef: (branch: Branch) => void
 }
 
-interface IBranchNameLinkProps {
-  readonly entry: IFeatureLaneEntry
-
-  /** Dimmed to match the hollow stub of a branch with no pull request. */
-  readonly idle: boolean
+interface ICheckoutLinkProps {
+  /** The branch name, shown as the link text. */
+  readonly label: string
 
   /** Says what clicking does, since the name alone only says where. */
   readonly tooltip: string
 
+  /** Base class, so the feature stubs and the nodes can be sized differently. */
+  readonly className: string
+
   readonly style: React.CSSProperties
 
-  readonly onCheckout: (entry: IFeatureLaneEntry) => void
+  readonly onClick: () => void
 }
 
 /**
- * A feature branch's name, as a link that checks it out.
+ * A branch name, as a link that checks it out.
  *
- * Its own component to hold the ref its tooltip needs. The visible text is the
- * branch name, which says where you'd go but not that clicking goes there — the
- * tooltip covers that, and covers the remote-only case too.
+ * Shared by the feature stubs and the develop / release / main nodes: they sit at
+ * different sizes but they're the same idea, and every branch drawn in this diagram
+ * is somewhere you might want to be. Its own component to hold the ref its tooltip
+ * needs — the name says where you'd go, the tooltip says that clicking goes there.
  */
-class BranchNameLink extends React.Component<IBranchNameLinkProps> {
+class CheckoutLink extends React.Component<ICheckoutLinkProps> {
   private buttonRef = createObservableRef<HTMLButtonElement>()
 
   public render() {
-    const { entry, idle, tooltip, style } = this.props
+    const { label, tooltip, className, style } = this.props
 
     return (
       <button
         ref={this.buttonRef}
         type="button"
-        className={`hotflow-branch-name link${idle ? ' dim' : ''}`}
+        className={`${className} link`}
         style={style}
-        onClick={this.onClick}
+        onClick={this.props.onClick}
       >
         <Tooltip target={this.buttonRef}>{tooltip}</Tooltip>
-        {entry.branchName}
+        {label}
       </button>
     )
-  }
-
-  private onClick = () => {
-    this.props.onCheckout(this.props.entry)
   }
 }
 
@@ -396,6 +402,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           {this.renderProductionNode()}
         </svg>
         {this.renderBranchNames()}
+        {this.renderNodeNames()}
         {this.renderMergeButtons()}
       </div>
     )
@@ -446,22 +453,118 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           }
 
           return (
-            <BranchNameLink
+            <CheckoutLink
               key={entry.branchName}
-              entry={entry}
-              idle={idle}
-              tooltip={
-                entry.isRemoteOnly
-                  ? `Check out ${entry.branchName} — creates a local branch`
-                  : `Check out ${entry.branchName}`
-              }
+              label={entry.branchName}
+              tooltip={checkoutTooltip(entry.branchName, entry.isRemoteOnly)}
+              className={`hotflow-branch-name${idle ? ' dim' : ''}`}
               style={style}
-              onCheckout={this.props.onCheckoutBranch}
+              onClick={this.onCheckoutEntry(entry)}
             />
           )
         })}
       </div>
     )
+  }
+
+  private onCheckoutEntry = (entry: IFeatureLaneEntry) => () => {
+    this.props.onCheckoutBranch(entry)
+  }
+
+  /**
+   * The develop / release / main names, as links that check those branches out.
+   *
+   * HTML over the SVG for the same reason the feature names are: a link has to be
+   * the element that's styled and clicked, and SVG text can't be reached from an
+   * overlay. The coordinates mirror the `<text>` these replaced — `top` backs out
+   * of a text baseline into a centred box, which is why it subtracts.
+   */
+  private renderNodeNames() {
+    const { hotFlowState } = this.props
+    const release = hotFlowState.currentRelease
+    const { midY } = this.layout
+
+    return (
+      <div className="hotflow-node-names">
+        {this.renderNodeName(
+          this.integrationName,
+          hotFlowState.integrationBranch,
+          integrationX + 14,
+          midY - 5,
+          G.integrationWidth - 26
+        )}
+
+        {release !== null &&
+          this.renderNodeName(
+            `release/${release.version.raw}`,
+            release.branch,
+            releaseX + 16,
+            midY - 17,
+            G.releaseWidth - 28
+          )}
+
+        {this.renderNodeName(
+          this.productionName,
+          hotFlowState.productionBranch,
+          productionX + 14,
+          midY - 5,
+          G.productionWidth - 26
+        )}
+      </div>
+    )
+  }
+
+  /**
+   * One node's name. Plain text when it's the branch you're on, or when there's no
+   * branch behind it to go to.
+   */
+  private renderNodeName(
+    label: string,
+    branch: Branch | null,
+    left: number,
+    baselineY: number,
+    maxWidth: number
+  ) {
+    const style = {
+      left,
+      top: baselineY - 13,
+      height: 18,
+      maxWidth,
+    }
+
+    const isCurrent =
+      branch !== null &&
+      branch.nameWithoutRemote === this.props.currentBranchName
+
+    if (branch === null || isCurrent) {
+      return (
+        <span
+          key={label}
+          className={`hotflow-node-name${isCurrent ? ' current' : ''}`}
+          style={style}
+        >
+          {label}
+        </span>
+      )
+    }
+
+    return (
+      <CheckoutLink
+        key={label}
+        label={label}
+        tooltip={checkoutTooltip(
+          branch.nameWithoutRemote,
+          branch.type === BranchType.Remote
+        )}
+        className="hotflow-node-name"
+        style={style}
+        onClick={this.onCheckoutRef(branch)}
+      />
+    )
+  }
+
+  private onCheckoutRef = (branch: Branch) => () => {
+    this.props.onCheckoutRef(branch)
   }
 
   /**
@@ -758,13 +861,8 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           height={56}
           rx={6}
         />
-        <text
-          className="hotflow-text mono md strong"
-          x={integrationX + 14}
-          y={midY - 5}
-        >
-          {this.integrationName}
-        </text>
+        {/* The name is an HTML link in the overlay — see renderNodeNames. */}
+
         <text
           className="hotflow-text xs dim"
           x={integrationX + 14}
@@ -859,13 +957,8 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           height={84}
           rx={1.75}
         />
-        <text
-          className="hotflow-text mono md strong"
-          x={releaseX + 16}
-          y={midY - 17}
-        >
-          {truncate(`release/${release.version.raw}`, 28)}
-        </text>
+        {/* The name is an HTML link in the overlay — see renderNodeNames. */}
+
         <text className="hotflow-text xs dim" x={releaseX + 16} y={midY + 3}>
           {`${release.aheadOfProduction} ahead of ${this.productionName}`}
         </text>
@@ -945,13 +1038,8 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           height={56}
           rx={6}
         />
-        <text
-          className="hotflow-text mono md strong"
-          x={productionX + 14}
-          y={midY - 5}
-        >
-          {this.productionName}
-        </text>
+        {/* The name is an HTML link in the overlay — see renderNodeNames. */}
+
         <text
           className="hotflow-text xs dim"
           x={productionX + 14}
@@ -966,7 +1054,18 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
   }
 }
 
-/** Trims a label to fit its box, with an ellipsis when it doesn't. */
-function truncate(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1)}…`
+/**
+ * What checking out a branch will do.
+ *
+ * Says when it'll create a local branch, because a checkout that silently makes a
+ * new branch is worth a heads-up rather than a surprise.
+ */
+function checkoutTooltip(branchName: string, isRemoteOnly: boolean): string {
+  return isRemoteOnly
+    ? `Check out ${branchName} — creates a local branch`
+    : `Check out ${branchName}`
 }
+
+// `truncate` used to live here, cutting labels at a guessed character count. Every
+// branch name in the diagram is HTML now, so `text-overflow: ellipsis` does it —
+// and only when the name genuinely doesn't fit.

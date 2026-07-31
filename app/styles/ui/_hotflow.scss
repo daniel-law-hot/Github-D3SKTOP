@@ -310,7 +310,8 @@ body.theme-dark {
  * works because the diagram is drawn at 1:1 — one viewBox unit is one pixel.
  */
 .hotflow-merge-buttons,
-.hotflow-branch-names {
+.hotflow-branch-names,
+.hotflow-node-names {
   position: absolute;
   top: 0;
   left: 0;
@@ -371,6 +372,52 @@ body.theme-dark {
     &.link:hover {
       color: var(--link-button-color);
     }
+  }
+}
+
+/**
+ * The develop / release / main names inside their nodes.
+ *
+ * Same idea as the feature stubs, one size up: these mirror what the SVG drew as
+ * `.hotflow-text.mono.md.strong`, so the values are repeated here rather than
+ * inherited — the node names share a picture with SVG-rendered labels and have to
+ * match them.
+ */
+.hotflow-node-name {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: var(--font-family-monospace);
+  font-size: 12.5px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-color);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  &.link {
+    color: var(--link-button-color);
+    cursor: pointer;
+    pointer-events: auto;
+
+    &:hover {
+      text-decoration: underline;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--focus-color);
+      outline-offset: 1px;
+      border-radius: 2px;
+    }
+  }
+
+  // The branch you're on. Plain, because there's nowhere to go.
+  &.current {
+    color: var(--text-color);
   }
 }
 

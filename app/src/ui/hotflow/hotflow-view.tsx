@@ -41,7 +41,7 @@ import {
 import { sortFeatureLane } from '../../lib/hotflow/feature-lane'
 import { deriveReleaseSequence } from '../../lib/hotflow/release-sequence'
 import { TipState } from '../../models/tip'
-import { BranchType } from '../../models/branch'
+import { Branch, BranchType } from '../../models/branch'
 
 interface IHotFlowViewProps {
   readonly repository: Repository
@@ -249,6 +249,17 @@ export class HotFlowView extends React.Component<
     }
 
     this.props.dispatcher.checkoutBranch(this.props.repository, feature.branch)
+  }
+
+  /**
+   * Checks out one of the named branches in the diagram — develop, the release
+   * branch, or main.
+   *
+   * Same dispatcher path as the feature stubs, so it picks up the stash prompt and
+   * creates a local branch to track a remote-only one.
+   */
+  private onCheckoutRef = (branch: Branch) => {
+    this.props.dispatcher.checkoutBranch(this.props.repository, branch)
   }
 
   /**
@@ -509,6 +520,7 @@ export class HotFlowView extends React.Component<
               onMergePullRequest={this.onMergePullRequest}
               currentBranchName={this.currentBranchName}
               onCheckoutBranch={this.onCheckoutFeatureBranch}
+              onCheckoutRef={this.onCheckoutRef}
             />
             {this.renderActions()}
           </div>

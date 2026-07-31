@@ -143,21 +143,22 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
   }
 
   /**
-   * The banner above the list, which is where HotFlow is honest about how much it
-   * actually knows: whether Azure DevOps answered, and whether the sequence number
-   * it queried matched anything at all.
+   * The banner above the list, which now says one thing only: whether Azure DevOps
+   * answered at all.
+   *
+   * It used to also report on the reconciliation, which was a mistake twice over —
+   * see the note where those returned null.
    */
   private renderBanner() {
-    const { ado, reconciliation, selectedTab, historyRelease } = this.props
+    const { ado, selectedTab, historyRelease } = this.props
 
     if (selectedTab !== 'work-items') {
       return null
     }
 
-    // Every banner below is a statement about the *current* release — its
-    // reconciliation, its sequence number. None of them are true of a release that
-    // shipped months ago, and showing them under a history header attributes the
-    // current release's problems to the wrong release.
+    // Every banner below is a statement about the *current* release. None of them
+    // are true of a release that shipped months ago, and showing them under a
+    // history header attributes the current release's state to the wrong release.
     if (historyRelease !== null) {
       return null
     }
@@ -201,25 +202,11 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
       )
     }
 
-    // Nothing matched the sequence number. Said once, on the Release sequence row
-    // in the properties pane — that's where the number lives and where it would be
-    // changed, and a banner here as well was the same sentence twice.
-    if (reconciliation.noSequenceMatches) {
-      return null
-    }
-
-    if (reconciliation.missingCount === 0 && reconciliation.items.length > 0) {
-      return (
-        <div className="hotflow-banner ok">
-          <Octicon symbol={octicons.checkCircle} />
-          <span>
-            All {reconciliation.inReleaseTaggedCount} work items assigned to
-            this release are in it. Nothing outstanding.
-          </span>
-        </div>
-      )
-    }
-
+    // Nothing left to say. Both banners that used to live here are gone: the
+    // unmatched sequence number is marked on the number itself in the properties
+    // pane, and the all-clear counted only the work items assigned to the release
+    // while the list beside it showed everything in the release — three next to ten
+    // rows, which read as a wrong number rather than as good news.
     return null
   }
 
