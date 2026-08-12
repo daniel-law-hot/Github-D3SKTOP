@@ -3984,7 +3984,11 @@ export class App extends React.Component<IAppProps, IAppState> {
             isShowingFoldout: this.state.currentFoldout !== null,
             commitSpellcheckEnabled: this.state.commitSpellcheckEnabled,
             showCommitLengthWarning: this.state.showCommitLengthWarning,
-            showChangesFilter: state.showChangesFilter,
+            // No filter box above the file list here. It earns its place in the
+            // repository view, where the sidebar is the only way through a long
+            // list; in a tab you opened to glance at a branch it's a row of chrome
+            // over a handful of files.
+            showChangesFilter: false,
             showChangesAsTree: state.showChangesAsTree,
             changesTreeFilesFirst: state.changesTreeFilesFirst,
             shouldNudgeToCommit: false,

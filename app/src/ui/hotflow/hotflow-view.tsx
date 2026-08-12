@@ -68,6 +68,20 @@ interface IHotFlowViewProps {
 }
 
 /**
+ * Whether the Branch changes tab is offered.
+ *
+ * Parked rather than removed. The tab works and the components behind it are the
+ * repository view's own, but it isn't wanted in the view yet — so this is the one
+ * switch that turns it back on, and everything downstream keys off it rather than
+ * the code being torn out and rebuilt later.
+ *
+ * The extraction it prompted stays regardless: `changes-pane.tsx` now holds the
+ * sidebar and diff wiring that `repository.tsx` used to carry inline, which is worth
+ * having whether or not HotFlow ever shows a second copy of it.
+ */
+const BranchChangesEnabled = false
+
+/**
  * Whether the checked-out branch is a feature branch.
  *
  * Decides whether the Branch changes tab is offered at all: on a release branch the
@@ -112,12 +126,12 @@ export class HotFlowView extends React.Component<
   public constructor(props: IHotFlowViewProps) {
     super(props)
     this.state = {
-      // Standing on a feature branch means you're working on one, so open on the
-      // changes rather than making you click into them. Opening HotFlow from a
-      // release branch still lands on the release picture, which is its purpose.
-      selectedTab: isOnFeatureBranch(props.branchesState)
-        ? 'branch-changes'
-        : 'work-items',
+      // With the tab on, standing on a feature branch means you're working on one,
+      // so it opens on the changes rather than making you click into them.
+      selectedTab:
+        BranchChangesEnabled && isOnFeatureBranch(props.branchesState)
+          ? 'branch-changes'
+          : 'work-items',
       bandHeight: getStoredFlowBandHeight(),
       selectedHistoryTag: null,
     }
@@ -262,7 +276,7 @@ export class HotFlowView extends React.Component<
    * it's on offer.
    */
   private renderBranchChanges(): JSX.Element | null {
-    if (!isOnFeatureBranch(this.props.branchesState)) {
+    if (!BranchChangesEnabled || !isOnFeatureBranch(this.props.branchesState)) {
       return null
     }
 
