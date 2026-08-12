@@ -134,54 +134,66 @@
   // full-width button and a square.
   //
   // These sit after the rules they narrow so equal-specificity declarations
-  // resolve this way round.
-  .sidebar-section {
+  // resolve this way round, and they address the toolbar's own children —
+  // which are not always the `.toolbar-button` you'd expect. The branch and the
+  // push/pull control each wrap theirs in a `.toolbar-dropdown`, and it's the
+  // wrapper that's the flex item, so it's the wrapper that has to carry the
+  // width. The branch's wrapper is `.branch-button`; push/pull's carries no
+  // class of its own, hence `:has`.
+  > .sidebar-section {
     // Already flex-shrink: 0 above; spelled out here because "the repository
     // button doesn't collapse" is now a deliberate part of the arrangement
     // rather than an incidental property of the sidebar.
     flex-shrink: 0;
   }
 
-  .toolbar-button {
-    &.branch-toolbar-button,
-    &.branch-toolbar-button.resizable {
-      // Static, by request: the branch you're on is the one thing in the toolbar
-      // you read constantly, and a name that changes width as you resize the
-      // window is harder to find than one that doesn't.
-      flex: 0 0 230px;
-      width: 230px;
-    }
-
-    // The filler. It takes the slack when there's room to spare, which is what
-    // keeps the row gapless, and it's the last to give up its label.
-    &.push-pull-button,
-    &.push-pull-button.resizable {
-      flex: 1 1 230px;
-      width: auto;
-      min-width: var(--toolbar-collapsed-width);
-    }
-
-    &.hotflow-button {
-      flex: 0 100 200px;
-      min-width: var(--toolbar-collapsed-width);
-    }
-
-    &.open-with-claude-button {
-      flex: 0 10000 200px;
-      min-width: var(--toolbar-collapsed-width);
-    }
-
-    // Collapses within the group rather than against the toolbar — the group is
-    // the flex item out here, and the arrow beside it keeps its 30px throughout.
-    &.open-in-visual-studio-button {
-      flex: 1 1 200px;
-      min-width: var(--toolbar-collapsed-width);
-    }
+  // Static, by request: the branch you're on is the one thing in the toolbar you
+  // read constantly, and a name that changes width as you resize the window is
+  // harder to find than one that doesn't.
+  > .branch-button {
+    flex: 0 0 230px;
   }
 
-  .open-in-visual-studio-group {
+  // The filler. It takes the slack when there's room to spare, which is what
+  // keeps the row gapless, and it's the last to give up its label. Plain button
+  // when there's only fetching to offer, dropdown once there's a push or a pull
+  // to choose between — the dropdown's floor has to leave room for its arrow.
+  > .toolbar-button.push-pull-button {
+    flex: 1 1 230px;
+    min-width: var(--toolbar-collapsed-width);
+  }
+
+  > .toolbar-dropdown:has(> .toolbar-button.push-pull-button) {
+    flex: 1 1 230px;
+    min-width: calc(var(--toolbar-collapsed-width) + 39px);
+  }
+
+  > .toolbar-button.hotflow-button {
+    flex: 0 100 200px;
+    min-width: var(--toolbar-collapsed-width);
+  }
+
+  > .toolbar-button.open-with-claude-button {
+    flex: 0 10000 200px;
+    min-width: var(--toolbar-collapsed-width);
+  }
+
+  > .open-in-visual-studio-group {
     flex: 0 1000000 230px;
     min-width: calc(var(--toolbar-collapsed-width) + 30px);
+  }
+
+  // Collapses within its group rather than against the toolbar; the arrow beside
+  // it keeps its 30px throughout. Same for the push/pull button inside its
+  // dropdown, which is why this floor is set on the class rather than on the
+  // child selector above.
+  .toolbar-button.open-in-visual-studio-button {
+    flex: 1 1 200px;
+    min-width: var(--toolbar-collapsed-width);
+  }
+
+  .toolbar-dropdown > .toolbar-button.push-pull-button {
+    min-width: var(--toolbar-collapsed-width);
   }
 
   // Nudged from the usual 10px so that the icon sits dead centre once the button
