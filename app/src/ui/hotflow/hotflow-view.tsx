@@ -42,6 +42,7 @@ import {
 } from '../../lib/hotflow/branch-patterns'
 import { sortFeatureLane } from '../../lib/hotflow/feature-lane'
 import { deriveReleaseSequence } from '../../lib/hotflow/release-sequence'
+import classNames from 'classnames'
 import { TipState } from '../../models/tip'
 import { Branch, BranchType } from '../../models/branch'
 
@@ -599,10 +600,14 @@ export class HotFlowView extends React.Component<
 
     return (
       <>
-        {/* Stays fully visible while re-reading. It's what you're watching when you
-            switch releases, and the panel below is where the stale detail was. */}
+        {/* Dimmed while re-reading, because the boxes and their counts still
+            describe the release being switched away from. Dimmed rather than
+            emptied: the shape of the flow doesn't change between releases, and
+            blanking it would make the whole view flash on every branch switch. */}
         <div
-          className="hotflow-flow-band"
+          className={classNames('hotflow-flow-band', {
+            loading: hotFlowState.isLoading,
+          })}
           style={{ height: this.state.bandHeight }}
         >
           {/* Diagram and actions share one scroll container so the buttons stay

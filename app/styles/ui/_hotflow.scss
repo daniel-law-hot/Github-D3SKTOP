@@ -266,10 +266,26 @@ body.theme-dark {
   flex-direction: column;
   gap: var(--spacing-half);
 
-  // Deliberately not dimmed while re-reading. The diagram is the thing you're
-  // watching when you switch releases, and fading it made the whole view look
-  // disabled for a second rather than busy. The panel below clears instead, which is
-  // where the stale detail actually was.
+  /**
+   * Being re-read. The boxes and their counts still describe the release being
+   * switched away from, so they fade rather than continuing to read as current.
+   * Faded rather than blanked: the flow's shape is the same for every release, and
+   * emptying it would make the view flash on every branch switch.
+   */
+  &.loading {
+    opacity: 0.45;
+
+    // Nothing in here is worth clicking while it describes the wrong release.
+    pointer-events: none;
+  }
+
+  transition: opacity 120ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hotflow-flow-band {
+    transition: none;
+  }
 }
 
 /**
