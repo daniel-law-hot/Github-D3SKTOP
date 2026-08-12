@@ -146,7 +146,8 @@ export async function preflightStartRelease(
 export async function preflightUpdateRelease(
   repository: Repository,
   release: IReleaseBranchState,
-  integrationBranch: Branch
+  integrationBranch: Branch,
+  fastForwardOnly: boolean
 ): Promise<IPreflightResult> {
   const checks: Array<IPreflightCheck> = []
   const integrationName = integrationBranch.nameWithoutRemote
@@ -189,6 +190,27 @@ export async function preflightUpdateRelease(
         : undefined,
     blocking: true,
   })
+
+  // A fast-forward is only possible while everything on the release is already on
+  // the integration branch — which is exactly what "the merge base is the release
+  // tip" says. Checked here rather than left to git so the dialog can say no
+  // before the fetch and checkout, instead of after them.
+  if (fastForwardOnly) {
+    const canFastForward =
+      mergeBase !== null && mergeBase === release.branch.tip.sha
+
+    checks.push({
+      id: 'can-fast-forward',
+      label: 'Release has no commits of its own',
+      status: canFastForward ? 'pass' : 'fail',
+      detail: canFastForward
+        ? undefined
+        : `${release.branch.nameWithoutRemote} has commits that aren't on ` +
+          `${integrationName}, so it can't be fast-forwarded. Merge instead, or ` +
+          `merge the release back into ${integrationName} first.`,
+      blocking: true,
+    })
+  }
 
   return summarise(checks)
 }
@@ -342,14 +364,17 @@ export function describeFinishReleaseCommands(
  */
 export function describeUpdateReleaseCommands(
   release: IReleaseBranchState,
-  mergeRef: string
+  mergeRef: string,
+  fastForwardOnly: boolean
 ): ReadonlyArray<string> {
   const branchName = release.branch.nameWithoutRemote
 
   return [
     `git fetch origin`,
     `git checkout ${branchName}`,
-    `git merge ${mergeRef}`,
+    fastForwardOnly
+      ? `git merge --ff-only ${mergeRef}`
+      : `git merge ${mergeRef}`,
     `git push origin ${branchName}`,
   ]
 }

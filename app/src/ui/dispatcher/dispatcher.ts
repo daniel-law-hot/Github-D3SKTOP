@@ -31,6 +31,7 @@ import {
 } from '../../lib/generic-git-auth'
 import {
   RebaseResult,
+  MergeResult,
   PushOptions,
   getCommitsBetweenCommits,
   getBranches,
@@ -1325,6 +1326,17 @@ export class Dispatcher {
     isSquash: boolean = false
   ): Promise<void> {
     return this.appStore._mergeBranch(repository, branch, mergeStatus, isSquash)
+  }
+
+  /**
+   * Move the current branch up to the named branch without recording a merge,
+   * declining if the current branch has commits of its own.
+   */
+  public fastForwardBranch(
+    repository: Repository,
+    branch: Branch
+  ): Promise<MergeResult | undefined> {
+    return this.appStore._fastForwardBranch(repository, branch)
   }
 
   /**

@@ -6847,6 +6847,49 @@ export class AppStore extends TypedBaseStore<IAppState> {
     return this._refreshRepository(repository)
   }
 
+  /**
+   * Move the current branch up to `sourceBranch`, refusing if that would need a
+   * merge commit.
+   *
+   * Deliberately not routed through `_mergeBranch`: that sets up the multi-commit
+   * operation state, which exists so a conflicted merge lands in Desktop's
+   * resolution flow. A fast-forward can't conflict — git either moves the pointer
+   * or declines and leaves the working directory untouched — so there's nothing
+   * for that machinery to catch, and registering an operation that can never need
+   * resolving only leaves state to unwind.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _fastForwardBranch(
+    repository: Repository,
+    sourceBranch: Branch
+  ): Promise<MergeResult | undefined> {
+    const gitStore = this.gitStoreCache.get(repository)
+    const result = await gitStore.merge(sourceBranch, { ffOnly: true })
+    const { tip } = gitStore
+
+    if (result === MergeResult.Success && tip.kind === TipState.Valid) {
+      this._setBanner({
+        type: BannerType.SuccessfulMerge,
+        ourBranch: tip.branch.name,
+        theirBranch: sourceBranch.name,
+      })
+    } else if (
+      result === MergeResult.AlreadyUpToDate &&
+      tip.kind === TipState.Valid
+    ) {
+      this._setBanner({
+        type: BannerType.BranchAlreadyUpToDate,
+        ourBranch: tip.branch.name,
+        theirBranch: sourceBranch.name,
+      })
+    }
+
+    await this._refreshRepository(repository)
+
+    return result
+  }
+
   /** This shouldn't be called directly. See `Dispatcher`. */
   public _setConflictsResolved(repository: Repository) {
     const { multiCommitOperationState } =

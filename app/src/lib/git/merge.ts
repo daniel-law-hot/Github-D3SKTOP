@@ -30,6 +30,13 @@ export type MergeOptions = {
    * recording — a release landing in production, for instance.
    */
   readonly noFf?: boolean
+  /**
+   * Whether to refuse the merge unless it can fast-forward, moving the branch
+   * pointer rather than recording a merge. Only possible while the branch being
+   * updated has no commits of its own, so git is left to be the judge of that —
+   * it fails cleanly and changes nothing rather than half-doing the work.
+   */
+  readonly ffOnly?: boolean
 } & HookCallbackOptions
 
 /** Merge the named branch into the current branch. */
@@ -56,6 +63,10 @@ export async function merge(
 
   if (options?.noFf) {
     args.push('--no-ff')
+  }
+
+  if (options?.ffOnly) {
+    args.push('--ff-only')
   }
 
   args.push(branch)

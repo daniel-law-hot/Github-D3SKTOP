@@ -17,6 +17,19 @@ import {
 import { PreflightChecks } from './preflight-checks'
 import { CommandPreview } from './command-preview'
 import { extractVsoNumbersFromCommits } from '../../../lib/hotflow/branch-patterns'
+import { Select } from '../../lib/select'
+import { MergeResult } from '../../../lib/git'
+
+/**
+ * How to bring the integration branch into the release.
+ *
+ * `merge` records the update as a merge commit and works whatever state the
+ * release is in. `fast-forward` moves the release pointer instead, leaving no
+ * merge commits behind — only possible while the release has nothing of its own,
+ * which is the common case for a release branch that's only ever been a snapshot
+ * of develop.
+ */
+type UpdateMethod = 'merge' | 'fast-forward'
 
 interface IUpdateReleaseDialogProps {
   readonly repository: Repository
@@ -38,6 +51,7 @@ interface IUpdateReleaseDialogState {
   readonly canProceed: boolean
   readonly isChecking: boolean
   readonly isMerging: boolean
+  readonly method: UpdateMethod
 }
 
 /**
@@ -57,6 +71,7 @@ export class UpdateReleaseDialog extends React.Component<
       canProceed: false,
       isChecking: true,
       isMerging: false,
+      method: 'merge',
     }
   }
 
@@ -74,10 +89,15 @@ export class UpdateReleaseDialog extends React.Component<
       return
     }
 
+    // Checked against the ref the merge will actually use, not the resolved
+    // integration branch — those differ whenever the local `develop` is behind
+    // its remote, and "can this fast-forward" answered about the wrong ref is
+    // worse than not asking.
     const result = await preflightUpdateRelease(
       repository,
       release,
-      integrationBranch
+      this.mergeSource(integrationBranch),
+      this.state.method === 'fast-forward'
     )
 
     this.setState({
@@ -85,6 +105,16 @@ export class UpdateReleaseDialog extends React.Component<
       canProceed: result.canProceed,
       isChecking: false,
     })
+  }
+
+  private onMethodChanged = (
+    event: React.FormEvent<HTMLSelectElement>
+  ): void => {
+    const method = event.currentTarget.value as UpdateMethod
+
+    // Whether a fast-forward is possible is one of the checks, so the answer on
+    // screen belongs to the method that was selected when it ran.
+    this.setState({ method, isChecking: true }, () => this.runChecks())
   }
 
   public render() {
@@ -117,6 +147,10 @@ export class UpdateReleaseDialog extends React.Component<
     const disabled =
       !this.state.canProceed || this.state.isChecking || this.state.isMerging
 
+    const isFastForward = this.state.method === 'fast-forward'
+    const integrationName = this.props.hotFlowState.integrationBranchName
+    const branchName = release.branch.nameWithoutRemote
+
     return (
       <Dialog
         id="hotflow-update-release"
@@ -132,9 +166,18 @@ export class UpdateReleaseDialog extends React.Component<
       >
         <DialogContent>
           <p className="hotflow-dialog-lede">
-            Merges <Ref>{this.props.hotFlowState.integrationBranchName}</Ref>{' '}
-            into <Ref>{release.branch.nameWithoutRemote}</Ref>, bringing in
-            everything that's landed since the last update.
+            {isFastForward ? (
+              <>
+                Moves <Ref>{branchName}</Ref> up to <Ref>{integrationName}</Ref>
+                , bringing in everything that's landed since the last update
+                without recording a merge.
+              </>
+            ) : (
+              <>
+                Merges <Ref>{integrationName}</Ref> into <Ref>{branchName}</Ref>
+                , bringing in everything that's landed since the last update.
+              </>
+            )}
           </p>
 
           <div className="hotflow-ship-stats">
@@ -165,30 +208,43 @@ export class UpdateReleaseDialog extends React.Component<
             </div>
           )}
 
+          <Select
+            label="Update method"
+            value={this.state.method}
+            onChange={this.onMethodChanged}
+            disabled={this.state.isMerging}
+          >
+            <option value="merge">Merge (records a merge commit)</option>
+            <option value="fast-forward">Fast-forward (no merge commit)</option>
+          </Select>
+
           <PreflightChecks
             checks={this.state.checks}
             isLoading={this.state.isChecking}
           />
 
           <p className="hotflow-dialog-note">
-            If the merge conflicts, Desktop's conflict resolution will open as
-            usual.
+            {isFastForward
+              ? `A fast-forward can't conflict — git either moves ${branchName} or ` +
+                `declines and changes nothing.`
+              : `If the merge conflicts, Desktop's conflict resolution will open as usual.`}
           </p>
 
           <CommandPreview
             commands={describeUpdateReleaseCommands(
               release,
               this.props.hotFlowState.integrationBranch === null
-                ? this.props.hotFlowState.integrationBranchName
+                ? integrationName
                 : this.mergeSource(this.props.hotFlowState.integrationBranch)
-                    .name
+                    .name,
+              isFastForward
             )}
           />
         </DialogContent>
 
         <DialogFooter>
           <OkCancelButtonGroup
-            okButtonText={__DARWIN__ ? 'Merge' : 'Merge'}
+            okButtonText={isFastForward ? 'Fast-forward' : 'Merge'}
             okButtonDisabled={disabled}
           />
         </DialogFooter>
@@ -227,27 +283,40 @@ export class UpdateReleaseDialog extends React.Component<
       return
     }
 
-    // Matches `Branch -> Update from develop`. Initialising the operation is what
-    // registers it as a merge in progress, and that's what gives a conflict
-    // Desktop's usual resolution flow instead of leaving the working directory
-    // conflicted with nothing on screen. It throws on an invalid tip, which the
-    // check above has already ruled out.
     const mergeSource = this.mergeSource(integrationBranch)
 
-    dispatcher.initializeMergeOperation(repository, false, mergeSource)
+    if (this.state.method === 'fast-forward') {
+      // No merge operation to initialise: git refuses outright rather than
+      // leaving a conflict behind, so there's nothing for the resolution flow to
+      // pick up. An outright refusal comes back as `undefined` with the error
+      // already on screen, and pushing an unchanged branch afterwards would be
+      // pointless — so only Success is worth following up.
+      const result = await dispatcher.fastForwardBranch(repository, mergeSource)
 
-    await dispatcher.mergeBranch(
-      repository,
-      mergeSource,
-      this.props.compareState.mergeStatus
-    )
+      if (result === MergeResult.Success) {
+        await dispatcher.push(repository)
+      }
+    } else {
+      // Matches `Branch -> Update from develop`. Initialising the operation is
+      // what registers it as a merge in progress, and that's what gives a
+      // conflict Desktop's usual resolution flow instead of leaving the working
+      // directory conflicted with nothing on screen. It throws on an invalid tip,
+      // which the check above has already ruled out.
+      dispatcher.initializeMergeOperation(repository, false, mergeSource)
 
-    // Merging into a release branch nobody else can see achieves nothing — the
-    // people testing the release are looking at the remote. Skipped when the merge
-    // left conflicts behind, since pushing a conflicted tree isn't possible and
-    // Desktop's resolution flow now owns the operation.
-    if (this.isOnBranch(release.branch.nameWithoutRemote)) {
-      await dispatcher.push(repository)
+      await dispatcher.mergeBranch(
+        repository,
+        mergeSource,
+        this.props.compareState.mergeStatus
+      )
+
+      // Merging into a release branch nobody else can see achieves nothing — the
+      // people testing the release are looking at the remote. Skipped when the
+      // merge left conflicts behind, since pushing a conflicted tree isn't
+      // possible and Desktop's resolution flow now owns the operation.
+      if (this.isOnBranch(release.branch.nameWithoutRemote)) {
+        await dispatcher.push(repository)
+      }
     }
 
     await dispatcher.refreshHotFlow(repository)
