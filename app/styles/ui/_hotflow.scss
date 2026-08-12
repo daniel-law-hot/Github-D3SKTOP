@@ -265,6 +265,27 @@ body.theme-dark {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-half);
+
+  /**
+   * Being re-read. The boxes and their counts still describe the release being
+   * switched away from, so they fade rather than continuing to read as current.
+   * Faded rather than blanked: the flow's shape is the same for every release, and
+   * emptying it would make the view flash on every branch switch.
+   */
+  &.loading {
+    opacity: 0.45;
+
+    // Nothing in here is worth clicking while it describes the wrong release.
+    pointer-events: none;
+  }
+
+  transition: opacity 120ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hotflow-flow-band {
+    transition: none;
+  }
 }
 
 /**
@@ -790,6 +811,22 @@ body.theme-dark {
   min-height: 0;
   overflow: hidden;
   border-right: 1px solid var(--box-border-color);
+}
+
+/**
+ * The contents panel while the release is being re-read.
+ *
+ * Replaces the list rather than overlaying it, because the list underneath belongs
+ * to the release being switched away from and there's no honest way to show it.
+ */
+.hotflow-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-half);
+  flex-grow: 1;
+  min-height: 0;
+  color: var(--text-secondary-color);
 }
 
 /**

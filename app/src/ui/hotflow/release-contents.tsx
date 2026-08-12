@@ -48,6 +48,15 @@ interface IReleaseContentsProps {
 
   /** Count for the Branch changes tab. */
   readonly changedFileCount: number
+
+  /**
+   * True while the release is being re-read from git.
+   *
+   * Everything in this panel describes one release, so during a switch it all
+   * describes the wrong one. Showing the previous release's work items under the new
+   * release's name for a second and a half reads as fact, not as staleness.
+   */
+  readonly isLoading: boolean
 }
 
 /**
@@ -134,11 +143,17 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
               onClick={this.onTabClick(tab.id)}
             >
               {tab.label}
-              <span
-                className={classNames('hotflow-tab-count', { warn: tab.warn })}
-              >
-                {tab.count}
-              </span>
+              {/* The counts belong to the release being replaced, so they go
+                  quiet rather than asserting the old numbers under the new name. */}
+              {!this.props.isLoading && (
+                <span
+                  className={classNames('hotflow-tab-count', {
+                    warn: tab.warn,
+                  })}
+                >
+                  {tab.count}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -235,6 +250,17 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
 
   private renderTabContent() {
     const { historyRelease, selectedTab } = this.props
+
+    // Cleared rather than left stale. A switch takes a second or two, and for that
+    // whole time the list underneath belongs to the release you just left.
+    if (this.props.isLoading) {
+      return (
+        <div className="hotflow-loading">
+          <Octicon symbol={octicons.sync} className="spin" />
+          <span>Reading the release…</span>
+        </div>
+      )
+    }
 
     // A shipped release only ever has contents, so both its tabs read from it and
     // 'drift' — which it can't have — falls back to its work items rather than
