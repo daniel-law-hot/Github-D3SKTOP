@@ -4935,6 +4935,24 @@ export class AppStore extends TypedBaseStore<IAppState> {
     })
 
     await this._refreshRepository(repository)
+
+    // A checked-out release branch is the release HotFlow is about, so switching
+    // branches changes which release the whole view describes — and nothing else
+    // in the app was telling it. Until this existed, moving to release/1.2026.17
+    // left the view on the old release until the refresh button was pressed.
+    //
+    // Only when it has already been read: a repository whose HotFlow has never
+    // been opened gets its first read when the view opens, and doing it here would
+    // be git work for something nobody is looking at. Un-awaited for the same
+    // reason the read on repository selection is — the checkout must not wait on it.
+    const { hotFlowState } = this.repositoryStateCache.get(repository)
+
+    if (hotFlowState.lastRefreshed !== null) {
+      this._refreshHotFlow(repository).catch(e =>
+        log.warn('[AppStore] HotFlow could not refresh after checkout', e)
+      )
+    }
+
     return repository
   }
 

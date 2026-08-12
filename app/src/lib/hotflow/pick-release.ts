@@ -35,8 +35,14 @@ import { compareReleaseVersions, isSameReleaseVersion } from './version'
 export interface IReleaseChoice {
   readonly version: IReleaseVersion
 
-  /** Commits on the branch that aren't in production. Zero means merged. */
-  readonly aheadOfProduction: number
+  /**
+   * Whether production already contains the whole branch.
+   *
+   * A boolean rather than a commit count: choosing between releases only needs to
+   * know *whether* anything is outstanding, and the counts cost a git process each
+   * while this comes free for every branch in one call.
+   */
+  readonly isMergedIntoProduction: boolean
 
   /** The branch name as git reports it, matched against HEAD. */
   readonly branchName: string
@@ -62,7 +68,7 @@ export function isShipped(
   release: IReleaseChoice,
   shippedVersions: ReadonlyArray<IReleaseVersion>
 ): boolean {
-  if (release.aheadOfProduction === 0) {
+  if (release.isMergedIntoProduction) {
     return true
   }
 

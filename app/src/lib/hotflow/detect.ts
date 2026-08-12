@@ -297,13 +297,28 @@ async function resolveProductionFromDefaultBranch(
 interface IReleaseCandidate {
   readonly branch: Branch
   readonly version: IReleaseVersion
-  readonly aheadOfProduction: number
-  readonly behindIntegration: number
+
+  /**
+   * Whether the branch is wholly contained in production.
+   *
+   * A boolean rather than the commit count, because that's all choosing between
+   * candidates needs — and the count costs a git process each, while this comes
+   * free for every branch at once. `buildReleaseState` works out the real number
+   * for the handful of releases actually shown.
+   */
+  readonly isMergedIntoProduction: boolean
 }
 
 /**
- * Finds every release branch and how far it is from production, deduplicating
- * local against remote so a branch that exists in both places appears once.
+ * Finds every release branch, and which of them production already contains.
+ *
+ * One `for-each-ref --merged` rather than an ahead/behind per branch. That used to
+ * be sixteen git processes in HOTWebsites and the single largest cost in the whole
+ * refresh — 3.1 of about 3.0 seconds, since much of the rest ran in parallel with
+ * it. The same answer arrives in one call in 364ms.
+ *
+ * Local and remote copies of a branch are deduplicated so a branch that exists in
+ * both places appears once, preferring the local one.
  */
 async function collectReleaseBranches(
   repository: Repository,
@@ -333,33 +348,69 @@ async function collectReleaseBranches(
     }
   }
 
-  const candidates = await Promise.all(
-    [...byVersion.entries()].map(async ([raw, branch]) => {
-      const version = parseReleaseVersion(raw)
-
-      if (version === null) {
-        return null
-      }
-
-      const aheadBehind = await getAheadBehind(
-        repository,
-        revSymmetricDifference(branch.name, productionRef)
-      )
-
-      if (aheadBehind === null) {
-        return null
-      }
-
-      return {
-        branch,
-        version,
-        aheadOfProduction: aheadBehind.ahead,
-        behindIntegration: 0,
-      }
-    })
+  const mergedIntoProduction = await collectMergedRefs(
+    repository,
+    productionRef,
+    ['refs/heads/release/*', 'refs/remotes/*/release/*']
   )
 
-  return candidates.filter((c): c is IReleaseCandidate => c !== null)
+  const candidates: Array<IReleaseCandidate> = []
+
+  for (const [raw, branch] of byVersion) {
+    const version = parseReleaseVersion(raw)
+
+    if (version === null) {
+      continue
+    }
+
+    candidates.push({
+      branch,
+      version,
+      isMergedIntoProduction: mergedIntoProduction.has(branch.name),
+    })
+  }
+
+  return candidates
+}
+
+/**
+ * The subset of the given ref patterns that production already contains.
+ *
+ * Answers "is this merged" for every ref in one process instead of one per ref.
+ * Returns short names, matching `Branch.name`, so a local `release/1.2026.17` and
+ * an `origin/release/1.2026.17` are distinguishable — they can legitimately differ
+ * when one has been pushed and the other hasn't.
+ */
+async function collectMergedRefs(
+  repository: Repository,
+  productionRef: string,
+  patterns: ReadonlyArray<string>
+): Promise<ReadonlySet<string>> {
+  const result = await git(
+    [
+      'for-each-ref',
+      '--format=%(refname:short)',
+      `--merged=${productionRef}`,
+      ...patterns,
+    ],
+    repository.path,
+    'hotFlowMergedRefs',
+    {
+      expectedErrors: new Set([GitError.NotAGitRepository]),
+      successExitCodes: new Set([0, 1]),
+    }
+  )
+
+  if (result.gitError === GitError.NotAGitRepository) {
+    return new Set()
+  }
+
+  return new Set(
+    result.stdout
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+  )
 }
 
 /** Loads the detail for one release branch. */
@@ -388,6 +439,24 @@ async function buildReleaseState(
       ])
     : [[], [], []]
 
+  // How far ahead of production this release is, worked out here rather than for
+  // every candidate — only the releases that get shown need the number, and each
+  // one costs a git process.
+  //
+  // When the commits are loaded it's free: they *are* `production..release`, so
+  // counting them is the same answer without asking git twice. A release known to
+  // be merged is zero by definition. Otherwise it takes the one extra call.
+  const aheadOfProduction = loadCommits
+    ? commits.length
+    : candidate.isMergedIntoProduction
+    ? 0
+    : (
+        await getAheadBehind(
+          repository,
+          revSymmetricDifference(releaseRef, productionRef)
+        )
+      )?.ahead ?? 0
+
   const vsoNumbers = extractVsoNumbersFromCommits(commits)
 
   const contributorCount = new Set(commits.map(c => c.author.name)).size
@@ -403,11 +472,11 @@ async function buildReleaseState(
     commits,
     releaseOnlyCommits,
     incomingCommits,
-    aheadOfProduction: candidate.aheadOfProduction,
+    aheadOfProduction,
     behindIntegration,
     vsoNumbers,
     contributorCount,
-    verdict: computeVerdict(candidate.aheadOfProduction, behindIntegration),
+    verdict: computeVerdict(aheadOfProduction, behindIntegration),
   }
 }
 
@@ -521,39 +590,30 @@ async function collectFeatureBranches(
     }
   }
 
-  const states = await Promise.all(
-    [...byName.values()].map(async branch => {
-      const parsed = parseFeatureBranchName(branch.name)
+  // One query for every branch integration already contains, rather than an
+  // ahead/behind per branch. "Nothing ahead of integration" and "merged into
+  // integration" are the same condition, and this was the largest remaining block
+  // of git processes in the refresh — sixteen of them in NimbleObt.
+  const merged = await collectMergedRefs(repository, integrationRef, [
+    'refs/heads/feature/*',
+    'refs/remotes/*/feature/*',
+  ])
 
-      if (parsed === null) {
-        return null
-      }
+  const states: Array<IFeatureBranchState> = []
 
-      const aheadBehind = await getAheadBehind(
-        repository,
-        revSymmetricDifference(branch.name, integrationRef)
-      )
+  for (const branch of byName.values()) {
+    const parsed = parseFeatureBranchName(branch.name)
 
-      const ahead = aheadBehind?.ahead ?? 0
+    // A feature branch integration already holds is merged or never started;
+    // either way it isn't open work.
+    if (parsed === null || merged.has(branch.name)) {
+      continue
+    }
 
-      // A feature branch with nothing on it is already merged or never started;
-      // either way it isn't open work.
-      if (ahead === 0) {
-        return null
-      }
+    states.push({ branch, vso: parsed.vso, slug: parsed.slug })
+  }
 
-      return {
-        branch,
-        vso: parsed.vso,
-        slug: parsed.slug,
-        aheadOfIntegration: ahead,
-      }
-    })
-  )
-
-  return states
-    .filter((s): s is IFeatureBranchState => s !== null)
-    .sort((a, b) => a.vso - b.vso)
+  return states.sort((a, b) => a.vso - b.vso)
 }
 
 /**

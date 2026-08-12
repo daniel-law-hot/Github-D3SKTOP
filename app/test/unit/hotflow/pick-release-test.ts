@@ -14,10 +14,10 @@ function version(raw: string): IReleaseVersion {
   return parsed
 }
 
-function release(raw: string, aheadOfProduction = 5): IReleaseChoice {
+function release(raw: string, isMergedIntoProduction = false): IReleaseChoice {
   return {
     version: version(raw),
-    aheadOfProduction,
+    isMergedIntoProduction,
     branchName: `release/${raw}`,
   }
 }
@@ -33,21 +33,21 @@ function picked(selection: { current: IReleaseChoice | null }) {
 describe('hotflow/pick-release', () => {
   describe('isShipped', () => {
     it('treats a branch fully merged into production as shipped', () => {
-      assert.strictEqual(isShipped(release('1.2026.5', 0), []), true)
+      assert.strictEqual(isShipped(release('1.2026.5', true), []), true)
     })
 
     it('treats a tagged version as shipped even with the branch unmerged', () => {
       // HOTWebsites 1.2026.7: tagged on main in July, branch still 31 commits
       // ahead of it. Merged-only checking called this the next release to ship.
       assert.strictEqual(
-        isShipped(release('1.2026.7', 31), versions(['1.2026.7'])),
+        isShipped(release('1.2026.7'), versions(['1.2026.7'])),
         true
       )
     })
 
     it('treats an unmerged, untagged release as open', () => {
       assert.strictEqual(
-        isShipped(release('1.2026.17', 9), versions(['1.2026.11'])),
+        isShipped(release('1.2026.17'), versions(['1.2026.11'])),
         false
       )
     })
@@ -55,14 +55,14 @@ describe('hotflow/pick-release', () => {
     it('compares versions rather than tag strings', () => {
       // 1.2026.07 and 1.2026.7 are the same release.
       assert.strictEqual(
-        isShipped(release('1.2026.7', 31), versions(['1.2026.07'])),
+        isShipped(release('1.2026.7'), versions(['1.2026.07'])),
         true
       )
     })
 
     it('does not confuse a hotfix with its parent release', () => {
       assert.strictEqual(
-        isShipped(release('1.2026.16.1', 3), versions(['1.2026.16'])),
+        isShipped(release('1.2026.16.1'), versions(['1.2026.16'])),
         false
       )
     })
@@ -72,17 +72,17 @@ describe('hotflow/pick-release', () => {
     // The real HOTWebsites shape: sixteen release branches, nine shipped, and
     // several open at once for three different products.
     const hotWebsites = [
-      release('1.2026.2', 0),
-      release('1.2026.5', 0),
-      release('1.2026.6', 0),
-      release('1.2026.7', 31),
-      release('1.2026.11', 0),
-      release('1.2026.12', 41),
-      release('1.2026.13', 1),
-      release('1.2026.14', 49),
-      release('1.2026.15', 5),
-      release('1.2026.16', 34),
-      release('1.2026.17', 9),
+      release('1.2026.2', true),
+      release('1.2026.5', true),
+      release('1.2026.6', true),
+      release('1.2026.7'),
+      release('1.2026.11', true),
+      release('1.2026.12'),
+      release('1.2026.13'),
+      release('1.2026.14'),
+      release('1.2026.15'),
+      release('1.2026.16'),
+      release('1.2026.17'),
     ]
 
     const shippedTags = versions([
@@ -169,7 +169,7 @@ describe('hotflow/pick-release', () => {
 
     it('lists nothing else when only one release is open', () => {
       const selection = pickCurrentRelease(
-        [release('1.2026.5', 0), release('1.2026.17', 9)],
+        [release('1.2026.5', true), release('1.2026.17')],
         versions(['1.2026.5']),
         null
       )
@@ -180,7 +180,7 @@ describe('hotflow/pick-release', () => {
 
     it('returns null when every release has shipped', () => {
       const selection = pickCurrentRelease(
-        [release('1.2026.5', 0), release('1.2026.6', 2)],
+        [release('1.2026.5', true), release('1.2026.6')],
         versions(['1.2026.6']),
         null
       )

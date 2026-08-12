@@ -243,7 +243,10 @@ export interface IFeatureBranchState {
   readonly branch: Branch
   readonly vso: number
   readonly slug: string
-  readonly aheadOfIntegration: number
+  // `aheadOfIntegration` used to live here. Nothing ever read it, and computing it
+  // cost one git process per feature branch — sixteen in NimbleObt — to produce a
+  // number no view displayed. Whether a branch is open at all is now answered for
+  // every branch at once by `--merged`.
 }
 
 /** A release that has already shipped, identified by its tag on production. */
