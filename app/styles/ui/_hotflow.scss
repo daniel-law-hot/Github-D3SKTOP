@@ -1503,8 +1503,9 @@ body.theme-dark {
 // ── toolbar button ────────────────────────────────────────────────────────────
 
 .toolbar-button.hotflow-button {
-  // Matches the width behaviour of the neighbouring push/pull button.
-  min-width: 160px;
+  // Width and collapse order live with the rest of the toolbar arrangement, in
+  // ui/toolbar/_toolbar.scss — this button is the third of four to give up its
+  // label as the window narrows.
 
   &.hotflow-button-active {
     background: var(--toolbar-button-active-background-color);

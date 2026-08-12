@@ -257,6 +257,13 @@ $overlay-background-color: rgba(0, 0, 0, 0.4);
 
   --toolbar-height: 50px;
 
+  /**
+   * What a toolbar button narrows to once it has given up its label: enough for
+   * the icon and the button's own padding on either side of it, and nothing
+   * more. Twice the button's 12px left padding plus a 16px octicon.
+   */
+  --toolbar-collapsed-width: 40px;
+
   --toolbar-background-color: #{$gray-100};
   --toolbar-border-color: var(--box-border-color);
   --toolbar-text-color: var(--text-color);

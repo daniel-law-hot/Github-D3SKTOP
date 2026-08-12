@@ -114,6 +114,88 @@
     // The right-float anchor lives on .open-with-claude-button, which renders
     // immediately before this group, so this group sits flush against it.
   }
+
+  // ── collapsing under pressure ───────────────────────────────────────────────
+  //
+  // As the window narrows, the buttons to the right of the branch give up their
+  // labels one at a time and end up as icon-only squares — Visual Studio first,
+  // then Claude, then HotFlow, then fetch. The current repository and branch
+  // never take part; they hold their width whatever happens.
+  //
+  // Flexbox does the sequencing. Shrink is shared out in proportion to each
+  // item's `flex-shrink` times its base width, so factors two orders of
+  // magnitude apart mean that by the time one button has collapsed the next has
+  // moved a pixel or so. Each freezes at `--toolbar-collapsed-width` as it
+  // bottoms out and the rest of the shrink moves along to the next one.
+  //
+  // It matters that this is flexbox rather than breakpoints: the space isn't a
+  // function of the window alone — dragging the sidebar divider changes it too —
+  // and the labels ellipsise away continuously instead of snapping between a
+  // full-width button and a square.
+  //
+  // These sit after the rules they narrow so equal-specificity declarations
+  // resolve this way round.
+  .sidebar-section {
+    // Already flex-shrink: 0 above; spelled out here because "the repository
+    // button doesn't collapse" is now a deliberate part of the arrangement
+    // rather than an incidental property of the sidebar.
+    flex-shrink: 0;
+  }
+
+  .toolbar-button {
+    &.branch-toolbar-button,
+    &.branch-toolbar-button.resizable {
+      // Static, by request: the branch you're on is the one thing in the toolbar
+      // you read constantly, and a name that changes width as you resize the
+      // window is harder to find than one that doesn't.
+      flex: 0 0 230px;
+      width: 230px;
+    }
+
+    // The filler. It takes the slack when there's room to spare, which is what
+    // keeps the row gapless, and it's the last to give up its label.
+    &.push-pull-button,
+    &.push-pull-button.resizable {
+      flex: 1 1 230px;
+      width: auto;
+      min-width: var(--toolbar-collapsed-width);
+    }
+
+    &.hotflow-button {
+      flex: 0 100 200px;
+      min-width: var(--toolbar-collapsed-width);
+    }
+
+    &.open-with-claude-button {
+      flex: 0 10000 200px;
+      min-width: var(--toolbar-collapsed-width);
+    }
+
+    // Collapses within the group rather than against the toolbar — the group is
+    // the flex item out here, and the arrow beside it keeps its 30px throughout.
+    &.open-in-visual-studio-button {
+      flex: 1 1 200px;
+      min-width: var(--toolbar-collapsed-width);
+    }
+  }
+
+  .open-in-visual-studio-group {
+    flex: 0 1000000 230px;
+    min-width: calc(var(--toolbar-collapsed-width) + 30px);
+  }
+
+  // Nudged from the usual 10px so that the icon sits dead centre once the button
+  // is down to `--toolbar-collapsed-width` — the padding is what positions it,
+  // since everything to the icon's right is clipped by then. Two pixels wider
+  // than its neighbours at full width, which isn't a difference you can see.
+  .toolbar-button.push-pull-button,
+  .toolbar-button.hotflow-button,
+  .toolbar-button.open-with-claude-button,
+  .toolbar-button.open-in-visual-studio-button {
+    & > button {
+      padding-left: 12px;
+    }
+  }
 }
 
 @keyframes spin {
