@@ -3956,6 +3956,46 @@ export class App extends React.Component<IAppProps, IAppState> {
           hasGitHubAccount={
             getAccountForRepository(accounts, selectedState.repository) !== null
           }
+          // The Branch changes tab renders the same file list, diff and commit
+          // form as the repository view's Changes section, from the same
+          // components — see `changes-pane.tsx`.
+          changesPaneProps={{
+            repository: selectedState.repository,
+            dispatcher: this.props.dispatcher,
+            state: selectedState.state,
+            emoji: state.emoji,
+            accounts: state.accounts,
+            issuesStore: this.props.issuesStore,
+            gitHubUserStore: this.props.gitHubUserStore,
+            imageDiffType: state.imageDiffType,
+            hideWhitespaceInChangesDiff: state.hideWhitespaceInChangesDiff,
+            showSideBySideDiff: state.showSideBySideDiff,
+            showDiffCheckMarks: state.showDiffCheckMarks,
+            focusCommitMessage: state.focusCommitMessage,
+            askForConfirmationOnDiscardChanges:
+              state.askForConfirmationOnDiscardChanges,
+            askForConfirmationOnCommitFilteredChanges:
+              state.askForConfirmationOnCommitFilteredChanges,
+            askForConfirmationOnDiscardStash:
+              state.askForConfirmationOnDiscardStash,
+            externalEditorLabel: this.externalEditorLabel,
+            onOpenInExternalEditor: this.onOpenInExternalEditor,
+            isShowingModal: this.isShowingModal,
+            isShowingFoldout: this.state.currentFoldout !== null,
+            commitSpellcheckEnabled: this.state.commitSpellcheckEnabled,
+            showCommitLengthWarning: this.state.showCommitLengthWarning,
+            showChangesFilter: state.showChangesFilter,
+            showChangesAsTree: state.showChangesAsTree,
+            changesTreeFilesFirst: state.changesTreeFilesFirst,
+            shouldNudgeToCommit: false,
+            shouldShowGenerateCommitMessageCallOut:
+              !this.state.commitMessageGenerationButtonClicked,
+            stashedFilesWidth: state.stashedFilesWidth,
+            skipCommitHooks: selectedState.state.skipCommitHooks,
+            signOffCommits: selectedState.state.signOffCommits,
+            allowEmptyCommit: selectedState.state.allowEmptyCommit,
+            onUpdateCommitOptions: this.onUpdateCommitOptions,
+          }}
         />
       )
     }

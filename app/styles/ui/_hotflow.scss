@@ -792,6 +792,49 @@ body.theme-dark {
   border-right: 1px solid var(--box-border-color);
 }
 
+/**
+ * The Branch changes tab: file list and commit form on the left, diff on the right.
+ *
+ * The same two components the repository view's Changes section uses, so the styling
+ * they bring with them applies unchanged — this only has to lay them out and give
+ * each side somewhere to scroll. `min-height: 0` on both is what stops the file list
+ * and the diff from growing the panel instead of scrolling inside it.
+ */
+.hotflow-branch-changes {
+  display: flex;
+  flex-grow: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+
+  // The resizable file list keeps its own width; the diff takes the rest.
+  > .resizable-component {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex-shrink: 0;
+    border-right: 1px solid var(--box-border-color);
+  }
+}
+
+.hotflow-branch-changes-diff {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+// The clean working directory, centred rather than pinned to the top left.
+.hotflow-branch-changes-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-half);
+  height: 100%;
+}
+
 .hotflow-tabs {
   display: flex;
   align-items: center;

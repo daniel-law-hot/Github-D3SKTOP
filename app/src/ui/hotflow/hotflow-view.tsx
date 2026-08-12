@@ -33,6 +33,8 @@ import {
 } from './flow-band-resizer'
 import { ReleaseContents, ReleaseContentsTab } from './release-contents'
 import { ReleaseSummary } from './release-summary'
+import { BranchChanges } from './branch-changes'
+import { IChangesPaneProps } from '../changes/changes-pane'
 import { reconcileRelease } from '../../lib/hotflow/reconcile'
 import {
   isFeatureBranchName,
@@ -55,6 +57,29 @@ interface IHotFlowViewProps {
    * Decides whether "no pull request" is a fact or an absence of data.
    */
   readonly hasGitHubAccount: boolean
+
+  /**
+   * Everything the Branch changes tab needs to render the working directory.
+   *
+   * Assembled in `app.tsx`, where application state lives — the same values the
+   * repository view's Changes section is built from, so the two behave identically.
+   */
+  readonly changesPaneProps: IChangesPaneProps
+}
+
+/**
+ * Whether the checked-out branch is a feature branch.
+ *
+ * Decides whether the Branch changes tab is offered at all: on a release branch the
+ * working directory isn't what HotFlow is for.
+ */
+function isOnFeatureBranch(branchesState: IBranchesState): boolean {
+  const { tip } = branchesState
+
+  return (
+    tip.kind === TipState.Valid &&
+    isFeatureBranchName(tip.branch.nameWithoutRemote)
+  )
 }
 
 interface IHotFlowViewState {
@@ -87,7 +112,12 @@ export class HotFlowView extends React.Component<
   public constructor(props: IHotFlowViewProps) {
     super(props)
     this.state = {
-      selectedTab: 'work-items',
+      // Standing on a feature branch means you're working on one, so open on the
+      // changes rather than making you click into them. Opening HotFlow from a
+      // release branch still lands on the release picture, which is its purpose.
+      selectedTab: isOnFeatureBranch(props.branchesState)
+        ? 'branch-changes'
+        : 'work-items',
       bandHeight: getStoredFlowBandHeight(),
       selectedHistoryTag: null,
     }
@@ -222,6 +252,25 @@ export class HotFlowView extends React.Component<
           vso: parseFeatureBranchName(name)?.vso ?? null,
         }
       })
+    )
+  }
+
+  /**
+   * The working directory pane, or null when there's no feature branch for it.
+   *
+   * Returning null is what removes the tab, so the two can't disagree about whether
+   * it's on offer.
+   */
+  private renderBranchChanges(): JSX.Element | null {
+    if (!isOnFeatureBranch(this.props.branchesState)) {
+      return null
+    }
+
+    return (
+      <BranchChanges
+        changesPaneProps={this.props.changesPaneProps}
+        branchName={this.currentBranchName}
+      />
     )
   }
 
@@ -672,6 +721,11 @@ export class HotFlowView extends React.Component<
           integrationBranchName={this.integrationName}
           historyRelease={this.historyRelease}
           onCloseHistory={this.onCloseHistory}
+          branchChanges={this.renderBranchChanges()}
+          changedFileCount={
+            this.props.changesPaneProps.state.changesState.workingDirectory
+              .files.length
+          }
         />
         <ReleaseSummary
           hotFlowState={this.props.hotFlowState}

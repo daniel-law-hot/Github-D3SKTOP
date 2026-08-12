@@ -3,9 +3,12 @@ import { Repository } from '../models/repository'
 import { Commit, CommitOneLine } from '../models/commit'
 import { TipState } from '../models/tip'
 import { UiView } from './ui-view'
-import { Changes, ChangesSidebar } from './changes'
+import {
+  ChangesDiffPane,
+  ChangesSidebarPane,
+  IChangesPaneProps,
+} from './changes/changes-pane'
 import { NoChanges } from './changes/no-changes'
-import { MultipleSelection } from './changes/multiple-selection'
 import { FilesChangedBadge } from './changes/files-changed-badge'
 import { SelectedCommits, CompareSidebar } from './history'
 import { GraphSidebar } from './graph/graph-sidebar'
@@ -14,7 +17,6 @@ import { TabBar } from './tab-bar'
 import {
   IRepositoryState,
   RepositorySectionTab,
-  ChangesSelectionKind,
   IConstrainedValue,
   CommitOptions,
 } from '../lib/app-state'
@@ -25,8 +27,6 @@ import { Account } from '../models/account'
 import { FocusContainer } from './lib/focus-container'
 import { ImageDiffType } from '../models/diff'
 import { IMenu } from '../models/app-menu'
-import { StashDiffViewer } from './stashing'
-import { StashedChangesLoadStates } from '../models/stash-entry'
 import { TutorialPanel, TutorialWelcome, TutorialDone } from './tutorial'
 import { TutorialStep, isValidTutorialStep } from '../models/tutorial-step'
 import { openFile } from './lib/open-file'
@@ -36,7 +36,6 @@ import { DragType } from '../models/drag-drop'
 import { PullRequestSuggestedNextAction } from '../models/pull-request'
 import { clamp } from '../lib/clamp'
 import { Emoji } from '../lib/emoji'
-import { PopupType } from '../models/popup'
 
 interface IRepositoryViewProps {
   readonly repository: Repository
@@ -172,7 +171,7 @@ export class RepositoryView extends React.Component<
   // the Compare list is rendered.
   private forceCompareListScrollTop: boolean = false
 
-  private readonly changesSidebarRef = React.createRef<ChangesSidebar>()
+  private readonly changesSidebarRef = React.createRef<ChangesSidebarPane>()
   private readonly compareSidebarRef = React.createRef<CompareSidebar>()
 
   private focusHistoryNeeded: boolean = false
@@ -249,36 +248,55 @@ export class RepositoryView extends React.Component<
     )
   }
 
-  private onShowCommitProgress = () => {
-    if (!this.props.state.subscribeToCommitOutput) {
-      return
+  /**
+   * The values the changes pane needs, gathered in one place.
+   *
+   * HotFlow's Branch changes tab renders the same two halves, so the wiring lives
+   * in `changes-pane.tsx` and both callers hand it this. See the note there for why
+   * it isn't one component that renders both.
+   */
+  private get changesPaneProps(): IChangesPaneProps {
+    return {
+      repository: this.props.repository,
+      dispatcher: this.props.dispatcher,
+      state: this.props.state,
+      emoji: this.props.emoji,
+      accounts: this.props.accounts,
+      issuesStore: this.props.issuesStore,
+      gitHubUserStore: this.props.gitHubUserStore,
+      imageDiffType: this.props.imageDiffType,
+      hideWhitespaceInChangesDiff: this.props.hideWhitespaceInChangesDiff,
+      showSideBySideDiff: this.props.showSideBySideDiff,
+      showDiffCheckMarks: this.props.showDiffCheckMarks,
+      focusCommitMessage: this.props.focusCommitMessage,
+      askForConfirmationOnDiscardChanges:
+        this.props.askForConfirmationOnDiscardChanges,
+      askForConfirmationOnCommitFilteredChanges:
+        this.props.askForConfirmationOnCommitFilteredChanges,
+      askForConfirmationOnDiscardStash:
+        this.props.askForConfirmationOnDiscardStash,
+      externalEditorLabel: this.props.externalEditorLabel,
+      onOpenInExternalEditor: this.props.onOpenInExternalEditor,
+      isShowingModal: this.props.isShowingModal,
+      isShowingFoldout: this.props.isShowingFoldout,
+      commitSpellcheckEnabled: this.props.commitSpellcheckEnabled,
+      showCommitLengthWarning: this.props.showCommitLengthWarning,
+      showChangesFilter: this.props.showChangesFilter,
+      showChangesAsTree: this.props.showChangesAsTree,
+      changesTreeFilesFirst: this.props.changesTreeFilesFirst,
+      shouldNudgeToCommit:
+        this.props.currentTutorialStep === TutorialStep.MakeCommit,
+      shouldShowGenerateCommitMessageCallOut:
+        this.props.shouldShowGenerateCommitMessageCallOut,
+      stashedFilesWidth: this.props.stashedFilesWidth,
+      skipCommitHooks: this.props.skipCommitHooks,
+      signOffCommits: this.props.signOffCommits,
+      allowEmptyCommit: this.props.allowEmptyCommit,
+      onUpdateCommitOptions: this.props.onUpdateCommitOptions,
     }
-
-    this.props.dispatcher.showPopup({
-      type: PopupType.CommitProgress,
-      subscribeToCommitOutput: this.props.state.subscribeToCommitOutput,
-    })
   }
 
   private renderChangesSidebar(): JSX.Element {
-    const tip = this.props.state.branchesState.tip
-
-    let branchName: string | null = null
-
-    if (tip.kind === TipState.Valid) {
-      branchName = tip.branch.name
-    } else if (tip.kind === TipState.Unborn) {
-      branchName = tip.ref
-    }
-
-    const localCommitSHAs = this.props.state.localCommitSHAs
-    const mostRecentLocalCommitSHA =
-      localCommitSHAs.length > 0 ? localCommitSHAs[0] : null
-    const mostRecentLocalCommit =
-      (mostRecentLocalCommitSHA
-        ? this.props.state.commitLookup.get(mostRecentLocalCommitSHA)
-        : null) || null
-
     // -1 Because of right hand side border
     const availableWidth = clamp(this.props.sidebarWidth) - 1
 
@@ -289,58 +307,11 @@ export class RepositoryView extends React.Component<
     this.previousSection = RepositorySectionTab.Changes
 
     return (
-      <ChangesSidebar
-        ref={this.changesSidebarRef}
-        repository={this.props.repository}
-        dispatcher={this.props.dispatcher}
-        changes={this.props.state.changesState}
-        aheadBehind={this.props.state.aheadBehind}
-        branch={branchName}
-        commitAuthor={this.props.state.commitAuthor}
-        emoji={this.props.emoji}
-        mostRecentLocalCommit={mostRecentLocalCommit}
-        issuesStore={this.props.issuesStore}
+      <ChangesSidebarPane
+        {...this.changesPaneProps}
         availableWidth={availableWidth}
-        gitHubUserStore={this.props.gitHubUserStore}
-        isCommitting={this.props.state.isCommitting}
-        hookProgress={this.props.state.hookProgress}
-        onShowCommitProgress={
-          this.props.state.subscribeToCommitOutput
-            ? this.onShowCommitProgress
-            : undefined
-        }
-        isGeneratingCommitMessage={this.props.state.isGeneratingCommitMessage}
-        shouldShowGenerateCommitMessageCallOut={
-          this.props.shouldShowGenerateCommitMessageCallOut
-        }
-        commitToAmend={this.props.state.commitToAmend}
-        isPushPullFetchInProgress={this.props.state.isPushPullFetchInProgress}
-        focusCommitMessage={this.props.focusCommitMessage}
-        askForConfirmationOnDiscardChanges={
-          this.props.askForConfirmationOnDiscardChanges
-        }
-        askForConfirmationOnCommitFilteredChanges={
-          this.props.askForConfirmationOnCommitFilteredChanges
-        }
-        accounts={this.props.accounts}
-        isShowingModal={this.props.isShowingModal}
-        isShowingFoldout={this.props.isShowingFoldout}
-        externalEditorLabel={this.props.externalEditorLabel}
-        onOpenInExternalEditor={this.props.onOpenInExternalEditor}
-        onChangesListScrolled={this.onChangesListScrolled}
         changesListScrollTop={scrollTop}
-        shouldNudgeToCommit={
-          this.props.currentTutorialStep === TutorialStep.MakeCommit
-        }
-        commitSpellcheckEnabled={this.props.commitSpellcheckEnabled}
-        showCommitLengthWarning={this.props.showCommitLengthWarning}
-        showChangesFilter={this.props.showChangesFilter}
-        showChangesAsTree={this.props.showChangesAsTree}
-        changesTreeFilesFirst={this.props.changesTreeFilesFirst}
-        skipCommitHooks={this.props.skipCommitHooks}
-        signOffCommits={this.props.signOffCommits}
-        allowEmptyCommit={this.props.allowEmptyCommit}
-        onUpdateCommitOptions={this.props.onUpdateCommitOptions}
+        onChangesListScrolled={this.onChangesListScrolled}
       />
     )
   }
@@ -478,47 +449,6 @@ export class RepositoryView extends React.Component<
     }
   }
 
-  private renderStashedChangesContent(): JSX.Element | null {
-    const { changesState } = this.props.state
-    const { selection, stashEntry } = changesState
-
-    if (selection.kind !== ChangesSelectionKind.Stash || stashEntry === null) {
-      return null
-    }
-
-    if (stashEntry.files.kind === StashedChangesLoadStates.Loaded) {
-      return (
-        <StashDiffViewer
-          stashEntry={stashEntry}
-          selectedStashedFile={selection.selectedStashedFile}
-          stashedFileDiff={selection.selectedStashedFileDiff}
-          imageDiffType={this.props.imageDiffType}
-          fileListWidth={this.props.stashedFilesWidth}
-          repository={this.props.repository}
-          dispatcher={this.props.dispatcher}
-          askForConfirmationOnDiscardStash={
-            this.props.askForConfirmationOnDiscardStash
-          }
-          showSideBySideDiff={this.props.showSideBySideDiff}
-          onOpenBinaryFile={this.onOpenBinaryFile}
-          onOpenSubmodule={this.onOpenSubmodule}
-          onChangeImageDiffType={this.onChangeImageDiffType}
-          onHideWhitespaceInDiffChanged={this.onHideWhitespaceInDiffChanged}
-          onOpenInExternalEditor={this.props.onOpenInExternalEditor}
-        />
-      )
-    }
-
-    return null
-  }
-
-  private onHideWhitespaceInDiffChanged = (hideWhitespaceInDiff: boolean) => {
-    return this.props.dispatcher.onHideWhitespaceInChangesDiffChanged(
-      hideWhitespaceInDiff,
-      this.props.repository
-    )
-  }
-
   private renderContentForHistory(): JSX.Element {
     const { commitSelection, commitLookup, localCommitSHAs } = this.props.state
     const { changesetData, file, diff, shas, shasInDiff, isContiguous } =
@@ -597,71 +527,40 @@ export class RepositoryView extends React.Component<
   }
 
   private renderContentForChanges(): JSX.Element | null {
-    const { changesState } = this.props.state
-    const { workingDirectory, selection } = changesState
-
-    if (selection.kind === ChangesSelectionKind.Stash) {
-      return this.renderStashedChangesContent()
-    }
-
-    const { selectedFileIDs, diff } = selection
-
-    if (selectedFileIDs.length > 1) {
-      return <MultipleSelection count={selectedFileIDs.length} />
-    }
-
-    if (workingDirectory.files.length === 0) {
-      if (this.props.currentTutorialStep !== TutorialStep.NotApplicable) {
-        return this.renderTutorialPane()
-      } else {
-        return (
-          <NoChanges
-            key={this.props.repository.id}
-            appMenu={this.props.appMenu}
-            repository={this.props.repository}
-            repositoryState={this.props.state}
-            isExternalEditorAvailable={this.props.isExternalEditorAvailable}
-            dispatcher={this.props.dispatcher}
-            pullRequestSuggestedNextAction={
-              this.props.pullRequestSuggestedNextAction
-            }
-          />
-        )
-      }
-    } else {
-      if (selectedFileIDs.length === 0) {
-        return null
-      }
-
-      const selectedFile = workingDirectory.findFileWithID(selectedFileIDs[0])
-
-      if (selectedFile === null) {
-        return null
-      }
-
-      return (
-        <Changes
-          repository={this.props.repository}
-          dispatcher={this.props.dispatcher}
-          file={selectedFile}
-          diff={diff}
-          isCommitting={this.props.state.isCommitting}
-          imageDiffType={this.props.imageDiffType}
-          hideWhitespaceInDiff={this.props.hideWhitespaceInChangesDiff}
-          showSideBySideDiff={this.props.showSideBySideDiff}
-          showDiffCheckMarks={this.props.showDiffCheckMarks}
-          onOpenBinaryFile={this.onOpenBinaryFile}
-          onOpenSubmodule={this.onOpenSubmodule}
-          onChangeImageDiffType={this.onChangeImageDiffType}
-          askForConfirmationOnDiscardChanges={
-            this.props.askForConfirmationOnDiscardChanges
-          }
-          onDiffOptionsOpened={this.onDiffOptionsOpened}
-        />
-      )
-    }
+    return (
+      <ChangesDiffPane
+        {...this.changesPaneProps}
+        renderNoChanges={this.renderNoChanges}
+      />
+    )
   }
 
+  /**
+   * What fills the pane when the working directory is clean.
+   *
+   * The repository view's own answer: the tutorial while it's running, otherwise
+   * the suggested next actions. HotFlow's Branch changes tab supplies something
+   * plainer, which is why `ChangesDiffPane` takes this as a slot.
+   */
+  private renderNoChanges = (): JSX.Element | null => {
+    if (this.props.currentTutorialStep !== TutorialStep.NotApplicable) {
+      return this.renderTutorialPane()
+    }
+
+    return (
+      <NoChanges
+        key={this.props.repository.id}
+        appMenu={this.props.appMenu}
+        repository={this.props.repository}
+        repositoryState={this.props.state}
+        isExternalEditorAvailable={this.props.isExternalEditorAvailable}
+        dispatcher={this.props.dispatcher}
+        pullRequestSuggestedNextAction={
+          this.props.pullRequestSuggestedNextAction
+        }
+      />
+    )
+  }
   private onOpenBinaryFile = (fullPath: string) => {
     openFile(fullPath, this.props.dispatcher)
   }

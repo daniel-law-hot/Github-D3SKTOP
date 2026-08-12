@@ -13,7 +13,9 @@ import { WorkItemRow } from './work-item-row'
 import { RelativeTime } from '../relative-time'
 import classNames from 'classnames'
 
-export type ReleaseContentsTab = 'work-items' | 'commits' | 'drift'
+export type ReleaseContentsTab =
+  /** The working directory: file list, diff and commit form. Feature branches only. */
+  'branch-changes' | 'work-items' | 'commits' | 'drift'
 
 interface IReleaseContentsProps {
   readonly release: IReleaseBranchState
@@ -36,6 +38,16 @@ interface IReleaseContentsProps {
   readonly historyRelease: IShippedRelease | null
 
   readonly onCloseHistory: () => void
+
+  /**
+   * The working directory pane, or null when there's no feature branch to show one
+   * for. Built by the view because it needs application state this panel otherwise
+   * has no business knowing about.
+   */
+  readonly branchChanges: JSX.Element | null
+
+  /** Count for the Branch changes tab. */
+  readonly changedFileCount: number
 }
 
 /**
@@ -81,6 +93,17 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
             },
           ]
         : [
+            // Only when there's a feature branch to show changes for — on a
+            // release branch the working directory isn't what you came here for.
+            ...(this.props.branchChanges !== null
+              ? [
+                  {
+                    id: 'branch-changes' as const,
+                    label: 'Branch changes',
+                    count: this.props.changedFileCount,
+                  },
+                ]
+              : []),
             {
               id: 'work-items',
               label: 'Work items',
@@ -223,6 +246,10 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
     }
 
     switch (selectedTab) {
+      case 'branch-changes':
+        // Null when the tab isn't offered — a stale selection from before a
+        // checkout, which falls back rather than rendering an empty panel.
+        return this.props.branchChanges ?? this.renderWorkItems()
       case 'work-items':
         return this.renderWorkItems()
       case 'commits':
