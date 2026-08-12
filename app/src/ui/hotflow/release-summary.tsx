@@ -295,9 +295,13 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
         <h3 className="hotflow-summary-heading">Release history</h3>
         <ul className="hotflow-history">
           {releaseHistory.map(release => {
+            // Null while its commits are still being read, which is a wait rather
+            // than an answer — see `IShippedRelease.commits`.
+            const isLoading = release.commits === null
+
             // The oldest release in the window has no tag beneath it to diff
             // against, so there's nothing to open.
-            const hasContents = release.commits.length > 0
+            const hasContents = (release.commits?.length ?? 0) > 0
 
             return (
               <li key={release.tagName}>
@@ -305,12 +309,14 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
                   type="button"
                   className={classNames('hotflow-history-row', {
                     selected: release.tagName === this.props.selectedHistoryTag,
-                    empty: !hasContents,
+                    empty: !isLoading && !hasContents,
                   })}
-                  disabled={!hasContents}
+                  disabled={!isLoading && !hasContents}
                   onClick={this.onSelectHistory(release)}
                   aria-label={
-                    hasContents
+                    isLoading
+                      ? `${release.tagName} — reading what it shipped`
+                      : hasContents
                       ? `Show what shipped in ${release.tagName}`
                       : `${release.tagName} — nothing to compare against`
                   }
@@ -324,10 +330,17 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
                       '—'
                     )}
                   </span>
-                  {release.vsoNumbers.length > 0 && (
-                    <span className="dim num hotflow-history-count">
-                      {release.vsoNumbers.length} VSOs
+                  {isLoading ? (
+                    <span className="dim hotflow-history-count">
+                      <Octicon symbol={octicons.sync} className="spin" />
                     </span>
+                  ) : (
+                    release.vsoNumbers !== null &&
+                    release.vsoNumbers.length > 0 && (
+                      <span className="dim num hotflow-history-count">
+                        {release.vsoNumbers.length} VSOs
+                      </span>
+                    )
                   )}
                 </button>
               </li>

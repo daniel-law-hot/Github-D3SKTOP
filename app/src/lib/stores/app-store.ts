@@ -401,7 +401,10 @@ import {
   gatherCommitContext,
 } from '../copilot-conflict-context'
 import { resolveWithin } from '../path'
-import { detectHotFlowState } from '../hotflow/detect'
+import {
+  detectHotFlowState,
+  loadReleaseHistoryContents,
+} from '../hotflow/detect'
 import { fetchPullRequestApprovals } from '../hotflow/pull-request-approvals'
 import {
   IHotFlowBranchOverride,
@@ -4158,6 +4161,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       await Promise.all([
         this._refreshHotFlowWorkItems(repository),
         this._refreshHotFlowApprovals(repository),
+        this._loadHotFlowHistoryContents(repository),
       ])
     } catch (e) {
       log.error('[AppStore] failed to refresh HotFlow state', e)
@@ -4475,6 +4479,46 @@ export class AppStore extends TypedBaseStore<IAppState> {
       )
     } finally {
       await this._refreshHotFlow(repository)
+    }
+  }
+
+  /**
+   * Reads what each shipped release introduced, after the release picture is up.
+   *
+   * A `git log` per release, twelve of them in HOTWebsites, for the VSO counts down
+   * the side of the view — which was the largest remaining block in a refresh and
+   * nothing anyone waits on. The history list shows a spinner where each count will
+   * be until this lands.
+   *
+   * Written back against the tag names it read rather than by position, because a
+   * refresh can land while this is in flight and rebuild the list underneath it.
+   */
+  private async _loadHotFlowHistoryContents(
+    repository: Repository
+  ): Promise<void> {
+    const { releaseHistory } =
+      this.repositoryStateCache.get(repository).hotFlowState
+
+    if (releaseHistory.every(r => r.commits !== null)) {
+      return
+    }
+
+    try {
+      const loaded = await loadReleaseHistoryContents(
+        repository,
+        releaseHistory
+      )
+
+      const byTag = new Map(loaded.map(r => [r.tagName, r]))
+
+      this.repositoryStateCache.updateHotFlowState(repository, s => ({
+        releaseHistory: s.releaseHistory.map(
+          existing => byTag.get(existing.tagName) ?? existing
+        ),
+      }))
+      this.emitUpdate()
+    } catch (e) {
+      log.warn('[AppStore] HotFlow could not read release history contents', e)
     }
   }
 

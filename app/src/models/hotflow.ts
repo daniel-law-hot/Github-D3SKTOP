@@ -258,17 +258,22 @@ export interface IShippedRelease {
 
   /**
    * What this release introduced — the commits between the tag below it and this
-   * one.
+   * one — or null while they're still being read.
    *
-   * Kept rather than discarded because they're loaded anyway to count the VSOs, so
-   * holding them makes inspecting a past release free rather than another round of
-   * git. Empty for the oldest release in the window, which has no tag beneath it to
-   * diff against.
+   * Loaded after the refresh rather than during it. Each one costs a `git log`, and
+   * twelve of them were the largest remaining block in a refresh: HOTWebsites spent
+   * 900ms of 1875ms counting VSOs for a list down the side. They now arrive on their
+   * own and the list shows a spinner until they do.
+   *
+   * Null means not read yet; empty means read and there was nothing — which is the
+   * honest answer for the oldest release in the window, since it has no tag beneath
+   * it to diff against. The two must not be conflated: one is a wait, the other is a
+   * fact.
    */
-  readonly commits: ReadonlyArray<Commit>
+  readonly commits: ReadonlyArray<Commit> | null
 
-  /** The VSO numbers those commits reference, ascending. */
-  readonly vsoNumbers: ReadonlyArray<number>
+  /** The VSO numbers those commits reference, ascending. Null while unread. */
+  readonly vsoNumbers: ReadonlyArray<number> | null
 }
 
 /** How HotFlow is talking to Azure DevOps, if at all. */

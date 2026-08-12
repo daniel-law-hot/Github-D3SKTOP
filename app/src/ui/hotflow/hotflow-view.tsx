@@ -42,7 +42,6 @@ import {
 } from '../../lib/hotflow/branch-patterns'
 import { sortFeatureLane } from '../../lib/hotflow/feature-lane'
 import { deriveReleaseSequence } from '../../lib/hotflow/release-sequence'
-import classNames from 'classnames'
 import { TipState } from '../../models/tip'
 import { Branch, BranchType } from '../../models/branch'
 
@@ -124,6 +123,9 @@ export class HotFlowView extends React.Component<
   IHotFlowViewProps,
   IHotFlowViewState
 > {
+  /** The shipped release whose work item detail has already been asked for. */
+  private requestedDetailFor: string | null = null
+
   public constructor(props: IHotFlowViewProps) {
     super(props)
     this.state = {
@@ -186,10 +188,41 @@ export class HotFlowView extends React.Component<
           : this.state.selectedTab,
     })
 
+    this.loadHistoryWorkItemDetail(release)
+  }
+
+  /**
+   * Requests Azure DevOps detail for a shipped release's work items.
+   *
+   * Its VSOs come from its commits, which are read after the refresh — so on a fast
+   * click there is nothing to ask about yet, and `componentDidUpdate` picks it up
+   * when they arrive instead.
+   */
+  private loadHistoryWorkItemDetail(release: IShippedRelease) {
+    if (release.vsoNumbers === null || release.vsoNumbers.length === 0) {
+      return
+    }
+
+    this.requestedDetailFor = release.tagName
+
     this.props.dispatcher.loadHotFlowWorkItemDetail(
       this.props.repository,
       release.vsoNumbers
     )
+  }
+
+  public componentDidUpdate() {
+    const release = this.historyRelease
+
+    // Its commits have landed since it was opened, so its work items are only now
+    // knowable. Guarded by tag so this asks once rather than on every render.
+    if (
+      release !== null &&
+      release.vsoNumbers !== null &&
+      this.requestedDetailFor !== release.tagName
+    ) {
+      this.loadHistoryWorkItemDetail(release)
+    }
   }
 
   private onCloseHistory = () => {
@@ -566,14 +599,10 @@ export class HotFlowView extends React.Component<
 
     return (
       <>
-        {/* Dimmed while re-reading, because the boxes and their counts still
-            describe the release being switched away from. Dimmed rather than
-            emptied: the shape of the flow doesn't change between releases, and
-            blanking it would make the whole view flash on every branch switch. */}
+        {/* Stays fully visible while re-reading. It's what you're watching when you
+            switch releases, and the panel below is where the stale detail was. */}
         <div
-          className={classNames('hotflow-flow-band', {
-            loading: hotFlowState.isLoading,
-          })}
+          className="hotflow-flow-band"
           style={{ height: this.state.bandHeight }}
         >
           {/* Diagram and actions share one scroll container so the buttons stay

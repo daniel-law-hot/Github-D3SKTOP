@@ -153,31 +153,36 @@ export async function detectHotFlowState(
       checkedOutBranchName
     )
 
-  const currentRelease =
+  // The current release and the summary lines beside it are independent reads, so
+  // they go together. Awaiting the current one first cost a whole round trip of
+  // waiting for no reason — and with git processes contending rather than queuing,
+  // a removed serial hop is worth more than a removed command.
+  const [currentRelease, otherOpenReleases] = await Promise.all([
     currentCandidate === null
-      ? null
-      : await buildReleaseState(
+      ? Promise.resolve(null)
+      : buildReleaseState(
           repository,
           currentCandidate,
           integrationRef,
           productionRef,
           sequenceOverrides
-        )
+        ),
 
-  // Other open releases get the same treatment but without loading their commit
-  // bodies — they're a summary line, not the focus.
-  const otherOpenReleases = await Promise.all(
-    otherCandidates.map(c =>
-      buildReleaseState(
-        repository,
-        c,
-        integrationRef,
-        productionRef,
-        sequenceOverrides,
-        false
+    // Other open releases get the same treatment but without loading their commit
+    // bodies — they're a summary line, not the focus.
+    Promise.all(
+      otherCandidates.map(c =>
+        buildReleaseState(
+          repository,
+          c,
+          integrationRef,
+          productionRef,
+          sequenceOverrides,
+          false
+        )
       )
-    )
-  )
+    ),
+  ])
 
   return {
     isLoading: false,
@@ -430,22 +435,21 @@ async function buildReleaseState(
   // three of HOTWebsites' twenty-seven. Zero here means unmeasured, not current,
   // which is safe only because `verdict` isn't shown for those rows either; if that
   // changes, this has to start measuring again rather than the zero being believed.
-  const behindIntegration = loadCommits
-    ? (
-        await getAheadBehind(
+  // Drift and the commit ranges are independent questions, so they're asked at the
+  // same time. Awaiting drift first was a serial hop for nothing.
+  const [drift, commits, releaseOnlyCommits, incomingCommits] = loadCommits
+    ? await Promise.all([
+        getAheadBehind(
           repository,
           revSymmetricDifference(releaseRef, integrationRef)
-        )
-      )?.behind ?? 0
-    : 0
-
-  const [commits, releaseOnlyCommits, incomingCommits] = loadCommits
-    ? await Promise.all([
+        ),
         loadRange(repository, productionRef, releaseRef),
         loadRange(repository, integrationRef, releaseRef),
         loadRange(repository, releaseRef, integrationRef),
       ])
-    : [[], [], []]
+    : [null, [], [], []]
+
+  const behindIntegration = drift?.behind ?? 0
 
   // How far ahead of production this release is, worked out here rather than for
   // every candidate — only the releases that get shown need the number, and each
@@ -680,9 +684,9 @@ async function collectReleaseHistory(
       sha: ref.sha,
       shippedAt:
         parsedDate !== null && !isNaN(parsedDate.valueOf()) ? parsedDate : null,
-      // Filled in below, once we know the adjacent tag to diff against.
-      commits: [],
-      vsoNumbers: [],
+      // Unread. `loadReleaseHistoryContents` fills these in after the refresh.
+      commits: null,
+      vsoNumbers: null,
     })
   }
 
@@ -691,14 +695,39 @@ async function collectReleaseHistory(
 
   const trimmed = releases.slice(0, ReleaseHistoryLimit)
 
-  // What each release introduced, by diffing against the tag below it. The
-  // commits are kept rather than reduced to a count, so inspecting a past release
-  // costs nothing more than this pass already does.
-  const withContents = await Promise.all(
-    trimmed.map(async (release, index) => {
-      const previous = trimmed[index + 1]
+  // Contents are left unread here and fetched afterwards by
+  // `loadReleaseHistoryContents`. Reading them costs a `git log` each, and twelve
+  // of those were the biggest single block in a refresh — HOTWebsites spent 900ms
+  // of 1875ms on a list down the side of the view.
+  //
+  // The oldest entry is the exception: it has no tag beneath it, so there is nothing
+  // to read and empty is the answer rather than a wait.
+  return trimmed.map((release, index) =>
+    trimmed[index + 1] === undefined
+      ? { ...release, commits: [], vsoNumbers: [] }
+      : release
+  )
+}
 
-      if (previous === undefined) {
+/**
+ * Reads what each shipped release introduced, for a history the refresh left unread.
+ *
+ * Split out of detection so the release picture can be on screen before this starts.
+ * Every range is independent, so they all go at once — off the critical path, the
+ * only cost is git processes competing with each other rather than with anything the
+ * user is waiting on.
+ *
+ * Entries that already have contents are left alone, so this is safe to call again.
+ */
+export async function loadReleaseHistoryContents(
+  repository: Repository,
+  history: ReadonlyArray<IShippedRelease>
+): Promise<ReadonlyArray<IShippedRelease>> {
+  return Promise.all(
+    history.map(async (release, index) => {
+      const previous = history[index + 1]
+
+      if (release.commits !== null || previous === undefined) {
         return release
       }
 
@@ -715,8 +744,6 @@ async function collectReleaseHistory(
       }
     })
   )
-
-  return withContents
 }
 
 /**

@@ -93,12 +93,12 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
             {
               id: 'work-items',
               label: 'Work items',
-              count: historyRelease.vsoNumbers.length,
+              count: historyRelease.vsoNumbers?.length ?? 0,
             },
             {
               id: 'commits',
               label: 'Commits',
-              count: historyRelease.commits.length,
+              count: historyRelease.commits?.length ?? 0,
             },
           ]
         : [
@@ -266,6 +266,17 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
     // 'drift' — which it can't have — falls back to its work items rather than
     // rendering the current release's drift under a history header.
     if (historyRelease !== null) {
+      // Opened before its commits arrived. The row's spinner says why; this says it
+      // again where the content would be, rather than showing an empty release.
+      if (historyRelease.commits === null) {
+        return (
+          <div className="hotflow-loading">
+            <Octicon symbol={octicons.sync} className="spin" />
+            <span>{`Reading what ${historyRelease.tagName} shipped…`}</span>
+          </div>
+        )
+      }
+
       return selectedTab === 'commits'
         ? this.renderCommits(historyRelease.commits, 'commits')
         : this.renderHistoryWorkItems(historyRelease)
@@ -298,10 +309,15 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
   private renderHistoryWorkItems(historyRelease: IShippedRelease) {
     const { ado } = this.props
 
-    if (historyRelease.vsoNumbers.length === 0) {
+    // Only reached once the contents are read — the caller shows a spinner until
+    // then — so these are known to be present.
+    const vsoNumbers = historyRelease.vsoNumbers ?? []
+    const commitCount = historyRelease.commits?.length ?? 0
+
+    if (vsoNumbers.length === 0) {
       return (
         <div className="hotflow-empty-list">
-          No VSO numbers found in the {historyRelease.commits.length} commits{' '}
+          No VSO numbers found in the {commitCount} commits{' '}
           {historyRelease.tagName} shipped. HotFlow reads them from branch names
           and commit messages, so a release merged without them reads as empty
           here.
@@ -324,7 +340,7 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
             </tr>
           </thead>
           <tbody>
-            {historyRelease.vsoNumbers.map(id => (
+            {vsoNumbers.map(id => (
               <WorkItemRow
                 key={id}
                 item={{
