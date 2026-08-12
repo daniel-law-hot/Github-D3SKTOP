@@ -200,7 +200,17 @@ export class StartFeatureDialog extends React.Component<
     const startPoint =
       integrationBranch?.upstream ?? integrationBranch?.name ?? null
 
-    await dispatcher.createBranch(repository, branchName, startPoint)
+    // `noTrack`, and it is not optional. Branching from `origin/develop` without
+    // it makes the new branch track develop, so the first push aims at develop
+    // rather than at the feature branch:
+    //
+    //   ! [remote rejected] feature/107958-… -> develop
+    //
+    // House of Travel's branch protection refused that, which is the only reason
+    // it surfaced as an error rather than as feature work landing straight on
+    // develop. A new feature branch should track nothing; it gets its own upstream
+    // when it's first pushed.
+    await dispatcher.createBranch(repository, branchName, startPoint, true)
     await dispatcher.refreshHotFlow(repository)
 
     this.props.onDismissed()

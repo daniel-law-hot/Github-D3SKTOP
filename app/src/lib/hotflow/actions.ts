@@ -354,13 +354,20 @@ export function describeUpdateReleaseCommands(
   ]
 }
 
-/** The commands for cutting a new branch off the integration branch. */
+/**
+ * The commands for cutting a new branch off the integration branch.
+ *
+ * `--no-track` is load-bearing and shown because of it. Without it the new branch
+ * tracks `origin/develop`, and its first push aims at develop rather than at
+ * itself — which is how a feature branch came to be rejected by branch protection
+ * with `feature/107958-… -> develop`.
+ */
 export function describeStartBranchCommands(
   branchName: string,
   integrationName: string
 ): ReadonlyArray<string> {
   return [
     `git fetch origin`,
-    `git checkout -b ${branchName} origin/${integrationName}`,
+    `git checkout -b ${branchName} --no-track origin/${integrationName}`,
   ]
 }

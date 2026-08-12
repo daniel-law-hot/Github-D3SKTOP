@@ -207,7 +207,11 @@ export class StartReleaseDialog extends React.Component<
     const startPoint =
       integrationBranch?.upstream ?? integrationBranch?.name ?? null
 
-    await dispatcher.createBranch(repository, branchName, startPoint)
+    // `noTrack` — see the note in the start feature dialog. Branching from
+    // `origin/develop` with tracking on points the new branch's push at develop,
+    // which for a release branch means the branch you cut to stabilise a release
+    // would try to write back into the integration branch.
+    await dispatcher.createBranch(repository, branchName, startPoint, true)
     await dispatcher.refreshHotFlow(repository)
 
     this.props.onDismissed()
