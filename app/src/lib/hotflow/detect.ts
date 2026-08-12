@@ -424,12 +424,20 @@ async function buildReleaseState(
 ): Promise<IReleaseBranchState> {
   const releaseRef = candidate.branch.name
 
-  const driftAheadBehind = await getAheadBehind(
-    repository,
-    revSymmetricDifference(releaseRef, integrationRef)
-  )
-
-  const behindIntegration = driftAheadBehind?.behind ?? 0
+  // Drift is only measured for the release being shown in full. The "also open"
+  // rows display a version and a commit count and nothing else, so asking git how
+  // far each of them has drifted was a process apiece for a number no view reads —
+  // three of HOTWebsites' twenty-seven. Zero here means unmeasured, not current,
+  // which is safe only because `verdict` isn't shown for those rows either; if that
+  // changes, this has to start measuring again rather than the zero being believed.
+  const behindIntegration = loadCommits
+    ? (
+        await getAheadBehind(
+          repository,
+          revSymmetricDifference(releaseRef, integrationRef)
+        )
+      )?.behind ?? 0
+    : 0
 
   const [commits, releaseOnlyCommits, incomingCommits] = loadCommits
     ? await Promise.all([
