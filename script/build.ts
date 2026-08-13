@@ -34,18 +34,23 @@ import { isGitHubActions } from './build-platforms'
 import {
   getChannel,
   getDistArchitecture,
+  getDistPath,
   getDistRoot,
   getExecutableName,
   getIconDirectory,
   isPublishable,
 } from './dist-info'
+import { signWindowsFile, verifyWindowsSignature } from './windows-sign'
 
 import {
+  closeSync,
   cpSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   rmSync,
   unlinkSync,
   writeFileSync,
@@ -122,6 +127,23 @@ verifyInjectedSassVariables(outRoot)
     console.log('Packaging…')
     return packageApp()
   })
+  .then(appPaths => {
+    if (process.platform === 'win32' && !shouldSkipPackaging) {
+      removeForeignNativeBinaries()
+
+      // The executable people actually run, signed here rather than by
+      // electron-packager: `windowsSign` arrived in @electron/packager 18 and
+      // this is 17.1.1. Done before the installer is built so the copy inside it
+      // is signed too — signing only the installer would leave the binary it
+      // lays down unsigned, which is the wrong way round.
+      const exePath = path.join(getDistPath(), `${getExecutableName()}.exe`)
+
+      signWindowsFile(exePath)
+      verifyWindowsSignature(exePath)
+    }
+
+    return appPaths
+  })
   .catch(err => {
     console.error(err)
     process.exit(1)
@@ -129,6 +151,78 @@ verifyInjectedSassVariables(outRoot)
   .then(appPaths => {
     console.log(`Built to ${appPaths}`)
   })
+
+/**
+ * Drops macOS and Linux native binaries out of the Windows package.
+ *
+ * Several dependencies ship every platform's build and pick one at runtime, so a
+ * Windows install carries Mach-O and ELF objects that can never be loaded here.
+ * Dead weight until signing was switched on, at which point they became a build
+ * failure: Squirrel signs every binary in the payload, and signtool can only
+ * sign a Portable Executable.
+ *
+ * Identified by reading the file rather than by directory name, because the
+ * naming is not a convention anyone agrees on — `prebuilds/darwin-arm64` for
+ * prebuildify, `build/koffi/darwin_arm64` for koffi, and no doubt others. Every
+ * binary Windows can load starts with `MZ`; nothing that doesn't is any use in
+ * this package.
+ */
+function removeForeignNativeBinaries() {
+  const distPath = getDistPath()
+
+  if (!existsSync(distPath)) {
+    return
+  }
+
+  const extensions = new Set(['.node', '.dll', '.exe', '.dylib', '.so'])
+  const removed = new Array<string>()
+
+  const isPortableExecutable = (file: string) => {
+    const fd = openSync(file, 'r')
+
+    try {
+      const magic = Buffer.alloc(2)
+
+      // 0x4d 0x5a — 'MZ', the DOS header every PE still carries.
+      return (
+        readSync(fd, magic, 0, 2, 0) === 2 &&
+        magic[0] === 0x4d &&
+        magic[1] === 0x5a
+      )
+    } finally {
+      closeSync(fd)
+    }
+  }
+
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const child = path.join(dir, entry.name)
+
+      if (entry.isDirectory()) {
+        walk(child)
+        continue
+      }
+
+      if (!entry.isFile() || !extensions.has(path.extname(entry.name))) {
+        continue
+      }
+
+      if (!isPortableExecutable(child)) {
+        rmSync(child, { force: true })
+        removed.push(path.relative(distPath, child))
+      }
+    }
+  }
+
+  walk(distPath)
+
+  if (removed.length > 0) {
+    console.log(`  Removed ${removed.length} non-Windows native binaries`)
+    for (const file of removed) {
+      console.log(`    ${file}`)
+    }
+  }
+}
 
 function packageApp() {
   // not sure if this is needed anywhere, so I'm just going to inline it here

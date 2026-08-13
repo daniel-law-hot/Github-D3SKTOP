@@ -19,6 +19,12 @@ import {
   getIconDirectory,
 } from './dist-info'
 import { isGitHubActions } from './build-platforms'
+import {
+  getSignWithParams,
+  getSigningThumbprint,
+  signWindowsFile,
+  verifyWindowsSignature,
+} from './windows-sign'
 import { copyFileSync, existsSync, rmSync, writeFileSync } from 'fs'
 import { getVersion } from '../app/package-info'
 import { rename } from 'fs/promises'
@@ -78,6 +84,11 @@ function packageWindows() {
     )
     process.exit(1)
   }
+  // Signed here rather than where it's built, because `pkg` writes a fresh
+  // executable every time and a signature applied earlier wouldn't survive it.
+  // Both copies get signed: the one in the packaged folder is what ships, and
+  // the one in dist is what a portable zip is made from.
+  signWindowsFile(updaterSource)
   copyFileSync(updaterSource, join(distPath, 'updater.exe'))
 
   const splashScreenPath = path.resolve(
@@ -128,7 +139,17 @@ function packageWindows() {
     options.remoteReleases = url.toString()
   }
 
-  if (isGitHubActions() && isPublishable()) {
+  // Signing the installer, and Squirrel's Update.exe along with it.
+  //
+  // Upstream signs through GitHub Inc's own Azure Code Signing account, which
+  // came with the fork and can't be used from here — so that path stays behind
+  // its GitHub Actions gate, and a thumbprint in the environment takes
+  // precedence when there is one. See docs/technical/code-signing.md.
+  const signingThumbprint = getSigningThumbprint()
+
+  if (signingThumbprint !== undefined) {
+    options.signWithParams = getSignWithParams(signingThumbprint)
+  } else if (isGitHubActions() && isPublishable()) {
     assertNonNullable(process.env.RUNNER_TEMP, 'Missing RUNNER_TEMP env var')
 
     const acsPath = join(process.env.RUNNER_TEMP, 'acs')
@@ -152,6 +173,26 @@ function packageWindows() {
   electronInstaller
     .createWindowsInstaller(options)
     .then(() => console.log(`Installers created in ${outputDir}`))
+    .then(() => {
+      // Squirrel signs the setup exe on its way past, but not the msi it writes
+      // alongside it, so that one is done here. Both are then verified: a build
+      // that has quietly produced an unsigned installer should stop rather than
+      // hand over something nobody will check.
+      // Note the names read backwards: `getWindowsInstallerName` is the msi and
+      // `getWindowsStandaloneName` is the setup exe.
+      const msiPath = join(outputDir, getWindowsInstallerName())
+
+      if (existsSync(msiPath)) {
+        signWindowsFile(msiPath)
+        verifyWindowsSignature(msiPath)
+      }
+
+      const setupPath = join(outputDir, getWindowsStandaloneName())
+
+      if (existsSync(setupPath)) {
+        verifyWindowsSignature(setupPath)
+      }
+    })
     .then(async () => {
       // electron-winstaller (more specifically Squirrel.Windows) doesn't let
       // us control the name of the nuget packages but we want them to include
