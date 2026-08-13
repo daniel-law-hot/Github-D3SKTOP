@@ -161,6 +161,15 @@ export const sendDialogDidOpen = sendProxy('dialog-did-open', 0)
 /** Tell the main process to set the current window's zoom factor */
 export const setWindowZoomFactor = sendProxy('set-window-zoom-factor', 1)
 
+/**
+ * Tell the main process how narrow the window may be dragged.
+ *
+ * The renderer owns this because the answer depends on the widths of the
+ * sidebar and the branch button, neither of which gives up any room as the
+ * window narrows — so the floor moves when they do.
+ */
+export const setWindowMinimumWidth = sendProxy('set-window-minimum-width', 1)
+
 /** Tell the main process to check for app updates */
 export const checkForUpdates = invokeProxy('check-for-updates', 1)
 

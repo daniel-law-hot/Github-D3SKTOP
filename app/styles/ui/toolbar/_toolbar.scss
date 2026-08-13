@@ -165,6 +165,14 @@
     flex-shrink: 1;
   }
 
+  // 30 rather than the usual 39, matching the arrow beside Open in Visual
+  // Studio. Both of these buttons keep their arrow when they collapse, so this
+  // is what makes the two of them come to rest at the same width.
+  > .resizable-component .toolbar-dropdown-arrow-button {
+    flex: 0 0 30px;
+    width: 30px;
+  }
+
   > .toolbar-button.hotflow-button {
     flex: 0 100 200px;
     min-width: var(--toolbar-collapsed-width);

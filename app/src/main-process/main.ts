@@ -553,6 +553,10 @@ app.on('ready', () => {
     mainWindow?.setWindowZoomFactor(zoomFactor)
   )
 
+  ipcMain.on('set-window-minimum-width', (_, width: number) =>
+    mainWindow?.setMinimumWidth(width)
+  )
+
   if (__WIN32__) {
     ipcMain.on('install-windows-cli', installWindowsCLI)
     ipcMain.on('uninstall-windows-cli', uninstallWindowsCLI)

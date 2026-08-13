@@ -84,6 +84,7 @@ export type RequestChannels = {
   'focus-window': () => void
   'notification-event': NotificationCallback<DesktopAliveEvent>
   'set-window-zoom-factor': (zoomFactor: number) => void
+  'set-window-minimum-width': (width: number) => void
   'show-installing-update': () => void
   'install-windows-cli': () => void
   'uninstall-windows-cli': () => void

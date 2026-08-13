@@ -48,17 +48,17 @@ export class AppWindow {
     : null
 
   /**
-   * How narrow the window may be dragged.
+   * The narrowest the window may ever be dragged.
    *
-   * The floor is the toolbar fully collapsed: the sidebar at its 250 default,
-   * the branch at its 230, and the four right-hand buttons down to icons — 79
-   * for fetch and its dropdown arrow, 40 each for HotFlow and Claude, 70 for
-   * Visual Studio and its arrow. That comes to 709, so this is the first width
-   * at which nothing is pushed off the right-hand edge. Measured rather than
-   * reasoned about; see styles/ui/toolbar/_toolbar.scss for how the collapsing
-   * is arranged.
+   * The real floor is the toolbar fully collapsed — the sidebar and the branch
+   * button, neither of which gives up any width, plus the four right-hand
+   * buttons down to their icons. Both of those are resizable, so the floor
+   * moves with them and the renderer sends the current one through
+   * `setMinimumWidth`. This is what holds until it does, and the backstop if it
+   * ever sends something absurd: the sidebar and branch at their own minimums,
+   * 220 and 230, plus the 220 the collapsed buttons come to.
    */
-  private minWidth = 720
+  private minWidth = 670
   private minHeight = 660
 
   /**
@@ -533,6 +533,17 @@ export class AppWindow {
 
   public setWindowZoomFactor(zoomFactor: number) {
     this.window.webContents.zoomFactor = zoomFactor
+  }
+
+  /**
+   * Set how narrow the window may be dragged, as worked out by the renderer —
+   * see `setWindowMinimumWidth`.
+   *
+   * Floored at `minWidth` so a bad number can't leave the window unusable, and
+   * the height minimum is passed through unchanged.
+   */
+  public setMinimumWidth(width: number) {
+    this.window.setMinimumSize(Math.max(this.minWidth, width), this.minHeight)
   }
 
   /**

@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, net } from 'electron'
 import { EventEmitter } from 'events'
 import {
   createWriteStream,
@@ -95,7 +95,10 @@ export class GitHubReleaseUpdater extends EventEmitter {
       this.emit('update-downloaded')
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e))
-      log.error('GitHubReleaseUpdater: check/download failed', err)
+      log.error(
+        `GitHubReleaseUpdater: check/download failed — ${err.message}`,
+        err
+      )
       this.emit('error', err)
     } finally {
       this.checking = false
@@ -198,7 +201,13 @@ export class GitHubReleaseUpdater extends EventEmitter {
         this.dotComToken ? 'authenticated' : 'unauthenticated'
       })`
     )
-    const res = await fetch(url, { headers: this.buildHeaders() })
+    const res = await netFetch(url, {
+      headers: this.buildHeaders(),
+      // A proxy that accepts the connection and then never answers would
+      // otherwise leave the check spinning for minutes, which reads as "the
+      // app doesn't check for updates" rather than as a failure.
+      signal: AbortSignal.timeout(30_000),
+    })
 
     if (!res.ok) {
       const rateRemaining = res.headers.get('x-ratelimit-remaining')
@@ -234,7 +243,7 @@ export class GitHubReleaseUpdater extends EventEmitter {
       log.info(`GitHubReleaseUpdater: downloading ${url} -> ${zipPath}`)
       // Asset URLs redirect to a presigned S3 URL — only send our auth on the
       // first hop, not the redirect (S3 rejects unknown Authorization headers).
-      const res = await fetch(url, {
+      const res = await netFetch(url, {
         headers: {
           'User-Agent': `GitHubDesktop/${app.getVersion()} (Windows)`,
         },
@@ -279,6 +288,126 @@ interface GitHubReleaseAsset {
   size: number
   browser_download_url: string
   content_type: string
+}
+
+/**
+ * `fetch` in the main process is Node's (undici), which shares nothing with
+ * the stack the rest of the app talks to GitHub over. It ignores the system
+ * and PAC proxy configuration, can't do NTLM or Kerberos proxy auth, and
+ * validates TLS against Node's bundled CA list rather than the Windows
+ * certificate store. Behind a corporate proxy — or anything that re-signs
+ * HTTPS on the way through — that combination fails while every renderer
+ * request keeps working, so the app happily talks to GitHub but can't check
+ * for updates, reporting only `fetch failed`.
+ *
+ * Electron's `net.fetch` goes through Chromium, which honours all of the
+ * above. It requires the app to be ready, which it always is by the time an
+ * update check can run.
+ */
+async function netFetch(url: string, init: RequestInit) {
+  try {
+    return await net.fetch(url, init)
+  } catch (e) {
+    throw explainNetworkError(e, url)
+  }
+}
+
+/**
+ * Transport failures surface as an opaque `TypeError: fetch failed` with the
+ * reason that actually matters buried in `cause` — and `formatError` prints
+ * only `stack`, so the cause reaches neither the log file nor the user. Every
+ * proxy, DNS and certificate problem ends up looking identical. Unpack the
+ * chain, lead with something the person reading it can act on, and keep the
+ * raw codes on the end for whoever has to diagnose it.
+ */
+function explainNetworkError(e: unknown, url: string): Error {
+  const err = e instanceof Error ? e : new Error(String(e))
+  const details = [err.message]
+
+  for (
+    let cause: unknown = err.cause;
+    cause instanceof Error && details.length < 5;
+    cause = cause.cause
+  ) {
+    const { code } = cause as NodeJS.ErrnoException
+    details.push(
+      code && !cause.message.includes(code)
+        ? `${cause.message} (${code})`
+        : cause.message
+    )
+  }
+
+  const summary = summarizeNetworkError(
+    details.join(' ').toLowerCase(),
+    hostFromUrl(url)
+  )
+
+  const explained = new Error(`${summary} (${details.join('; ')})`)
+  explained.stack = err.stack
+  return explained
+}
+
+function summarizeNetworkError(haystack: string, host: string): string {
+  const saw = (...needles: ReadonlyArray<string>) =>
+    needles.some(n => haystack.includes(n))
+
+  if (saw('err_proxy', 'err_tunnel', 'proxy_config', 'proxy auth')) {
+    return `Couldn't reach ${host} through this network's proxy.`
+  }
+
+  if (
+    saw(
+      'cert',
+      'err_ssl',
+      'self_signed',
+      'self-signed',
+      'unable_to_verify',
+      'unable_to_get_issuer'
+    )
+  ) {
+    return `Couldn't verify the secure connection to ${host} — something on this network may be inspecting HTTPS traffic.`
+  }
+
+  if (
+    saw(
+      'enotfound',
+      'eai_again',
+      'err_name_not_resolved',
+      'err_name_resolution_failed',
+      'getaddrinfo'
+    )
+  ) {
+    return `Couldn't look up ${host}. You may be offline, or this network may block it.`
+  }
+
+  if (saw('timeout', 'timed out', 'timed_out', 'etimedout', 'abort')) {
+    return `Timed out connecting to ${host}. This network may be blocking it, or the connection may be very slow.`
+  }
+
+  if (
+    saw(
+      'err_internet_disconnected',
+      'err_network_changed',
+      'enetunreach',
+      'ehostunreach'
+    )
+  ) {
+    return `No network connection while contacting ${host}.`
+  }
+
+  if (saw('econnrefused', 'econnreset', 'err_connection', 'epipe', 'socket')) {
+    return `The connection to ${host} was refused or dropped — a firewall or proxy may be blocking it.`
+  }
+
+  return `Couldn't reach ${host}.`
+}
+
+function hostFromUrl(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
 }
 
 function stripTagPrefix(tag: string): string {

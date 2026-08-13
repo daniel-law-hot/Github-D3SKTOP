@@ -110,6 +110,7 @@ import {
   updatePreferredAppMenuItemLabels,
   updateAccounts,
   setWindowZoomFactor,
+  setWindowMinimumWidth,
   onShowInstallingUpdate,
   sendWillQuitEvenIfUpdatingSync,
   quitApp,
@@ -454,15 +455,33 @@ const defaultPushPullButtonWidth: number = 230
 const pushPullButtonWidthConfigKey: string = 'push-pull-button-width'
 
 /**
- * How narrow the push/pull/fetch button is allowed to get: its icon, the
- * padding either side of it, and the dropdown arrow that sits alongside.
- *
- * It is the last of the toolbar's right-hand buttons to give up its label as
- * the window narrows, and this is where it stops. Kept in step with
- * `--toolbar-collapsed-width` in styles/_variables.scss, which is what the
- * others collapse to; the extra is `.toolbar-dropdown-arrow-button`.
+ * How narrow a toolbar button gets once it has given up its label: its icon and
+ * the padding either side of it. Kept in step with `--toolbar-collapsed-width`
+ * in styles/_variables.scss.
  */
-const collapsedPushPullButtonWidth: number = 40 + 39
+const collapsedToolbarButtonWidth: number = 40
+
+/** The same, for the two buttons that keep a dropdown arrow alongside. */
+const collapsedToolbarButtonWithArrowWidth: number =
+  collapsedToolbarButtonWidth + 30
+
+/**
+ * How narrow the push/pull/fetch button is allowed to get. It is the last of
+ * the toolbar's right-hand buttons to give up its label as the window narrows,
+ * and this is where it stops.
+ */
+const collapsedPushPullButtonWidth: number =
+  collapsedToolbarButtonWithArrowWidth
+
+/**
+ * What the four collapsible toolbar buttons come to once all of them have
+ * given up their labels: fetch and Visual Studio with their dropdown arrows,
+ * HotFlow and Claude without. Below this something has to go off the edge.
+ */
+const collapsedToolbarButtonsWidth: number =
+  collapsedPushPullButtonWidth +
+  collapsedToolbarButtonWidth * 2 +
+  collapsedToolbarButtonWithArrowWidth
 
 const askToMoveToApplicationsFolderDefault: boolean = true
 const confirmRepoRemovalDefault: boolean = true
@@ -2540,12 +2559,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
    * dimensions change.
    */
   private updateResizableConstraints() {
-    // The combined width of the branch dropdown and the push/pull/fetch button
-    // Since the repository list toolbar button width is tied to the width of
-    // the sidebar we can't let it push the branch, and push/pull/fetch button
-    // off screen.
+    // What the toolbar needs to the right of the sidebar once every button that
+    // can collapse has: the branch, which never gives up any width, plus the
+    // four collapsed buttons beyond it. Since the repository list toolbar
+    // button width is tied to the width of the sidebar we can't let it push any
+    // of that off screen.
     const toolbarButtonsMinWidth =
-      defaultPushPullButtonWidth + defaultBranchDropdownWidth
+      this.branchDropdownWidth.value + collapsedToolbarButtonsWidth
 
     // Start with all the available width
     let available = window.innerWidth
@@ -2611,6 +2631,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
       this.pushPullButtonWidth,
       Math.min(collapsedPushPullButtonWidth, pushPullButtonMaxWidth),
       pushPullButtonMaxWidth
+    )
+
+    // Stop the window where the toolbar runs out rather than letting it carry
+    // on and squeeze the sidebar. The repository and the branch hold their
+    // widths, so the floor is those two plus the four collapsed buttons — and
+    // it moves whenever either of them is dragged, which is why the main
+    // process is told rather than given a constant.
+    setWindowMinimumWidth(
+      clamp(this.sidebarWidth) +
+        this.branchDropdownWidth.value +
+        collapsedToolbarButtonsWidth
     )
   }
 

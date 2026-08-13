@@ -66,6 +66,7 @@ describe('IPC channel contract', () => {
     'focus-window',
     'notification-event',
     'set-window-zoom-factor',
+    'set-window-minimum-width',
     'show-installing-update',
     'install-windows-cli',
     'uninstall-windows-cli',
