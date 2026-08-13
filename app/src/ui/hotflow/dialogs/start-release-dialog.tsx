@@ -13,6 +13,7 @@ import {
   describeStartBranchCommands,
   preflightStartRelease,
 } from '../../../lib/hotflow/actions'
+import { GitRepositoryProvider } from '../../../lib/hotflow/git-repository-provider'
 import { PreflightChecks } from './preflight-checks'
 import { CommandPreview } from './command-preview'
 
@@ -70,6 +71,17 @@ export class StartReleaseDialog extends React.Component<
     return buildReleaseBranchName(version)
   }
 
+  /**
+   * The ref handed to `git checkout`: the integration branch's remote
+   * counterpart where it has one, so the preview promises what will actually
+   * run rather than an `origin/` prefix assumed on its behalf.
+   */
+  private get startRef(): string | null {
+    const branch = this.props.hotFlowState.integrationBranch
+
+    return branch === null ? null : branch.upstream ?? branch.name
+  }
+
   private async runChecks() {
     const branchName = this.branchName
 
@@ -81,7 +93,7 @@ export class StartReleaseDialog extends React.Component<
     this.setState({ isChecking: true })
 
     const result = await preflightStartRelease(
-      this.props.repository,
+      new GitRepositoryProvider(this.props.repository),
       this.props.hotFlowState,
       this.state.version.trim(),
       branchName,
@@ -98,6 +110,7 @@ export class StartReleaseDialog extends React.Component<
   public render() {
     const { hotFlowState } = this.props
     const branchName = this.branchName
+    const startRef = this.startRef
     const disabled =
       branchName === null ||
       !this.state.canProceed ||
@@ -166,12 +179,9 @@ export class StartReleaseDialog extends React.Component<
             isLoading={this.state.isChecking}
           />
 
-          {branchName !== null && (
+          {branchName !== null && startRef !== null && (
             <CommandPreview
-              commands={describeStartBranchCommands(
-                branchName,
-                this.props.hotFlowState.integrationBranchName
-              )}
+              commands={describeStartBranchCommands(branchName, startRef)}
             />
           )}
         </DialogContent>

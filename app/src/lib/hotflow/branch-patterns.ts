@@ -3,15 +3,20 @@ import { IReleaseVersion } from '../../models/hotflow'
 import { parseReleaseVersion } from './version'
 
 /**
- * Recognises a feature branch and pulls out its VSO number.
+ * Recognises a feature or hotfix branch and pulls out its VSO number.
  *
  * Deliberately permissive: anything after `feature/{digits}-` counts. Real
  * branches in the House of Travel repositories are full of capitals
  * (`feature/86270-Add-missing-hotel-RQ-validation`), and a branch that doesn't
  * follow the house style is still a feature branch carrying a VSO — refusing to
  * recognise it just makes HotFlow blind to real work.
+ *
+ * `hotfix/` counts on the same terms. A hotfix carries a VSO and is work in
+ * flight like any other; leaving it out would drop it from the diagram and
+ * leave its work item unattributed, which is exactly the moment you'd want to
+ * be able to see it.
  */
-export const featureBranchRegex = /^feature\/(\d+)-(.+)$/i
+export const featureBranchRegex = /^(?:feature|hotfix)\/(\d+)-(.+)$/i
 
 /**
  * The *recommended* format — lower-kebab-case only.
@@ -19,16 +24,25 @@ export const featureBranchRegex = /^feature\/(\d+)-(.+)$/i
  * Used solely to nudge people when creating a branch. Detection must never use
  * this, or work already in flight under a different style becomes invisible.
  */
-const recommendedFeatureBranchRegex = /^feature\/\d+-[a-z0-9]+(?:-[a-z0-9]+)*$/
+const recommendedFeatureBranchRegex =
+  /^(?:feature|hotfix)\/\d+-[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 /** Release branches: `release/{version}`, e.g. `release/1.2026.9`. */
 const releaseBranchRegex = /^release\/(.+)$/
 
 /** Strips a leading `origin/` (or any remote) so both branch types compare. */
 function withoutRemotePrefix(name: string): string {
-  const match = name.match(/^[^/]+\/(release\/.+|feature\/.+)$/)
+  const match = name.match(/^[^/]+\/(release\/.+|feature\/.+|hotfix\/.+)$/)
   return match ? match[1] : name
 }
+
+/**
+ * What Start feature is being asked to cut.
+ *
+ * A feature and a hotfix are named the same way and differ only in where they
+ * start; a release is named from a version and has no description at all.
+ */
+export type StartBranchKind = 'feature' | 'hotfix' | 'release'
 
 export interface IParsedFeatureBranch {
   readonly vso: number
@@ -103,10 +117,11 @@ export function isReleaseBranchName(name: string): boolean {
  * pointing away from. The `[\s-]?` even matched the newline the line had wrapped on.
  */
 const vsoPatterns: ReadonlyArray<RegExp> = [
-  // A merged feature branch name, as it appears in merge and squash commits:
+  // A merged feature or hotfix branch name, as it appears in merge and squash
+  // commits:
   //   Merge pull request #412 from HouseOfTravel/feature/100712-fix-login
   //   feature/100712-fix-login (#412)
-  /feature\/(\d+)-/gi,
+  /(?:feature|hotfix)\/(\d+)-/gi,
 
   // Azure DevOps' own git linking convention.
   /AB#(\d+)/gi,
@@ -170,6 +185,14 @@ export function buildFeatureBranchName(
   description: string
 ): string {
   return `feature/${vso}-${slugifyDescription(description)}`
+}
+
+/** The same, under `hotfix/`. */
+export function buildHotfixBranchName(
+  vso: number,
+  description: string
+): string {
+  return `hotfix/${vso}-${slugifyDescription(description)}`
 }
 
 /**

@@ -1,10 +1,6 @@
 import { Branch } from '../../models/branch'
 import { IHotFlowState, IReleaseBranchState } from '../../models/hotflow'
-import { Repository } from '../../models/repository'
-import { getStatus } from '../git/status'
-import { getAllTags } from '../git/tag'
-import { getMergeBase } from '../git/merge'
-import { getAheadBehind, revSymmetricDifference } from '../git/rev-list'
+import { IRepositoryProvider } from './repository-provider'
 
 /**
  * Pre-flight checks for the HotFlow actions.
@@ -47,46 +43,85 @@ function summarise(checks: ReadonlyArray<IPreflightCheck>): IPreflightResult {
   }
 }
 
-/** True when the working directory has no changes. */
-async function isWorkingTreeClean(repository: Repository): Promise<boolean> {
-  const status = await getStatus(repository)
+/**
+ * The working-directory check, or nothing at all.
+ *
+ * Without a working copy this isn't a check that fails — it's a question that
+ * stops existing, so it produces no row rather than a row that passes for the
+ * wrong reason. `blocking` differs by action, hence the parameter.
+ */
+async function workingTreeCheck(
+  provider: IRepositoryProvider,
+  blocking: boolean,
+  detailWhenDirty: string
+): Promise<IPreflightCheck | null> {
+  const clean = await provider.isWorkingTreeClean()
 
-  // A null status means git couldn't tell us; treat that as not-clean rather
-  // than assuming the best.
-  return status !== null && status.workingDirectory.files.length === 0
+  if (clean === null) {
+    return null
+  }
+
+  return {
+    id: 'clean-tree',
+    label: 'Working directory is clean',
+    status: clean ? 'pass' : blocking ? 'fail' : 'warn',
+    detail: clean ? undefined : detailWhenDirty,
+    blocking,
+  }
 }
 
 /**
- * Checks for starting a feature or release branch off the integration branch.
+ * The branch a new one is being cut from.
+ *
+ * Passed in rather than read off the state because it isn't always the
+ * integration branch: a hotfix starts from the release in flight, so that it
+ * carries what is being tested rather than everything unreleased on develop.
+ */
+export interface IStartBranchBase {
+  /** How to refer to it, for the check's label. */
+  readonly name: string
+
+  /** The resolved branch, or null when the repository hasn't got it. */
+  readonly branch: Branch | null
+}
+
+/**
+ * Checks for starting a branch off another one.
+ *
+ * Defaults to the integration branch, which is where a feature and a release
+ * both start.
  */
 export async function preflightStartBranch(
-  repository: Repository,
+  provider: IRepositoryProvider,
   hotFlowState: IHotFlowState,
   branchName: string,
-  existingBranches: ReadonlyArray<Branch>
+  existingBranches: ReadonlyArray<Branch>,
+  base?: IStartBranchBase
 ): Promise<IPreflightResult> {
   const checks: Array<IPreflightCheck> = []
-  const integrationName = hotFlowState.integrationBranchName
+  const resolvedBase: IStartBranchBase = base ?? {
+    name: hotFlowState.integrationBranchName,
+    branch: hotFlowState.integrationBranch,
+  }
 
-  const clean = await isWorkingTreeClean(repository)
-  checks.push({
-    id: 'clean-tree',
-    label: 'Working directory is clean',
-    status: clean ? 'pass' : 'warn',
-    detail: clean
-      ? undefined
-      : 'Uncommitted changes will be carried onto the new branch.',
-    blocking: false,
-  })
+  const tree = await workingTreeCheck(
+    provider,
+    false,
+    'Uncommitted changes will be carried onto the new branch.'
+  )
 
-  const hasIntegration = hotFlowState.integrationBranch !== null
+  if (tree !== null) {
+    checks.push(tree)
+  }
+
+  const hasBase = resolvedBase.branch !== null
   checks.push({
-    id: 'integration-exists',
-    label: `${integrationName} exists`,
-    status: hasIntegration ? 'pass' : 'fail',
-    detail: hasIntegration
+    id: 'base-exists',
+    label: `${resolvedBase.name} exists`,
+    status: hasBase ? 'pass' : 'fail',
+    detail: hasBase
       ? undefined
-      : `HotFlow branches from ${integrationName}, which this repository doesn't have.`,
+      : `This branch would be cut from ${resolvedBase.name}, which this repository doesn't have.`,
     blocking: true,
   })
 
@@ -108,20 +143,20 @@ export async function preflightStartBranch(
 
 /** Additional check for starting a release: the tag mustn't already exist. */
 export async function preflightStartRelease(
-  repository: Repository,
+  provider: IRepositoryProvider,
   hotFlowState: IHotFlowState,
   version: string,
   branchName: string,
   existingBranches: ReadonlyArray<Branch>
 ): Promise<IPreflightResult> {
   const base = await preflightStartBranch(
-    repository,
+    provider,
     hotFlowState,
     branchName,
     existingBranches
   )
 
-  const tags = await getAllTags(repository)
+  const tags = await provider.getAllTagNames()
   const tagExists = tags.has(version)
 
   const checks = [
@@ -144,7 +179,7 @@ export async function preflightStartRelease(
  * Checks for merging the integration branch into the current release branch.
  */
 export async function preflightUpdateRelease(
-  repository: Repository,
+  provider: IRepositoryProvider,
   release: IReleaseBranchState,
   integrationBranch: Branch,
   fastForwardOnly: boolean
@@ -152,14 +187,15 @@ export async function preflightUpdateRelease(
   const checks: Array<IPreflightCheck> = []
   const integrationName = integrationBranch.nameWithoutRemote
 
-  const clean = await isWorkingTreeClean(repository)
-  checks.push({
-    id: 'clean-tree',
-    label: 'Working directory is clean',
-    status: clean ? 'pass' : 'fail',
-    detail: clean ? undefined : 'Commit or stash your changes before merging.',
-    blocking: true,
-  })
+  const tree = await workingTreeCheck(
+    provider,
+    true,
+    'Commit or stash your changes before merging.'
+  )
+
+  if (tree !== null) {
+    checks.push(tree)
+  }
 
   const hasWork = release.behindIntegration > 0
   checks.push({
@@ -174,8 +210,7 @@ export async function preflightUpdateRelease(
 
   // A merge base tells us the two branches are actually related. Without one, a
   // merge would produce something nobody wants.
-  const mergeBase = await getMergeBase(
-    repository,
+  const mergeBase = await provider.getMergeBase(
     release.branch.name,
     integrationBranch.name
   )
@@ -222,7 +257,7 @@ export async function preflightUpdateRelease(
  * production branch, creates a tag other people depend on, and pushes both.
  */
 export async function preflightFinishRelease(
-  repository: Repository,
+  provider: IRepositoryProvider,
   release: IReleaseBranchState,
   productionBranch: Branch,
   integrationName: string,
@@ -231,14 +266,15 @@ export async function preflightFinishRelease(
   const checks: Array<IPreflightCheck> = []
   const productionName = productionBranch.nameWithoutRemote
 
-  const clean = await isWorkingTreeClean(repository)
-  checks.push({
-    id: 'clean-tree',
-    label: 'Working directory is clean',
-    status: clean ? 'pass' : 'fail',
-    detail: clean ? undefined : 'Commit or stash your changes first.',
-    blocking: true,
-  })
+  const tree = await workingTreeCheck(
+    provider,
+    true,
+    'Commit or stash your changes first.'
+  )
+
+  if (tree !== null) {
+    checks.push(tree)
+  }
 
   // Shipping a release that's behind integration means shipping stale code.
   const isBehind = release.behindIntegration > 0
@@ -253,35 +289,32 @@ export async function preflightFinishRelease(
   })
 
   // Local production must match its remote, or the merge lands on a stale base.
-  const productionAheadBehind =
-    productionBranch.upstream === null
-      ? null
-      : await getAheadBehind(
-          repository,
-          revSymmetricDifference(
-            productionBranch.name,
-            productionBranch.upstream
-          )
-        )
+  // Without a working copy there is no local production to be stale, so the
+  // question is skipped rather than answered.
+  if (provider.hasWorkingCopy) {
+    const productionAheadBehind = await provider.getUpstreamDivergence(
+      productionBranch
+    )
 
-  const productionInSync =
-    productionAheadBehind !== null &&
-    productionAheadBehind.ahead === 0 &&
-    productionAheadBehind.behind === 0
+    const productionInSync =
+      productionAheadBehind !== null &&
+      productionAheadBehind.ahead === 0 &&
+      productionAheadBehind.behind === 0
 
-  checks.push({
-    id: 'production-in-sync',
-    label: `${productionName} matches its remote`,
-    status: productionInSync ? 'pass' : 'fail',
-    detail: productionInSync
-      ? undefined
-      : productionAheadBehind === null
-      ? `${productionName} isn't tracking a remote branch.`
-      : `${productionName} is ${productionAheadBehind.ahead} ahead and ${productionAheadBehind.behind} behind its remote. Fetch and reconcile first.`,
-    blocking: true,
-  })
+    checks.push({
+      id: 'production-in-sync',
+      label: `${productionName} matches its remote`,
+      status: productionInSync ? 'pass' : 'fail',
+      detail: productionInSync
+        ? undefined
+        : productionAheadBehind === null
+        ? `${productionName} isn't tracking a remote branch.`
+        : `${productionName} is ${productionAheadBehind.ahead} ahead and ${productionAheadBehind.behind} behind its remote. Fetch and reconcile first.`,
+      blocking: true,
+    })
+  }
 
-  const tags = await getAllTags(repository)
+  const tags = await provider.getAllTagNames()
   const tagExists = tags.has(release.version.raw)
   checks.push({
     id: 'tag-available',
@@ -380,7 +413,12 @@ export function describeUpdateReleaseCommands(
 }
 
 /**
- * The commands for cutting a new branch off the integration branch.
+ * The commands for cutting a new branch off another one.
+ *
+ * `startRef` is the ref that will actually be handed to `git checkout`, rather
+ * than a branch name this rebuilds an `origin/` prefix onto — a hotfix starts
+ * from a release branch, and a repository without a remote counterpart starts
+ * from the local branch, so the prefix isn't ours to assume.
  *
  * `--no-track` is load-bearing and shown because of it. Without it the new branch
  * tracks `origin/develop`, and its first push aims at develop rather than at
@@ -389,10 +427,10 @@ export function describeUpdateReleaseCommands(
  */
 export function describeStartBranchCommands(
   branchName: string,
-  integrationName: string
+  startRef: string
 ): ReadonlyArray<string> {
   return [
     `git fetch origin`,
-    `git checkout -b ${branchName} --no-track origin/${integrationName}`,
+    `git checkout -b ${branchName} --no-track ${startRef}`,
   ]
 }

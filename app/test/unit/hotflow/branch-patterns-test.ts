@@ -75,6 +75,23 @@ describe('hotflow/branch-patterns', () => {
       assert.ok(isFeatureBranchName('feature/86270-Add-Missing-Validation'))
       assert.ok(!isFeatureBranchName('main'))
     })
+
+    it('treats a hotfix as work in flight too', () => {
+      // A hotfix carries a VSO and is work like any other. Leaving it out would
+      // drop it from the diagram and leave its work item unattributed.
+      assert.deepStrictEqual(
+        parseFeatureBranchName('hotfix/107958-fix-quote-totals'),
+        { vso: 107958, slug: 'fix-quote-totals' }
+      )
+      assert.strictEqual(
+        parseFeatureBranchName('origin/hotfix/107958-fix-quote-totals')?.vso,
+        107958
+      )
+      assert.ok(isFeatureBranchName('hotfix/1-a'))
+
+      // Still only these two prefixes — `bugfix/` above stays unrecognised.
+      assert.strictEqual(parseFeatureBranchName('hotfix/no-vso-here'), null)
+    })
   })
 
   describe('isRecommendedFeatureBranchName', () => {
@@ -148,6 +165,17 @@ describe('hotflow/branch-patterns', () => {
         'Merge pull request #412 from HouseOfTravel/feature/100712-fix-login'
 
       assert.deepStrictEqual(extractVsoNumbers(subject), [100712])
+    })
+
+    it('reads a VSO from a merged hotfix', () => {
+      // Otherwise a fix that went straight onto a release would be missing from
+      // what that release is said to contain.
+      assert.deepStrictEqual(
+        extractVsoNumbers(
+          'Merge pull request #418 from HouseOfTravel/hotfix/107958-fix-quote-totals'
+        ),
+        [107958]
+      )
     })
 
     it('reads a VSO from a squash commit subject', () => {
