@@ -147,25 +147,22 @@
     flex-shrink: 0;
   }
 
-  // Static, by request: the branch you're on is the one thing in the toolbar you
-  // read constantly, and a name that changes width as you resize the window is
-  // harder to find than one that doesn't.
-  > .branch-button {
-    flex: 0 0 230px;
-  }
-
-  // The filler. It takes the slack when there's room to spare, which is what
-  // keeps the row gapless, and it's the last to give up its label. Plain button
-  // when there's only fetching to offer, dropdown once there's a push or a pull
-  // to choose between — the dropdown's floor has to leave room for its arrow.
-  > .toolbar-button.push-pull-button {
-    flex: 1 1 230px;
-    min-width: var(--toolbar-collapsed-width);
-  }
-
-  > .toolbar-dropdown:has(> .toolbar-button.push-pull-button) {
-    flex: 1 1 230px;
-    min-width: calc(var(--toolbar-collapsed-width) + 39px);
+  // The branch and the push/pull control are each wrapped in a
+  // `.resizable-component` — you can drag their widths — and that wrapper is
+  // what the toolbar lays out. It sets `flex-shrink: 0` and an inline
+  // min-width, which is why neither of them took any part in this before.
+  //
+  // The branch keeps that, by request: the branch you're on is the one thing in
+  // the toolbar you read constantly, and a name that changes width as you
+  // resize the window is harder to find than one that doesn't.
+  //
+  // The push/pull control gives up its label like the rest, last of the four.
+  // Its base width is whatever it has been dragged to, so `flex-basis` is left
+  // alone and only the shrink factor is set — 1 against HotFlow's 100, so
+  // HotFlow has long finished by the time this one starts. Its floor is the
+  // inline min-width the component writes from `pushPullButtonWidth.min`.
+  > .resizable-component:has(.push-pull-button) {
+    flex-shrink: 1;
   }
 
   > .toolbar-button.hotflow-button {

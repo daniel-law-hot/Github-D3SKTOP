@@ -453,6 +453,17 @@ const branchDropdownWidthConfigKey: string = 'branch-dropdown-width'
 const defaultPushPullButtonWidth: number = 230
 const pushPullButtonWidthConfigKey: string = 'push-pull-button-width'
 
+/**
+ * How narrow the push/pull/fetch button is allowed to get: its icon, the
+ * padding either side of it, and the dropdown arrow that sits alongside.
+ *
+ * It is the last of the toolbar's right-hand buttons to give up its label as
+ * the window narrows, and this is where it stops. Kept in step with
+ * `--toolbar-collapsed-width` in styles/_variables.scss, which is what the
+ * others collapse to; the extra is `.toolbar-dropdown-arrow-button`.
+ */
+const collapsedPushPullButtonWidth: number = 40 + 39
+
 const askToMoveToApplicationsFolderDefault: boolean = true
 const confirmRepoRemovalDefault: boolean = true
 const showCommitLengthWarningDefault: boolean = false
@@ -2589,13 +2600,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
     )
 
     const pushPullButtonMaxWidth = available - this.branchDropdownWidth.value
-    const minimumPushPullToolBarWidth =
-      defaultPushPullButtonWidth > available / 2
-        ? available / 2 + 30 // 30 to clip the fetch dropdown button in favor of seeing more of the words on the toolbar buttons
-        : defaultPushPullButtonWidth
+
+    // Down to its icon and arrow, rather than to a width that still fits the
+    // words. This floor is both the drag limit and — because the resizable
+    // writes it out as an inline min-width — the point at which the button
+    // stops shrinking as the window narrows. Holding it at a label's width
+    // instead is what used to push Open in Visual Studio off the right-hand
+    // edge, since nothing to the left of it would give up any more room.
     this.pushPullButtonWidth = constrain(
       this.pushPullButtonWidth,
-      minimumPushPullToolBarWidth,
+      Math.min(collapsedPushPullButtonWidth, pushPullButtonMaxWidth),
       pushPullButtonMaxWidth
     )
   }

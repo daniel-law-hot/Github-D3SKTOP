@@ -47,16 +47,34 @@ export class AppWindow {
     ? new GitHubReleaseUpdater()
     : null
 
-  private minWidth = 960
+  /**
+   * How narrow the window may be dragged.
+   *
+   * The floor is the toolbar fully collapsed: the sidebar at its 250 default,
+   * the branch at its 230, and the four right-hand buttons down to icons — 79
+   * for fetch and its dropdown arrow, 40 each for HotFlow and Claude, 70 for
+   * Visual Studio and its arrow. That comes to 709, so this is the first width
+   * at which nothing is pushed off the right-hand edge. Measured rather than
+   * reasoned about; see styles/ui/toolbar/_toolbar.scss for how the collapsing
+   * is arranged.
+   */
+  private minWidth = 720
   private minHeight = 660
+
+  /**
+   * What a first run opens at, which used to be the same as the minimum — back
+   * when the minimum was a comfortable size rather than a floor.
+   */
+  private defaultWidth = 960
+  private defaultHeight = 660
 
   // See https://github.com/desktop/desktop/pull/11162
   private shouldMaximizeOnShow = false
 
   public constructor() {
     const savedWindowState = windowStateKeeper({
-      defaultWidth: this.minWidth,
-      defaultHeight: this.minHeight,
+      defaultWidth: this.defaultWidth,
+      defaultHeight: this.defaultHeight,
       maximize: false,
     })
 
