@@ -406,6 +406,7 @@ import {
   detectHotFlowState,
   loadReleaseHistoryContents,
 } from '../hotflow/detect'
+import { GitRepositoryProvider } from '../hotflow/git-repository-provider'
 import { fetchPullRequestApprovals } from '../hotflow/pull-request-approvals'
 import {
   IHotFlowBranchOverride,
@@ -4187,7 +4188,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
       const sequenceOverrides = getReleaseSequenceOverrides(repository)
       const detected = await detectHotFlowState(
-        repository,
+        new GitRepositoryProvider(repository),
         sequenceOverrides,
         getBranchOverride(repository)
       )
@@ -4550,7 +4551,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     try {
       const loaded = await loadReleaseHistoryContents(
-        repository,
+        new GitRepositoryProvider(repository),
         releaseHistory
       )
 

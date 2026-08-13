@@ -12,6 +12,7 @@ import {
   describeFinishReleaseCommands,
   preflightFinishRelease,
 } from '../../../lib/hotflow/actions'
+import { GitRepositoryProvider } from '../../../lib/hotflow/git-repository-provider'
 import { PreflightChecks } from './preflight-checks'
 import { CommandPreview } from './command-preview'
 
@@ -87,7 +88,7 @@ export class FinishReleaseDialog extends React.Component<
     }
 
     const result = await preflightFinishRelease(
-      repository,
+      new GitRepositoryProvider(repository),
       release,
       productionBranch,
       hotFlowState.integrationBranchName,

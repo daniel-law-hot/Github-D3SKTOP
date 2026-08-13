@@ -1,4 +1,3 @@
-import { GitError } from 'dugite'
 import { Branch, BranchType } from '../../models/branch'
 import { Commit } from '../../models/commit'
 import {
@@ -17,17 +16,6 @@ import {
   defaultAdoState,
   defaultHotFlowState,
 } from '../../models/hotflow'
-import { Repository } from '../../models/repository'
-import { git } from '../git/core'
-import { getRemoteHEAD } from '../git/remote'
-import { getBranches } from '../git/for-each-ref'
-import { createForEachRefParser } from '../git/git-delimiter-parser'
-import { getCommits } from '../git/log'
-import {
-  getAheadBehind,
-  revRange,
-  revSymmetricDifference,
-} from '../git/rev-list'
 import {
   extractVsoNumbersFromCommits,
   parseFeatureBranchName,
@@ -35,7 +23,7 @@ import {
 } from './branch-patterns'
 import { resolveReleaseSequence } from './release-sequence'
 import { pickCurrentRelease } from './pick-release'
-import { getSymbolicRef } from '../git/refs'
+import { IRepositoryProvider } from './repository-provider'
 import {
   compareReleaseVersions,
   parseReleaseVersion,
@@ -55,15 +43,19 @@ const ReleaseHistoryLimit = 12
 /**
  * Reads the repository and builds the complete HotFlow state.
  *
- * Every git call here is scoped to a revision range or a ref query, so this is
- * cheap enough to run on repository refresh. Nothing in here mutates the repo.
+ * Every read here is scoped to a revision range or a ref query, so this is cheap
+ * enough to run on repository refresh. Nothing in here mutates the repository.
+ *
+ * Takes a provider rather than a `Repository` so the same detection runs against
+ * a local clone or a remote API — see `repository-provider.ts`. Nothing below
+ * knows which it has.
  */
 export async function detectHotFlowState(
-  repository: Repository,
+  provider: IRepositoryProvider,
   sequenceOverrides: ReadonlyMap<string, number> | undefined,
   branchOverride: IHotFlowBranchOverride = {}
 ): Promise<IHotFlowState> {
-  const branches = await getBranches(repository)
+  const branches = await provider.getBranches()
 
   const integrationResolution = resolveBranch(
     branches,
@@ -81,7 +73,7 @@ export async function detectHotFlowState(
     ) ??
     (branchOverride.productionBranch === undefined
       ? await resolveProductionFromDefaultBranch(
-          repository,
+          provider,
           branches,
           integrationResolution
         )
@@ -127,19 +119,14 @@ export async function detectHotFlowState(
     releaseHistory,
     unreleased,
     featureBranches,
-    headRef,
+    checkedOutBranchName,
   ] = await Promise.all([
-    collectReleaseBranches(repository, branches, productionRef),
-    collectReleaseHistory(repository, productionRef),
-    collectUnreleased(repository, productionRef, integrationRef),
-    collectFeatureBranches(repository, branches, integrationRef),
-    getSymbolicRef(repository, 'HEAD'),
+    collectReleaseBranches(provider, branches, productionRef),
+    collectReleaseHistory(provider, productionRef),
+    collectUnreleased(provider, productionRef, integrationRef),
+    collectFeatureBranches(provider, branches, integrationRef),
+    provider.getCheckedOutBranchName(),
   ])
-
-  // `refs/heads/release/1.2026.17` -> `release/1.2026.17`. Null on a detached
-  // HEAD, which simply means there's no explicit choice to honour.
-  const checkedOutBranchName =
-    headRef === null ? null : headRef.replace(/^refs\/heads\//, '')
 
   const { current: currentCandidate, others: otherCandidates } =
     pickCurrentRelease(
@@ -161,7 +148,7 @@ export async function detectHotFlowState(
     currentCandidate === null
       ? Promise.resolve(null)
       : buildReleaseState(
-          repository,
+          provider,
           currentCandidate,
           integrationRef,
           productionRef,
@@ -173,7 +160,7 @@ export async function detectHotFlowState(
     Promise.all(
       otherCandidates.map(c =>
         buildReleaseState(
-          repository,
+          provider,
           c,
           integrationRef,
           productionRef,
@@ -277,11 +264,11 @@ function resolveBranch(
  * view nonsense.
  */
 async function resolveProductionFromDefaultBranch(
-  repository: Repository,
+  provider: IRepositoryProvider,
   branches: ReadonlyArray<Branch>,
   integration: IResolvedBranch | null
 ): Promise<IResolvedBranch | null> {
-  const remoteHead = await getRemoteHEAD(repository, 'origin').catch(() => null)
+  const remoteHead = await provider.getDefaultBranchName()
 
   if (remoteHead === null) {
     return null
@@ -326,7 +313,7 @@ interface IReleaseCandidate {
  * both places appears once, preferring the local one.
  */
 async function collectReleaseBranches(
-  repository: Repository,
+  provider: IRepositoryProvider,
   branches: ReadonlyArray<Branch>,
   productionRef: string
 ): Promise<ReadonlyArray<IReleaseCandidate>> {
@@ -353,11 +340,9 @@ async function collectReleaseBranches(
     }
   }
 
-  const mergedIntoProduction = await collectMergedRefs(
-    repository,
-    productionRef,
-    ['refs/heads/release/*', 'refs/remotes/*/release/*']
-  )
+  const mergedIntoProduction = await provider.getMergedBranches(productionRef, [
+    ...byVersion.values(),
+  ])
 
   const candidates: Array<IReleaseCandidate> = []
 
@@ -378,49 +363,9 @@ async function collectReleaseBranches(
   return candidates
 }
 
-/**
- * The subset of the given ref patterns that production already contains.
- *
- * Answers "is this merged" for every ref in one process instead of one per ref.
- * Returns short names, matching `Branch.name`, so a local `release/1.2026.17` and
- * an `origin/release/1.2026.17` are distinguishable — they can legitimately differ
- * when one has been pushed and the other hasn't.
- */
-async function collectMergedRefs(
-  repository: Repository,
-  productionRef: string,
-  patterns: ReadonlyArray<string>
-): Promise<ReadonlySet<string>> {
-  const result = await git(
-    [
-      'for-each-ref',
-      '--format=%(refname:short)',
-      `--merged=${productionRef}`,
-      ...patterns,
-    ],
-    repository.path,
-    'hotFlowMergedRefs',
-    {
-      expectedErrors: new Set([GitError.NotAGitRepository]),
-      successExitCodes: new Set([0, 1]),
-    }
-  )
-
-  if (result.gitError === GitError.NotAGitRepository) {
-    return new Set()
-  }
-
-  return new Set(
-    result.stdout
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-  )
-}
-
 /** Loads the detail for one release branch. */
 async function buildReleaseState(
-  repository: Repository,
+  provider: IRepositoryProvider,
   candidate: IReleaseCandidate,
   integrationRef: string,
   productionRef: string,
@@ -439,13 +384,10 @@ async function buildReleaseState(
   // same time. Awaiting drift first was a serial hop for nothing.
   const [drift, commits, releaseOnlyCommits, incomingCommits] = loadCommits
     ? await Promise.all([
-        getAheadBehind(
-          repository,
-          revSymmetricDifference(releaseRef, integrationRef)
-        ),
-        loadRange(repository, productionRef, releaseRef),
-        loadRange(repository, integrationRef, releaseRef),
-        loadRange(repository, releaseRef, integrationRef),
+        provider.getAheadBehind(releaseRef, integrationRef),
+        loadRange(provider, productionRef, releaseRef),
+        loadRange(provider, integrationRef, releaseRef),
+        loadRange(provider, releaseRef, integrationRef),
       ])
     : [null, [], [], []]
 
@@ -462,12 +404,7 @@ async function buildReleaseState(
     ? commits.length
     : candidate.isMergedIntoProduction
     ? 0
-    : (
-        await getAheadBehind(
-          repository,
-          revSymmetricDifference(releaseRef, productionRef)
-        )
-      )?.ahead ?? 0
+    : (await provider.getAheadBehind(releaseRef, productionRef))?.ahead ?? 0
 
   const vsoNumbers = extractVsoNumbersFromCommits(commits)
 
@@ -507,28 +444,27 @@ function computeVerdict(
   return behindIntegration > 0 ? 'needs-update' : 'ready'
 }
 
-/** Loads full commits (with bodies, for VSO extraction) in `from..to`. */
-async function loadRange(
-  repository: Repository,
+/**
+ * Loads full commits (with bodies, for VSO extraction) in `from..to`.
+ *
+ * The provider swallows a bad range into an empty list rather than throwing, so
+ * a mis-detected range degrades to "nothing here" instead of an error screen.
+ */
+function loadRange(
+  provider: IRepositoryProvider,
   from: string,
   to: string
 ): Promise<ReadonlyArray<Commit>> {
-  try {
-    return await getCommits(repository, revRange(from, to), MaxCommitsPerRange)
-  } catch {
-    // A bad range shouldn't take the whole view down — an empty list degrades
-    // to "nothing here" rather than an error screen.
-    return []
-  }
+  return provider.getCommitRange(from, to, MaxCommitsPerRange)
 }
 
 /** Commits and VSOs sitting in development but not yet shipped to production. */
 async function collectUnreleased(
-  repository: Repository,
+  provider: IRepositoryProvider,
   productionRef: string,
   integrationRef: string
 ): Promise<{ commitCount: number; vsoCount: number }> {
-  const commits = await loadRange(repository, productionRef, integrationRef)
+  const commits = await loadRange(provider, productionRef, integrationRef)
 
   return {
     commitCount: commits.length,
@@ -580,7 +516,7 @@ function collectFeatureBranchVsos(
  * the count honest in repositories carrying dozens of long-merged branches.
  */
 async function collectFeatureBranches(
-  repository: Repository,
+  provider: IRepositoryProvider,
   branches: ReadonlyArray<Branch>,
   integrationRef: string
 ): Promise<ReadonlyArray<IFeatureBranchState>> {
@@ -606,9 +542,8 @@ async function collectFeatureBranches(
   // ahead/behind per branch. "Nothing ahead of integration" and "merged into
   // integration" are the same condition, and this was the largest remaining block
   // of git processes in the refresh — sixteen of them in NimbleObt.
-  const merged = await collectMergedRefs(repository, integrationRef, [
-    'refs/heads/feature/*',
-    'refs/remotes/*/feature/*',
+  const merged = await provider.getMergedBranches(integrationRef, [
+    ...byName.values(),
   ])
 
   const states: Array<IFeatureBranchState> = []
@@ -636,54 +571,27 @@ async function collectFeatureBranches(
  * ancestry, which would be one git call per tag.
  */
 async function collectReleaseHistory(
-  repository: Repository,
+  provider: IRepositoryProvider,
   productionRef: string
 ): Promise<ReadonlyArray<IShippedRelease>> {
-  const { formatArgs, parse } = createForEachRefParser({
-    name: '%(refname:short)',
-    sha: '%(objectname)',
-    // Annotated tags carry taggerdate; lightweight tags fall back to the
-    // commit's own date via creatordate.
-    date: '%(creatordate:iso8601)',
-  })
-
-  const result = await git(
-    ['for-each-ref', ...formatArgs, `--merged=${productionRef}`, 'refs/tags'],
-    repository.path,
-    'hotFlowReleaseHistory',
-    {
-      expectedErrors: new Set([GitError.NotAGitRepository]),
-      successExitCodes: new Set([0, 1]),
-    }
-  )
-
-  if (result.gitError === GitError.NotAGitRepository) {
-    return []
-  }
+  const tags = await provider.getMergedTags(productionRef)
 
   const releases: Array<IShippedRelease> = []
 
-  for (const ref of parse(result.stdout)) {
-    if (ref.name === undefined || ref.name.length === 0) {
-      continue
-    }
-
+  for (const tag of tags) {
     // House of Travel tags are bare versions — `1.2026.9`, no `v` prefix — so a
     // tag is a release exactly when it parses as a version.
-    const version = parseReleaseVersion(ref.name)
+    const version = parseReleaseVersion(tag.name)
 
     if (version === null) {
       continue
     }
 
-    const parsedDate = ref.date ? new Date(ref.date) : null
-
     releases.push({
       version,
-      tagName: ref.name,
-      sha: ref.sha,
-      shippedAt:
-        parsedDate !== null && !isNaN(parsedDate.valueOf()) ? parsedDate : null,
+      tagName: tag.name,
+      sha: tag.sha,
+      shippedAt: tag.date,
       // Unread. `loadReleaseHistoryContents` fills these in after the refresh.
       commits: null,
       vsoNumbers: null,
@@ -720,7 +628,7 @@ async function collectReleaseHistory(
  * Entries that already have contents are left alone, so this is safe to call again.
  */
 export async function loadReleaseHistoryContents(
-  repository: Repository,
+  provider: IRepositoryProvider,
   history: ReadonlyArray<IShippedRelease>
 ): Promise<ReadonlyArray<IShippedRelease>> {
   return Promise.all(
@@ -732,7 +640,7 @@ export async function loadReleaseHistoryContents(
       }
 
       const commits = await loadRange(
-        repository,
+        provider,
         previous.tagName,
         release.tagName
       )

@@ -14,6 +14,7 @@ import {
   describeUpdateReleaseCommands,
   preflightUpdateRelease,
 } from '../../../lib/hotflow/actions'
+import { GitRepositoryProvider } from '../../../lib/hotflow/git-repository-provider'
 import { PreflightChecks } from './preflight-checks'
 import { CommandPreview } from './command-preview'
 import { extractVsoNumbersFromCommits } from '../../../lib/hotflow/branch-patterns'
@@ -94,7 +95,7 @@ export class UpdateReleaseDialog extends React.Component<
     // its remote, and "can this fast-forward" answered about the wrong ref is
     // worse than not asking.
     const result = await preflightUpdateRelease(
-      repository,
+      new GitRepositoryProvider(repository),
       release,
       this.mergeSource(integrationBranch),
       this.state.method === 'fast-forward'
