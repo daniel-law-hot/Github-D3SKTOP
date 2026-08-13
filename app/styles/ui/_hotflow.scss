@@ -1751,6 +1751,27 @@ body.theme-dark {
   border: 1px solid var(--box-border-contrast-color);
   border-radius: 3px;
   color: var(--text-secondary-color);
+
+  // Sized for a six-digit work item number rather than for whatever this
+  // particular chip holds, so a long list reads as a row of matched boxes
+  // instead of a ragged one.
+  //
+  // `ch` is the advance width of a digit in the monospace face the dialog sets,
+  // which in a monospace face is every digit's width; `tabular-nums` says so
+  // outright in case the face ever isn't. The 14px is this rule's own padding
+  // and border, which the global border-box sizing would otherwise take out of
+  // the six digits.
+  //
+  // The extra pixel is slack: six digits measure a hair over `6ch` once
+  // sub-pixel advances have accumulated, and without it the text rather than the
+  // box would decide the width at six digits, leaving those chips a fraction
+  // wider than the shorter ones.
+  //
+  // A number that needs a seventh column widens its own chip rather than being
+  // clipped — one odd chip is a better failure than an unreadable number.
+  min-width: calc(6ch + 15px);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 // merge-back
