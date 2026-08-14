@@ -114,6 +114,12 @@ export async function detectHotFlowState(
   const integrationRef = integrationBranch.name
   const productionRef = productionBranch.name
 
+  // Started out here rather than inside the group below because two of the
+  // things in it want the answer, and awaiting one promise twice costs nothing —
+  // whereas reading HEAD first would put a serial git call in front of
+  // everything else.
+  const checkedOutBranchNamePromise = provider.getCheckedOutBranchName()
+
   const [
     releaseCandidates,
     releaseHistory,
@@ -124,8 +130,13 @@ export async function detectHotFlowState(
     collectReleaseBranches(provider, branches, productionRef),
     collectReleaseHistory(provider, productionRef),
     collectUnreleased(provider, productionRef, integrationRef),
-    collectFeatureBranches(provider, branches, integrationRef),
-    provider.getCheckedOutBranchName(),
+    collectFeatureBranches(
+      provider,
+      branches,
+      integrationRef,
+      checkedOutBranchNamePromise
+    ),
+    checkedOutBranchNamePromise,
   ])
 
   const { current: currentCandidate, others: otherCandidates } =
@@ -514,11 +525,21 @@ function collectFeatureBranchVsos(
  *
  * Branches with nothing ahead of integration are dropped, which is what keeps
  * the count honest in repositories carrying dozens of long-merged branches.
+ *
+ * The branch you're standing on is exempt from that. A feature branch cut a
+ * moment ago has no commits of its own, so integration contains it and the rule
+ * above would throw it away — Start feature would appear to do nothing until you
+ * made your first commit. Worse, whether it did depended on how far the local
+ * integration branch had fallen behind its remote: a new branch showed up in
+ * NimbleObt, 41 commits behind, and vanished in HOTWebsites, which was in step.
+ * The filter is there to hide other people's long-merged branches, and the one
+ * under your feet is never that.
  */
 async function collectFeatureBranches(
   provider: IRepositoryProvider,
   branches: ReadonlyArray<Branch>,
-  integrationRef: string
+  integrationRef: string,
+  checkedOutBranchName: Promise<string | null>
 ): Promise<ReadonlyArray<IFeatureBranchState>> {
   const byName = new Map<string, Branch>()
 
@@ -542,8 +563,9 @@ async function collectFeatureBranches(
   // ahead/behind per branch. "Nothing ahead of integration" and "merged into
   // integration" are the same condition, and this was the largest remaining block
   // of git processes in the refresh — sixteen of them in NimbleObt.
-  const merged = await provider.getMergedBranches(integrationRef, [
-    ...byName.values(),
+  const [merged, checkedOut] = await Promise.all([
+    provider.getMergedBranches(integrationRef, [...byName.values()]),
+    checkedOutBranchName,
   ])
 
   const states: Array<IFeatureBranchState> = []
@@ -551,9 +573,17 @@ async function collectFeatureBranches(
   for (const branch of byName.values()) {
     const parsed = parseFeatureBranchName(branch.name)
 
+    if (parsed === null) {
+      continue
+    }
+
     // A feature branch integration already holds is merged or never started;
-    // either way it isn't open work.
-    if (parsed === null || merged.has(branch.name)) {
+    // either way it isn't open work — unless it's the one checked out, which is
+    // the work in front of you whether or not it has any commits yet.
+    const isCheckedOut =
+      checkedOut !== null && branch.nameWithoutRemote === checkedOut
+
+    if (merged.has(branch.name) && !isCheckedOut) {
       continue
     }
 
