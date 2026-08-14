@@ -248,6 +248,16 @@ interface IFilterChangesListProps {
   /** Whether or not to show the changes filter */
   readonly showChangesFilter: boolean
 
+  /**
+   * Whether to show the row above the list carrying the changed-file count, the
+   * select-all checkbox and the list/tree and sort toggles.
+   *
+   * Off in HotFlow's Branch changes tab, which shows the files and nothing else.
+   * Note this takes the select-all checkbox with it, so anywhere it's off should
+   * either not need select-all or offer it elsewhere.
+   */
+  readonly showChangesListHeader: boolean
+
   /** Whether to show the changed files as a folder tree instead of a flat list */
   readonly showChangesAsTree: boolean
 
@@ -1503,6 +1513,12 @@ export class FilterChangesList extends React.Component<
   }
 
   private renderFilterRow = () => {
+    // Nothing left to put in it, so the row goes rather than sitting there as an
+    // empty band above the list.
+    if (!this.props.showChangesFilter && !this.props.showChangesListHeader) {
+      return null
+    }
+
     return (
       <div
         className="header filter-field-row"
@@ -1510,7 +1526,7 @@ export class FilterChangesList extends React.Component<
         ref={this.headerRef}
       >
         {this.renderFilterBox()}
-        {this.renderCheckBoxRow()}
+        {this.props.showChangesListHeader && this.renderCheckBoxRow()}
       </div>
     )
   }

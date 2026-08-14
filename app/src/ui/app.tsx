@@ -3989,7 +3989,18 @@ export class App extends React.Component<IAppProps, IAppState> {
             // list; in a tab you opened to glance at a branch it's a row of chrome
             // over a handful of files.
             showChangesFilter: false,
-            showChangesAsTree: state.showChangesAsTree,
+            // Nor the row above the list — the changed-file count, the select-all
+            // checkbox and the list/tree and sort toggles. What's wanted here is
+            // the files and nothing else.
+            //
+            // It takes select-all with it. Individual checkboxes remain, and this
+            // is a branch you're working on rather than a hundred-file review, so
+            // that's the trade. Put the header back if it starts to bite.
+            showChangesListHeader: false,
+            // Always a flat list, not the tree. The toggle that would switch back
+            // lived in the row above, so honouring the global setting here could
+            // strand this tab in tree view with no way out of it.
+            showChangesAsTree: false,
             changesTreeFilesFirst: state.changesTreeFilesFirst,
             shouldNudgeToCommit: false,
             shouldShowGenerateCommitMessageCallOut:

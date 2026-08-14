@@ -282,6 +282,9 @@ export class RepositoryView extends React.Component<
       commitSpellcheckEnabled: this.props.commitSpellcheckEnabled,
       showCommitLengthWarning: this.props.showCommitLengthWarning,
       showChangesFilter: this.props.showChangesFilter,
+      // The repository view keeps the header: select-all, the count and the
+      // list/tree toggle all live there, and this is where they earn their room.
+      showChangesListHeader: true,
       showChangesAsTree: this.props.showChangesAsTree,
       changesTreeFilesFirst: this.props.changesTreeFilesFirst,
       shouldNudgeToCommit:

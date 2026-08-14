@@ -96,6 +96,9 @@ interface IChangesSidebarProps {
   /** Whether or not to show the changes filter */
   readonly showChangesFilter: boolean
 
+  /** Whether to show the count, select-all checkbox and toggles above the list */
+  readonly showChangesListHeader: boolean
+
   /** Whether to show the changed files as a folder tree instead of a flat list */
   readonly showChangesAsTree: boolean
 
@@ -484,6 +487,7 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
           accounts={this.props.accounts}
           fileListFilter={this.props.changes.fileListFilter}
           showChangesFilter={this.props.showChangesFilter}
+          showChangesListHeader={this.props.showChangesListHeader}
           showChangesAsTree={this.props.showChangesAsTree}
           changesTreeFilesFirst={this.props.changesTreeFilesFirst}
           skipCommitHooks={this.props.skipCommitHooks}

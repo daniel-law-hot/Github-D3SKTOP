@@ -71,6 +71,7 @@ export interface IChangesPaneProps {
   readonly commitSpellcheckEnabled: boolean
   readonly showCommitLengthWarning: boolean
   readonly showChangesFilter: boolean
+  readonly showChangesListHeader: boolean
   readonly showChangesAsTree: boolean
   readonly changesTreeFilesFirst: boolean
   readonly shouldNudgeToCommit: boolean
@@ -180,6 +181,7 @@ export class ChangesSidebarPane extends React.Component<IChangesSidebarPaneProps
         commitSpellcheckEnabled={this.props.commitSpellcheckEnabled}
         showCommitLengthWarning={this.props.showCommitLengthWarning}
         showChangesFilter={this.props.showChangesFilter}
+        showChangesListHeader={this.props.showChangesListHeader}
         showChangesAsTree={this.props.showChangesAsTree}
         changesTreeFilesFirst={this.props.changesTreeFilesFirst}
         skipCommitHooks={this.props.skipCommitHooks}
