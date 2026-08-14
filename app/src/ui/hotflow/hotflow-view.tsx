@@ -71,16 +71,16 @@ interface IHotFlowViewProps {
 /**
  * Whether the Branch changes tab is offered.
  *
- * Parked rather than removed. The tab works and the components behind it are the
- * repository view's own, but it isn't wanted in the view yet — so this is the one
- * switch that turns it back on, and everything downstream keys off it rather than
- * the code being torn out and rebuilt later.
+ * Parked for a while after it was first built, which is why it's a switch rather
+ * than a condition inlined in three places — everything downstream keys off this
+ * one name, so turning it off again is a one-line change rather than an
+ * excavation.
  *
  * The extraction it prompted stays regardless: `changes-pane.tsx` now holds the
  * sidebar and diff wiring that `repository.tsx` used to carry inline, which is worth
  * having whether or not HotFlow ever shows a second copy of it.
  */
-const BranchChangesEnabled = false
+const BranchChangesEnabled = true
 
 /**
  * Whether the checked-out branch is a feature branch.

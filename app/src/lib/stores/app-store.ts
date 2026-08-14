@@ -3610,6 +3610,24 @@ export class AppStore extends TypedBaseStore<IAppState> {
         this._addBranchToForcePushList(repository, newTip, amendedCommitSha)
       }
     }
+
+    // A commit moves the branch, so everything HotFlow measures against it — how
+    // far ahead of the release the feature is, what work items the branch
+    // carries — is now a release behind. It mattered less when you had to leave
+    // HotFlow to commit; the Branch changes tab means the diagram is on screen
+    // while the commit happens, and a diagram that doesn't move looks broken.
+    //
+    // Guarded on a previous read so committing doesn't trigger a first one for
+    // someone who has never opened the view, and not awaited, for the same
+    // reason the repository refresh above isn't: nothing here should hold up the
+    // commit button.
+    const { hotFlowState } = this.repositoryStateCache.get(repository)
+
+    if (hotFlowState.lastRefreshed !== null) {
+      this._refreshHotFlow(repository).catch(e =>
+        log.warn('[AppStore] HotFlow could not refresh after commit', e)
+      )
+    }
   }
 
   private async _recordCommitStats(
