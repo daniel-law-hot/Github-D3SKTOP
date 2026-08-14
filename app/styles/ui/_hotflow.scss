@@ -852,6 +852,23 @@ body.theme-dark {
     flex-shrink: 0;
     border-right: 1px solid var(--box-border-color);
   }
+
+  // Two lines of description rather than the repository view's six or so.
+  //
+  // The list is the point of this tab and the commit box is what you reach for
+  // at the end of it, so the description gives its height back to the files.
+  // It's a floor, not a ceiling — a longer description still scrolls, and the
+  // summary field above is untouched.
+  //
+  // `lh` is a line of this textarea's own text, so this follows the font rather
+  // than guessing at pixels; the extra is the padding above and below.
+  // Both selectors are needed to out-specify the two rules that set this in
+  // ui/changes/_commit-message.scss, one of which only applies with the action
+  // bar showing.
+  .commit-message-component .description-focus-container textarea,
+  .commit-message-component.with-action-bar .description-field textarea {
+    min-height: calc(2lh + var(--spacing));
+  }
 }
 
 .hotflow-branch-changes-diff {

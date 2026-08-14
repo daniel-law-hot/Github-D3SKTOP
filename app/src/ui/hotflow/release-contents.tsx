@@ -102,17 +102,6 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
             },
           ]
         : [
-            // Only when there's a feature branch to show changes for — on a
-            // release branch the working directory isn't what you came here for.
-            ...(this.props.branchChanges !== null
-              ? [
-                  {
-                    id: 'branch-changes' as const,
-                    label: 'Branch changes',
-                    count: this.props.changedFileCount,
-                  },
-                ]
-              : []),
             {
               id: 'work-items',
               label: 'Work items',
@@ -126,6 +115,19 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
               count: release.behindIntegration,
               warn: release.behindIntegration > 0,
             },
+            // Last, and only when there's a feature branch to show changes for —
+            // on a release branch the working directory isn't what you came here
+            // for. The three before it describe the release, which is what this
+            // view is about; this one describes your working copy.
+            ...(this.props.branchChanges !== null
+              ? [
+                  {
+                    id: 'branch-changes' as const,
+                    label: 'Branch changes',
+                    count: this.props.changedFileCount,
+                  },
+                ]
+              : []),
           ]
 
     return (
