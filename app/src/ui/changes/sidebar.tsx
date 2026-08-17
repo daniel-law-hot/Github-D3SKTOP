@@ -102,6 +102,9 @@ interface IChangesSidebarProps {
   /** Whether the commit form shows the author avatar beside the summary */
   readonly showCommitAvatar: boolean
 
+  /** Whether the commit form shows the action bar under the description */
+  readonly showCommitActionBar: boolean
+
   /** Whether to show the changed files as a folder tree instead of a flat list */
   readonly showChangesAsTree: boolean
 
@@ -492,6 +495,7 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
           showChangesFilter={this.props.showChangesFilter}
           showChangesListHeader={this.props.showChangesListHeader}
           showCommitAvatar={this.props.showCommitAvatar}
+          showCommitActionBar={this.props.showCommitActionBar}
           showChangesAsTree={this.props.showChangesAsTree}
           changesTreeFilesFirst={this.props.changesTreeFilesFirst}
           skipCommitHooks={this.props.skipCommitHooks}

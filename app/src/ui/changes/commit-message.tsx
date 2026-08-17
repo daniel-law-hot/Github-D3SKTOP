@@ -136,6 +136,16 @@ interface ICommitMessageProps {
   readonly showInputLabels?: boolean
 
   /**
+   * Whether to show the bar under the description carrying the co-authors
+   * toggle, the Copilot button and the commit options. Defaults to true.
+   *
+   * Off in HotFlow's Branch changes tab, leaving the description as nothing but
+   * a text box. It takes co-authors, Copilot-generated messages and the commit
+   * options — skip hooks, sign off, allow empty — with it.
+   */
+  readonly showActionBar?: boolean
+
+  /**
    * Whether to show the author avatar beside the summary. Defaults to true.
    *
    * Off in HotFlow's Branch changes tab, where the summary takes the full width
@@ -1700,7 +1710,7 @@ export class CommitMessage extends React.Component<
 
   public render() {
     const className = classNames('commit-message-component', {
-      'with-action-bar': true,
+      'with-action-bar': this.props.showActionBar !== false,
       'with-co-authors': this.isCoAuthorInputVisible,
     })
 
@@ -1804,7 +1814,7 @@ export class CommitMessage extends React.Component<
             }
             spellcheck={commitSpellcheckEnabled}
           />
-          {this.renderActionBar()}
+          {this.props.showActionBar !== false && this.renderActionBar()}
         </FocusContainer>
 
         {this.renderCoAuthorInput()}

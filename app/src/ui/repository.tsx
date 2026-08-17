@@ -288,6 +288,7 @@ export class RepositoryView extends React.Component<
       // The avatar is where commit-attribution and unverified-email warnings
       // surface, so the repository view keeps it.
       showCommitAvatar: true,
+      showCommitActionBar: true,
       showChangesAsTree: this.props.showChangesAsTree,
       changesTreeFilesFirst: this.props.changesTreeFilesFirst,
       shouldNudgeToCommit:

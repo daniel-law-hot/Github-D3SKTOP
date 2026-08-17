@@ -4003,6 +4003,11 @@ export class App extends React.Component<IAppProps, IAppState> {
             // the repository view, less so in a tab for a branch you're already
             // working on.
             showCommitAvatar: false,
+            // And no bar under the description, leaving it nothing but a text
+            // box. Co-authors, Copilot-generated messages and the commit
+            // options go with it — all of them still available from the
+            // repository view's Changes section on the same working directory.
+            showCommitActionBar: false,
             // Always a flat list, not the tree. The toggle that would switch back
             // lived in the row above, so honouring the global setting here could
             // strand this tab in tree view with no way out of it.
