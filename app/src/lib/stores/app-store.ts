@@ -7171,6 +7171,28 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   /** Takes a URL and opens it using the system default application */
   public _openInBrowser(url: string): Promise<boolean> {
+    // Anything `shell.openExternal` can't read as a URL is handed to the shell as
+    // a path instead, and on Windows that opens File Explorer rather than
+    // failing. Open pull request did exactly that once: the repository's
+    // `htmlURL` was null, the string came out as `null/pull/new/…`, and clicking
+    // the button opened a file browser.
+    //
+    // Only unparseable strings are refused. Every scheme that parses is still
+    // passed through, since callers legitimately open more than http.
+    try {
+      // eslint-disable-next-line no-new
+      new URL(url)
+    } catch {
+      log.error(`[AppStore] refusing to open '${url}' — not a URL`)
+      this.emitError(
+        new Error(
+          `Couldn't open '${url}' — it isn't a valid address. This usually means ` +
+            `Desktop is missing information it normally reads from the GitHub API.`
+        )
+      )
+      return Promise.resolve(false)
+    }
+
     return shell.openExternal(url)
   }
 
@@ -8170,6 +8192,23 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     const { parent, owner, name, htmlURL } = gitHubRepository
+
+    // `htmlURL` is stored from the API rather than derived, so it stays null for
+    // a repository whose metadata we were never allowed to read — which is every
+    // repository in an organisation with OAuth app restrictions until the app is
+    // approved. Without this the URL below became the string `null/pull/new/…`.
+    if (htmlURL === null) {
+      this.emitError(
+        new Error(
+          `Can't open a pull request for ${owner.login}/${name} — Desktop ` +
+            `doesn't know its address on GitHub. That comes from the API, which ` +
+            `this account can't read for this repository. Opening the pull ` +
+            `request from a browser will still work.`
+        )
+      )
+      return
+    }
+
     const isForkContributingToParent =
       isForkedRepositoryContributingToParent(repository)
 
