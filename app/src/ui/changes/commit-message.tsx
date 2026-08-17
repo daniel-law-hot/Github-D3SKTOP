@@ -136,6 +136,15 @@ interface ICommitMessageProps {
   readonly showInputLabels?: boolean
 
   /**
+   * Whether to show the author avatar beside the summary. Defaults to true.
+   *
+   * Off in HotFlow's Branch changes tab, where the summary takes the full width
+   * instead. Note the avatar is also where commit-attribution and unverified-email
+   * warnings surface, so anywhere it's off gives those up.
+   */
+  readonly showAvatar?: boolean
+
+  /**
    * A list of authors (name, email pairs) which have been
    * entered into the co-authors input box in the commit form
    * and which _may_ be used in the subsequent commit to add
@@ -1736,7 +1745,8 @@ export class CommitMessage extends React.Component<
         ref={this.wrapperRef}
       >
         <div className={summaryClassName} ref={this.summaryGroupRef}>
-          {this.renderAvatar()}
+          {/* Without it the summary field, already `flex: 1`, takes the row. */}
+          {this.props.showAvatar !== false && this.renderAvatar()}
 
           <AutocompletingInput
             required={true}

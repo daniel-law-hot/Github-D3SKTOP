@@ -285,6 +285,9 @@ export class RepositoryView extends React.Component<
       // The repository view keeps the header: select-all, the count and the
       // list/tree toggle all live there, and this is where they earn their room.
       showChangesListHeader: true,
+      // The avatar is where commit-attribution and unverified-email warnings
+      // surface, so the repository view keeps it.
+      showCommitAvatar: true,
       showChangesAsTree: this.props.showChangesAsTree,
       changesTreeFilesFirst: this.props.changesTreeFilesFirst,
       shouldNudgeToCommit:

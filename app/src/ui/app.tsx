@@ -3997,6 +3997,12 @@ export class App extends React.Component<IAppProps, IAppState> {
             // is a branch you're working on rather than a hundred-file review, so
             // that's the trade. Put the header back if it starts to bite.
             showChangesListHeader: false,
+            // No author avatar either, so the summary field runs the full width
+            // like the description under it. It takes the commit-attribution
+            // and unverified-email warnings with it — those are worth having in
+            // the repository view, less so in a tab for a branch you're already
+            // working on.
+            showCommitAvatar: false,
             // Always a flat list, not the tree. The toggle that would switch back
             // lived in the row above, so honouring the global setting here could
             // strand this tab in tree view with no way out of it.

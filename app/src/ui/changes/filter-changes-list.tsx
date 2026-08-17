@@ -258,6 +258,9 @@ interface IFilterChangesListProps {
    */
   readonly showChangesListHeader: boolean
 
+  /** Whether the commit form shows the author avatar beside the summary */
+  readonly showCommitAvatar: boolean
+
   /** Whether to show the changed files as a folder tree instead of a flat list */
   readonly showChangesAsTree: boolean
 
@@ -1186,6 +1189,7 @@ export class FilterChangesList extends React.Component<
 
     return (
       <CommitMessage
+        showAvatar={this.props.showCommitAvatar}
         onCreateCommit={this.props.onCreateCommit}
         branch={this.props.branch}
         mostRecentLocalCommit={this.props.mostRecentLocalCommit}
