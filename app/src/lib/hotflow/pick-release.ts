@@ -51,28 +51,50 @@ export interface IReleaseChoice {
 /**
  * Whether a release has already gone out.
  *
- * Two independent ways of being shipped, and a release only needs one:
- *
- *  - **The branch is fully merged into production.** Nothing on it that isn't
- *    live.
- *  - **A tag for its version is reachable from production.** The release shipped
- *    even though the branch didn't merge — a squash merge, a rebase, or a branch
- *    that carried on after being tagged. HOTWebsites' 1.2026.7 is exactly this:
- *    tagged on main, and still 31 commits ahead of it.
- *
- * Checking only the first is the actual bug: 1.2026.7 shipped in July, its branch
- * stayed behind unmerged, and it was then presented as the release about to go out
+ * A tag for its version reachable from production settles it outright. That
+ * catches the release whose branch never merged — a squash merge, a rebase, or a
+ * branch that carried on afterwards. HOTWebsites' 1.2026.7 is exactly this:
+ * tagged on main, and still 31 commits ahead of it. Going by the branch alone was
+ * the original bug, and 1.2026.7 was presented as the release about to go out
  * while ten later ones sat under "also open".
+ *
+ * Failing a tag, a branch fully merged into production has usually shipped —
+ * nothing on it that isn't live. But "contains nothing production doesn't" is
+ * also true of a release branch cut a minute ago, which is the opposite of
+ * shipped, and there's no way to tell those apart by containment alone.
+ *
+ * The version number tells them apart. A release numbered above everything that
+ * has ever shipped hasn't shipped: NezasaWebApi's `release/1.2026.19` sat level
+ * with main having just been cut, the newest tag was 1.2026.17, and it was being
+ * called shipped and dropped from the open list — so HotFlow reported no release
+ * branch from any feature branch, while checking 19 out found it again, because
+ * that path looks at every candidate rather than the open ones.
+ *
+ * With no tags at all there's no evidence either way, and containment is the only
+ * signal left, so it decides as it did before.
  */
 export function isShipped(
   release: IReleaseChoice,
   shippedVersions: ReadonlyArray<IReleaseVersion>
 ): boolean {
-  if (release.isMergedIntoProduction) {
+  if (shippedVersions.some(v => isSameReleaseVersion(v, release.version))) {
     return true
   }
 
-  return shippedVersions.some(v => isSameReleaseVersion(v, release.version))
+  if (!release.isMergedIntoProduction) {
+    return false
+  }
+
+  const highestShipped = shippedVersions.reduce<IReleaseVersion | null>(
+    (highest, v) =>
+      highest === null || compareReleaseVersions(v, highest) > 0 ? v : highest,
+    null
+  )
+
+  return (
+    highestShipped === null ||
+    compareReleaseVersions(release.version, highestShipped) <= 0
+  )
 }
 
 export interface IReleaseSelection<T> {

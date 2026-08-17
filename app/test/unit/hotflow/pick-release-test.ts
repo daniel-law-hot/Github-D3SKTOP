@@ -52,6 +52,30 @@ describe('hotflow/pick-release', () => {
       )
     })
 
+    it('treats a freshly cut release above every tag as open', () => {
+      // NezasaWebApi's release/1.2026.19, level with main having just been cut,
+      // newest tag 1.2026.17. Containment alone called it shipped, so HotFlow
+      // reported no release branch from any feature branch.
+      assert.strictEqual(
+        isShipped(
+          release('1.2026.19', true),
+          versions(['1.2026.16', '1.2026.17'])
+        ),
+        false
+      )
+    })
+
+    it('still treats a merged release at or below the newest tag as shipped', () => {
+      // Merged and never tagged, but later releases have gone out since.
+      assert.strictEqual(
+        isShipped(
+          release('1.2026.15', true),
+          versions(['1.2026.16', '1.2026.17'])
+        ),
+        true
+      )
+    })
+
     it('compares versions rather than tag strings', () => {
       // 1.2026.07 and 1.2026.7 are the same release.
       assert.strictEqual(
