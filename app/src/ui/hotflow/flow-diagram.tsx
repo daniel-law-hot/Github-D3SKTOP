@@ -287,6 +287,39 @@ class MergeButton extends React.Component<IMergeButtonProps> {
   }
 }
 
+interface ICurrentBranchNameProps {
+  readonly label: string
+  readonly className: string
+  readonly style: React.CSSProperties
+
+  /** Null when there's nothing to explain, which is the usual case. */
+  readonly tooltip: string | null
+}
+
+/**
+ * The checked-out branch's name on its stub — text rather than a link, since
+ * there's nowhere to check out to.
+ *
+ * Its own component only so it can hold the ref a tooltip needs. A `title`
+ * attribute would have been fewer lines and is what the dashed underline on an
+ * unpushed branch wants to explain, but it's unreachable by keyboard and screen
+ * readers, and the codebase bans it for that reason.
+ */
+class CurrentBranchName extends React.Component<ICurrentBranchNameProps> {
+  private spanRef = createObservableRef<HTMLSpanElement>()
+
+  public render() {
+    const { label, className, style, tooltip } = this.props
+
+    return (
+      <span ref={this.spanRef} className={className} style={style}>
+        {tooltip !== null && <Tooltip target={this.spanRef}>{tooltip}</Tooltip>}
+        {label}
+      </span>
+    )
+  }
+}
+
 /**
  * The four-stage flow schematic:
  *
@@ -440,15 +473,24 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
             maxWidth,
           }
 
+          // Unpushed work is drawn dashed rather than solid. Nobody else can
+          // see it, and it can't have a pull request, so it shouldn't look
+          // identical to work that's already on the server.
+          const localOnly = entry.isLocalOnly ? ' local-only' : ''
+
           if (entry.branchName === this.props.currentBranchName) {
             return (
-              <span
+              <CurrentBranchName
                 key={entry.branchName}
-                className="hotflow-branch-name current"
+                label={entry.branchName}
+                className={`hotflow-branch-name current${localOnly}`}
                 style={style}
-              >
-                {entry.branchName}
-              </span>
+                tooltip={
+                  entry.isLocalOnly
+                    ? `${entry.branchName} — only on this machine, not pushed yet`
+                    : null
+                }
+              />
             )
           }
 
@@ -456,8 +498,12 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
             <CheckoutLink
               key={entry.branchName}
               label={entry.branchName}
-              tooltip={checkoutTooltip(entry.branchName, entry.isRemoteOnly)}
-              className={`hotflow-branch-name${idle ? ' dim' : ''}`}
+              tooltip={checkoutTooltip(
+                entry.branchName,
+                entry.isRemoteOnly,
+                entry.isLocalOnly
+              )}
+              className={`hotflow-branch-name${idle ? ' dim' : ''}${localOnly}`}
               style={style}
               onClick={this.onCheckoutEntry(entry)}
             />
@@ -554,7 +600,10 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
         label={label}
         tooltip={checkoutTooltip(
           branch.nameWithoutRemote,
-          branch.type === BranchType.Remote
+          branch.type === BranchType.Remote,
+          // develop, release and main are never unpublished — they're the refs
+          // everything else is measured against.
+          false
         )}
         className="hotflow-node-name"
         style={style}
@@ -1060,9 +1109,17 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
  * Says when it'll create a local branch, because a checkout that silently makes a
  * new branch is worth a heads-up rather than a surprise.
  */
-function checkoutTooltip(branchName: string, isRemoteOnly: boolean): string {
-  return isRemoteOnly
-    ? `Check out ${branchName} — creates a local branch`
+function checkoutTooltip(
+  branchName: string,
+  isRemoteOnly: boolean,
+  isLocalOnly: boolean
+): string {
+  if (isRemoteOnly) {
+    return `Check out ${branchName} — creates a local branch`
+  }
+
+  return isLocalOnly
+    ? `Check out ${branchName} — only on this machine, not pushed yet`
     : `Check out ${branchName}`
 }
 

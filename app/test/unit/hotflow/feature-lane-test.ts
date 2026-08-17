@@ -8,7 +8,13 @@ function entry(
   vso: number | null,
   pullRequestNumber: number | null = null
 ): IFeatureLaneEntry {
-  return { branchName, vso, pullRequestNumber, isRemoteOnly: false }
+  return {
+    branchName,
+    vso,
+    pullRequestNumber,
+    isRemoteOnly: false,
+    isLocalOnly: false,
+  }
 }
 
 function names(entries: ReadonlyArray<IFeatureLaneEntry>) {

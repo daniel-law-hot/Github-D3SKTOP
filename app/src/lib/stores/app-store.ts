@@ -5634,6 +5634,21 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
       this.updatePushPullFetchProgress(repository, null)
 
+      // A push is what turns a branch nobody else can see into one they can, and
+      // the diagram says which of those a branch is — so the marking has to come
+      // off as soon as the push lands rather than at the next manual refresh.
+      // The counts move too, since pushing is how work reaches the remote the
+      // rest of the picture is measured against.
+      //
+      // Guarded and unawaited for the same reasons as the one after a commit.
+      const { hotFlowState } = this.repositoryStateCache.get(repository)
+
+      if (hotFlowState.lastRefreshed !== null) {
+        this._refreshHotFlow(repository).catch(e =>
+          log.warn('[AppStore] HotFlow could not refresh after push', e)
+        )
+      }
+
       this.updateMenuLabelsForSelectedRepository()
 
       // Note that we're using `getAccountForRepository` here instead

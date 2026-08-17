@@ -162,6 +162,16 @@ export interface IFeatureLaneEntry {
   readonly isRemoteOnly: boolean
 
   /**
+   * True when only this machine has this branch — no upstream, so nobody else
+   * can see it and no pull request can be opened against it.
+   *
+   * The opposite end of `isRemoteOnly`, and marked for the opposite reason: a
+   * branch you cut a minute ago belongs on the diagram, but it would be
+   * misleading to draw it exactly like work everyone can already pull.
+   */
+  readonly isLocalOnly: boolean
+
+  /**
    * The VSO number from the branch name, or null when it doesn't carry one.
    *
    * Drives the lane's order. Null for a branch named off-convention, which sorts

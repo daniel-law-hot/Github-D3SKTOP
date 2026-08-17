@@ -298,6 +298,11 @@ export class HotFlowView extends React.Component<
           branchName: name,
           pullRequestNumber: pullRequests.get(name) ?? null,
           isRemoteOnly: feature.branch.type === BranchType.Remote,
+          // A local branch with no upstream hasn't been pushed. Pushing it sets
+          // one, so this clears itself on the refresh after a publish.
+          isLocalOnly:
+            feature.branch.type === BranchType.Local &&
+            feature.branch.upstream === null,
           vso: parseFeatureBranchName(name)?.vso ?? null,
         }
       })

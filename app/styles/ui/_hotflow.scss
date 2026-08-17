@@ -368,6 +368,20 @@ body.theme-dark {
     color: var(--text-color);
   }
 
+  // Unpushed work, underlined as a dashed rule.
+  //
+  // Nobody else can see this branch and it can't have a pull request, so drawing
+  // it exactly like work already on the server would be a small lie. Dashes
+  // rather than colour, so it reads the same for anyone who can't tell the two
+  // apart, and it sits under the name rather than beside it so the lane's
+  // alignment doesn't move when a branch is pushed. `underline` is skipped on
+  // hover for the clickable case below, which uses its own.
+  &.local-only {
+    text-decoration: underline dashed;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+
   // The clickable case: styled as a link, underlined on hover, like every other
   // "this takes you somewhere" in the app.
   &.link {
