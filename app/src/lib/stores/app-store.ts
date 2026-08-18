@@ -81,7 +81,7 @@ import {
   WorkingDirectoryStatus,
   AppFileStatusKind,
 } from '../../models/status'
-import { TipState, tipEquals, IValidBranch } from '../../models/tip'
+import { Tip, TipState, tipEquals, IValidBranch } from '../../models/tip'
 import {
   DefaultCommitMessage,
   ICommitMessage,
@@ -406,6 +406,7 @@ import {
   detectHotFlowState,
   loadReleaseHistoryContents,
 } from '../hotflow/detect'
+import { readRefSignature } from '../hotflow/ref-signature'
 import { GitRepositoryProvider } from '../hotflow/git-repository-provider'
 import { fetchPullRequestApprovals } from '../hotflow/pull-request-approvals'
 import {
@@ -738,6 +739,20 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   private commitMessageGenerationDisclaimerLastSeen: number | null = null
   private commitMessageGenerationButtonClicked: boolean = false
+
+  /**
+   * The refs fingerprint each repository's release picture was last read at.
+   *
+   * Keyed by `repository.hash` and deliberately not part of application state:
+   * nothing renders it, and putting it there would emit an update every time it
+   * moved. Losing it on restart costs one extra detection, which is why there is
+   * no need to persist it.
+   */
+  private readonly hotFlowSignatures = new Map<string, string>()
+
+  /** In-flight release reads, and the single read queued behind each. */
+  private readonly hotFlowRefreshes = new Map<string, Promise<void>>()
+  private readonly hotFlowRefreshesQueued = new Map<string, Promise<void>>()
 
   private showChangesFilter: boolean = false
   private showChangesAsTree: boolean = false
@@ -3611,23 +3626,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
       }
     }
 
-    // A commit moves the branch, so everything HotFlow measures against it — how
-    // far ahead of the release the feature is, what work items the branch
-    // carries — is now a release behind. It mattered less when you had to leave
-    // HotFlow to commit; the Branch changes tab means the diagram is on screen
-    // while the commit happens, and a diagram that doesn't move looks broken.
-    //
-    // Guarded on a previous read so committing doesn't trigger a first one for
-    // someone who has never opened the view, and not awaited, for the same
-    // reason the repository refresh above isn't: nothing here should hold up the
-    // commit button.
-    const { hotFlowState } = this.repositoryStateCache.get(repository)
-
-    if (hotFlowState.lastRefreshed !== null) {
-      this._refreshHotFlow(repository).catch(e =>
-        log.warn('[AppStore] HotFlow could not refresh after commit', e)
-      )
-    }
+    // Nothing here about HotFlow: a commit moves a ref, and the
+    // `_refreshRepository` above notices that on its own. See
+    // `refreshHotFlowIfRefsChanged`.
   }
 
   private async _recordCommitStats(
@@ -3907,6 +3908,82 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this._initializeCompare(repository)
 
     this.updateCurrentTutorialStep(repository)
+
+    // Last, and not awaited: whether the release picture is now out of date.
+    this.refreshHotFlowIfRefsChanged(repository)
+  }
+
+  /**
+   * Re-reads the release picture when the refs behind it have moved.
+   *
+   * `_refreshRepository` runs after everything that changes this repository —
+   * that is the convention Desktop already keeps, and the background branch
+   * pruner keeps it too — so hanging HotFlow off it means the view cannot be left
+   * stale by an operation whose author never heard of HotFlow. Which is how the
+   * last four staleness bugs happened: a merged branch that stayed in the lane, a
+   * new branch that never appeared, a freshly cut release called shipped, and a
+   * push that left its own marking behind. Fetch, pull, delete branch, tag,
+   * untag, squash, cherry-pick, revert, reset and the pruner were all in line
+   * behind them.
+   *
+   * Gated three ways, because this is on a hot path:
+   *
+   *  - Nothing until the view has been read once. A repository nobody has opened
+   *    HotFlow for shouldn't pay for detection on every refresh.
+   *  - Nothing while a read is already in flight, so refreshes can't stack.
+   *  - Nothing unless the fingerprint has actually changed, which is one cheap
+   *    `for-each-ref` against detection's dozen-odd reads.
+   *
+   * The tip is folded in from state already loaded above rather than read again:
+   * a checkout moves no ref at all, but it does change which release is current.
+   */
+  private async refreshHotFlowIfRefsChanged(
+    repository: Repository
+  ): Promise<void> {
+    const { hotFlowState, branchesState } =
+      this.repositoryStateCache.get(repository)
+
+    if (hotFlowState.lastRefreshed === null || hotFlowState.isLoading) {
+      return
+    }
+
+    const signature = await this.readHotFlowSignature(
+      repository,
+      branchesState.tip
+    )
+
+    if (
+      signature === null ||
+      signature === this.hotFlowSignatures.get(repository.hash)
+    ) {
+      return
+    }
+
+    // Recorded by the refresh itself, on the way out, so that refs moving while
+    // it runs leave the fingerprint stale and the next pass picks them up rather
+    // than this one claiming to have seen them.
+    this._refreshHotFlow(repository).catch(e =>
+      log.warn('[AppStore] HotFlow could not refresh after refs changed', e)
+    )
+  }
+
+  /** The refs fingerprint, with the checked-out branch folded in. */
+  private async readHotFlowSignature(
+    repository: Repository,
+    tip: Tip
+  ): Promise<string | null> {
+    const refs = await readRefSignature(repository)
+
+    if (refs === null) {
+      return null
+    }
+
+    const head =
+      tip.kind === TipState.Valid
+        ? `branch:${tip.branch.name}`
+        : `tip:${tip.kind}`
+
+    return `${refs}|${head}`
   }
 
   private async updateStashEntryCountMetric(
@@ -4186,8 +4263,56 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.emitUpdate()
   }
 
-  /** This shouldn't be called directly. See `Dispatcher`. */
-  public async _refreshHotFlow(repository: Repository): Promise<void> {
+  /**
+   * Re-reads the release picture, coalescing overlapping requests.
+   *
+   * Safe to call from anywhere, at any time, which is the point: callers should
+   * never have to know whether something else has already asked, and several
+   * things legitimately ask at once — a checkout refreshes the repository, which
+   * notices the tip moved, while the checkout itself also asks.
+   *
+   * Overlapping calls do not stack up a queue of identical reads, and neither do
+   * they get quietly folded into a read that started before they asked, which
+   * would hand back a picture taken before whatever they just did. One read runs,
+   * at most one more is queued behind it, and everyone who asked during the first
+   * waits on that second one — so what you get back was always read after you
+   * asked for it.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public _refreshHotFlow(repository: Repository): Promise<void> {
+    const key = repository.hash
+    const inFlight = this.hotFlowRefreshes.get(key)
+
+    if (inFlight === undefined) {
+      const running = this.performHotFlowRefresh(repository).finally(() => {
+        this.hotFlowRefreshes.delete(key)
+      })
+
+      this.hotFlowRefreshes.set(key, running)
+      return running
+    }
+
+    const queued = this.hotFlowRefreshesQueued.get(key)
+
+    if (queued !== undefined) {
+      return queued
+    }
+
+    // Chained off the running read rather than started now, so the two never
+    // overlap and the second sees whatever the first was too early to.
+    const next = inFlight
+      .catch(() => undefined)
+      .then(() => this._refreshHotFlow(repository))
+      .finally(() => {
+        this.hotFlowRefreshesQueued.delete(key)
+      })
+
+    this.hotFlowRefreshesQueued.set(key, next)
+    return next
+  }
+
+  private async performHotFlowRefresh(repository: Repository): Promise<void> {
     this.repositoryStateCache.updateHotFlowState(repository, () => ({
       isLoading: true,
       errorMessage: null,
@@ -4205,11 +4330,27 @@ export class AppStore extends TypedBaseStore<IAppState> {
       )
 
       const sequenceOverrides = getReleaseSequenceOverrides(repository)
-      const detected = await detectHotFlowState(
-        new GitRepositoryProvider(repository),
-        sequenceOverrides,
-        getBranchOverride(repository)
-      )
+
+      // The fingerprint is read alongside detection rather than before or after
+      // it: concurrent, so it costs no wall clock, and taken at the same moment
+      // as the picture it describes. Recorded once the read has succeeded, which
+      // is what stops `refreshHotFlowIfRefsChanged` seeing this refresh's own
+      // work as a change and going round again.
+      const [detected, signature] = await Promise.all([
+        detectHotFlowState(
+          new GitRepositoryProvider(repository),
+          sequenceOverrides,
+          getBranchOverride(repository)
+        ),
+        this.readHotFlowSignature(
+          repository,
+          this.repositoryStateCache.get(repository).branchesState.tip
+        ),
+      ])
+
+      if (signature !== null) {
+        this.hotFlowSignatures.set(repository.hash, signature)
+      }
 
       // Preserve whatever we already know from Azure DevOps — detection is
       // git-only and shouldn't blow away work item detail on every refresh.
@@ -5649,21 +5790,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
       )
 
       this.updatePushPullFetchProgress(repository, null)
-
-      // A push is what turns a branch nobody else can see into one they can, and
-      // the diagram says which of those a branch is — so the marking has to come
-      // off as soon as the push lands rather than at the next manual refresh.
-      // The counts move too, since pushing is how work reaches the remote the
-      // rest of the picture is measured against.
-      //
-      // Guarded and unawaited for the same reasons as the one after a commit.
-      const { hotFlowState } = this.repositoryStateCache.get(repository)
-
-      if (hotFlowState.lastRefreshed !== null) {
-        this._refreshHotFlow(repository).catch(e =>
-          log.warn('[AppStore] HotFlow could not refresh after push', e)
-        )
-      }
 
       this.updateMenuLabelsForSelectedRepository()
 
