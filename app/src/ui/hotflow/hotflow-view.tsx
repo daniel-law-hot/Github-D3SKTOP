@@ -136,12 +136,12 @@ export class HotFlowView extends React.Component<
   public constructor(props: IHotFlowViewProps) {
     super(props)
     this.state = {
-      // With the tab on, standing on a feature branch means you're working on one,
-      // so it opens on the changes rather than making you click into them.
-      selectedTab:
-        BranchChangesEnabled && isOnFeatureBranch(props.branchesState)
-          ? 'branch-changes'
-          : 'work-items',
+      // Always the work items, whatever branch you're on. HotFlow opens to answer
+      // "what's in this release", and it used to open on Branch changes when you
+      // were standing on a feature branch — which put your working copy in front
+      // of the question you came to ask, and read oddly once that tab moved to
+      // the end of the row.
+      selectedTab: 'work-items',
       bandHeight: getStoredFlowBandHeight(),
       selectedHistoryTag: null,
     }
