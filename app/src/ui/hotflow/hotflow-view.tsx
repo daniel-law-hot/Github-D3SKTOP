@@ -60,6 +60,12 @@ interface IHotFlowViewProps {
   readonly hasGitHubAccount: boolean
 
   /**
+   * Whether a fetch, pull or push is already running for this repository, so the
+   * node fetch buttons can be disabled rather than queueing another.
+   */
+  readonly isNetworkBusy: boolean
+
+  /**
    * Everything the Branch changes tab needs to render the working directory.
    *
    * Assembled in `app.tsx`, where application state lives — the same values the
@@ -328,6 +334,20 @@ export class HotFlowView extends React.Component<
         changesPaneProps={this.props.changesPaneProps}
         branchName={this.currentBranchName}
       />
+    )
+  }
+
+  /**
+   * Fetches origin and brings one of the flow's branches up to date.
+   *
+   * The point of it being here rather than on the branch itself: bringing develop
+   * or main level with the remote needs nothing from the working directory, so
+   * checking the branch out first was a round trip for nothing.
+   */
+  private onFetchBranch = (branch: Branch) => {
+    this.props.dispatcher.updateBranchFromRemote(
+      this.props.repository,
+      branch.nameWithoutRemote
     )
   }
 
@@ -626,6 +646,8 @@ export class HotFlowView extends React.Component<
               missingWorkItemCount={missingWorkItemCount}
               lastShippedVersion={lastShippedVersion}
               featureLane={this.featureLane}
+              isNetworkBusy={this.props.isNetworkBusy}
+              onFetchBranch={this.onFetchBranch}
               maxStubs={this.maxStubs}
               pullRequestKnowledge={this.pullRequestKnowledge}
               approvals={hotFlowState.pullRequestApprovals}

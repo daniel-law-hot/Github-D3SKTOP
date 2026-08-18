@@ -3957,6 +3957,9 @@ export class App extends React.Component<IAppProps, IAppState> {
           dispatcher={this.props.dispatcher}
           hotFlowState={selectedState.state.hotFlowState}
           branchesState={selectedState.state.branchesState}
+          // So the diagram's fetch buttons can't be pressed on top of a fetch
+          // that's already running.
+          isNetworkBusy={selectedState.state.isPushPullFetchInProgress}
           // Without an account Desktop never fetches pull requests, so HotFlow
           // must not read the empty list as "no branch has one".
           hasGitHubAccount={

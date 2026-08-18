@@ -184,6 +184,12 @@ interface IFlowDiagramProps {
   /** Invoked when a feature stub is clicked. */
   readonly onCheckoutBranch: (entry: IFeatureLaneEntry) => void
 
+  /** Invoked by a node's fetch button, with the branch to bring up to date. */
+  readonly onFetchBranch: (branch: Branch) => void
+
+  /** Whether a fetch, pull or push is already running in this repository. */
+  readonly isNetworkBusy: boolean
+
   /**
    * Invoked when a node's name is clicked — develop, the release branch, or main.
    * Separate from `onCheckoutBranch` because these carry a `Branch` outright,
@@ -293,6 +299,61 @@ class MergeButton extends React.Component<IMergeButtonProps> {
 
   private onClick = () => {
     this.props.onMerge(this.props.entry)
+  }
+}
+
+interface INodeFetchButtonProps {
+  /** The branch to bring up to date. */
+  readonly branch: Branch
+
+  /** How it's referred to, for the tooltip. */
+  readonly label: string
+
+  readonly left: number
+  readonly top: number
+
+  /** Disabled while a fetch or push is already running in this repository. */
+  readonly disabled: boolean
+
+  readonly onFetch: (branch: Branch) => void
+}
+
+/**
+ * The fetch button in the corner of a node box.
+ *
+ * On develop, the release and main, so any of the three can be brought up to date
+ * from here rather than by checking it out first — which was the only way, and
+ * meant a round trip through the branch switcher to do something that doesn't
+ * need the working directory at all.
+ */
+class NodeFetchButton extends React.Component<INodeFetchButtonProps> {
+  private buttonRef = createObservableRef<HTMLButtonElement>()
+
+  public render() {
+    const { label, left, top, disabled } = this.props
+
+    return (
+      <button
+        ref={this.buttonRef}
+        type="button"
+        className="hotflow-node-fetch"
+        style={{ left, top }}
+        disabled={disabled}
+        onClick={this.onClick}
+        aria-label={`Fetch origin and update ${label}`}
+      >
+        <Tooltip target={this.buttonRef}>
+          {disabled
+            ? 'Waiting for the current fetch to finish'
+            : `Fetch origin and bring ${label} up to date`}
+        </Tooltip>
+        <Octicon symbol={octicons.sync} />
+      </button>
+    )
+  }
+
+  private onClick = () => {
+    this.props.onFetch(this.props.branch)
   }
 }
 
@@ -454,6 +515,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
         </svg>
         {this.renderBranchNames()}
         {this.renderNodeNames()}
+        {this.renderNodeFetchButtons()}
         {this.renderMergeButtons()}
       </div>
     )
@@ -574,6 +636,73 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           productionX + 14,
           midY - 5,
           G.productionWidth - 26
+        )}
+      </div>
+    )
+  }
+
+  /**
+   * A fetch button in the top-right of each node box.
+   *
+   * Positioned from the same coordinates as the boxes themselves — the release box
+   * is 84 tall against the other two at 56, so its top edge sits higher. Only
+   * drawn for a branch that has somewhere to fetch from: a purely local `main`
+   * with no upstream has nothing this button could do.
+   */
+  private renderNodeFetchButtons() {
+    const { hotFlowState, isNetworkBusy } = this.props
+    const release = hotFlowState.currentRelease
+    const { midY } = this.layout
+
+    const button = (
+      branch: Branch | null,
+      label: string,
+      boxX: number,
+      boxWidth: number,
+      boxTop: number
+    ) => {
+      if (branch === null || !hasSomewhereToFetchFrom(branch)) {
+        return null
+      }
+
+      return (
+        <NodeFetchButton
+          key={label}
+          branch={branch}
+          label={label}
+          left={boxX + boxWidth - 24}
+          top={boxTop + 5}
+          disabled={isNetworkBusy}
+          onFetch={this.props.onFetchBranch}
+        />
+      )
+    }
+
+    return (
+      <div className="hotflow-node-names">
+        {button(
+          hotFlowState.integrationBranch,
+          this.integrationName,
+          integrationX,
+          G.integrationWidth,
+          midY - 28
+        )}
+
+        {release !== null &&
+          button(
+            release.branch,
+            `release/${release.version.raw}`,
+            releaseX,
+            G.releaseWidth,
+            midY - 42
+          )}
+
+        {button(
+          hotFlowState.productionBranch,
+          this.productionName,
+          productionX,
+          G.productionWidth,
+          midY - 28
         )}
       </div>
     )
@@ -1155,6 +1284,17 @@ function branchNameTooltip(entry: IFeatureLaneEntry): string | null {
   return entry.isLocalOnly
     ? `${entry.branchName} — only on this machine, not pushed yet`
     : null
+}
+
+/**
+ * Whether a branch has a remote to fetch from.
+ *
+ * A remote branch is already the remote; a local one needs an upstream. Without
+ * either there is nothing to bring it up to date from, and offering the button
+ * would be offering to do nothing.
+ */
+function hasSomewhereToFetchFrom(branch: Branch): boolean {
+  return branch.type === BranchType.Remote || branch.upstream !== null
 }
 
 /** Worded as GitHub words it, since that's where you'd have seen it first. */

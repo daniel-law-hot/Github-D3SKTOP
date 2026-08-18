@@ -4603,32 +4603,58 @@ export class AppStore extends TypedBaseStore<IAppState> {
   /**
    * Brings the integration branch level with the remote after a merge landed there.
    *
-   * Desktop's fetch fast-forwards local branches that are behind their upstream
-   * and aren't checked out, which is the integration branch in the ordinary case —
-   * you merge a feature while standing on the feature, or on a release.
-   *
-   * It can't when the integration branch is the one you're standing on, so that
-   * case is pulled explicitly. Only with a clean working directory though: pulling
-   * over someone's uncommitted work is not a thing to do to them on the strength
-   * of a merge button, and the fetch alone has already made the diagram correct —
-   * containment is tested against the remote branch too.
+   * The merge is the reason, `_updateBranchFromRemote` is the mechanism.
    */
   private async catchUpAfterHotFlowMerge(
     repository: Repository
   ): Promise<void> {
+    const { integrationBranch } =
+      this.repositoryStateCache.get(repository).hotFlowState
+
+    await this._updateBranchFromRemote(
+      repository,
+      integrationBranch?.nameWithoutRemote ?? null
+    )
+  }
+
+  /**
+   * Fetches, and brings one branch level with its upstream.
+   *
+   * Written for the fetch buttons on the diagram's develop, release and main
+   * boxes, whose whole point is not having to check a branch out to bring it up to
+   * date. Which mostly falls out of the fetch: Desktop's fetch fast-forwards every
+   * local branch that is behind its upstream and isn't checked out, so a branch you
+   * aren't standing on is dealt with by the fetch alone.
+   *
+   * The one it can't touch is the branch you *are* on — git won't move the ref
+   * under your working directory — so that one is pulled. Only with a clean
+   * working directory: pulling over someone's uncommitted changes is not a thing
+   * to do to them on the strength of a small button, and a dirty tree means the
+   * fetch has already done everything that is safe to do.
+   *
+   * `branchName` may be null, which just fetches — worth having so a caller with
+   * no particular branch in mind doesn't have to special-case it.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _updateBranchFromRemote(
+    repository: Repository,
+    branchName: string | null
+  ): Promise<void> {
     await this._fetch(repository, FetchType.UserInitiatedTask)
 
+    if (branchName === null) {
+      return
+    }
+
     const state = this.repositoryStateCache.get(repository)
-    const integrationBranch = state.hotFlowState.integrationBranch
     const { tip } = state.branchesState
 
-    const onIntegrationBranch =
-      integrationBranch !== null &&
-      tip.kind === TipState.Valid &&
-      tip.branch.nameWithoutRemote === integrationBranch.nameWithoutRemote
+    const isCheckedOut =
+      tip.kind === TipState.Valid && tip.branch.nameWithoutRemote === branchName
 
     if (
-      onIntegrationBranch &&
+      isCheckedOut &&
       state.changesState.workingDirectory.files.length === 0
     ) {
       await this._pull(repository)

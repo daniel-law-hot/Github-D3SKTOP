@@ -343,6 +343,52 @@ body.theme-dark {
 }
 
 /**
+ * The fetch button in the corner of the develop, release and main boxes.
+ *
+ * Sits in the names overlay, which takes no pointer events, so this takes them
+ * back for itself. Deliberately quiet until hovered: three of these are on screen
+ * at all times and none of them is the thing you came to the diagram to look at.
+ */
+.hotflow-node-fetch {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  padding: 0;
+  pointer-events: auto;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary-color);
+
+  .octicon {
+    width: 12px;
+    height: 12px;
+    margin: 0;
+  }
+
+  &:hover:not(:disabled) {
+    color: var(--text-color);
+    background: var(--box-alt-background-color);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--focus-color);
+    outline-offset: 1px;
+  }
+
+  &:disabled {
+    // Faded rather than hidden: a button that vanishes while a fetch runs takes
+    // its own explanation with it, and the tooltip says what to wait for.
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+/**
  * A feature branch's name on its stub.
  *
  * HTML rather than SVG text so the name can be the control itself. The font has

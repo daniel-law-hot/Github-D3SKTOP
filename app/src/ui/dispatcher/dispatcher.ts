@@ -396,6 +396,17 @@ export class Dispatcher {
   }
 
   /**
+   * Fetches, and brings one branch level with its upstream without checking it
+   * out. Pulls instead when it is the branch already checked out.
+   */
+  public updateBranchFromRemote(
+    repository: Repository,
+    branchName: string | null
+  ): Promise<void> {
+    return this.appStore._updateBranchFromRemote(repository, branchName)
+  }
+
+  /**
    * Sets whether this repository is shown work items assigned to a release but
    * missing from it.
    */
