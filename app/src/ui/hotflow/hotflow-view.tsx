@@ -693,6 +693,25 @@ export class HotFlowView extends React.Component<
       !isBehind &&
       this.getReconciliation(release).missingCount === 0
 
+    // A release that has shipped is finished, and both of the actions under it
+    // would be rewriting something already out in the world: updating it drags
+    // develop into a tagged release, and finishing it merges and tags a second
+    // time. Neither is a thing to reach for from the ordinary view — if a shipped
+    // release genuinely needs changing, that is deliberate work to do knowingly
+    // with git rather than a button press away from a summary of it.
+    //
+    // Two ways of looking at one: inspecting a tag from the history panel, or
+    // standing on an old release branch — checking one out selects it as current
+    // even though it shipped, which is right for looking at and wrong for acting
+    // on.
+    const isFinished =
+      this.historyRelease !== null || release?.verdict === 'shipped'
+
+    const finishedTooltip =
+      this.historyRelease !== null
+        ? `${this.historyRelease.tagName} has already shipped. Close it to act on the current release.`
+        : 'This release has already shipped.'
+
     return (
       <div className="hotflow-actions">
         {/*
@@ -717,9 +736,10 @@ export class HotFlowView extends React.Component<
             </Button>
           ) : (
             <Button
-              type={isBehind ? 'submit' : 'button'}
+              type={isBehind && !isFinished ? 'submit' : 'button'}
               onClick={this.onUpdateRelease}
-              disabled={!isBehind}
+              disabled={!isBehind || isFinished}
+              tooltip={isFinished ? finishedTooltip : undefined}
             >
               Update from {this.integrationName}
             </Button>
@@ -736,8 +756,10 @@ export class HotFlowView extends React.Component<
         <div className="hotflow-action-cell">
           {release !== null && (
             <Button
-              type={canFinish ? 'submit' : 'button'}
+              type={canFinish && !isFinished ? 'submit' : 'button'}
               onClick={this.onFinishRelease}
+              disabled={isFinished}
+              tooltip={isFinished ? finishedTooltip : undefined}
             >
               Finish release
             </Button>
