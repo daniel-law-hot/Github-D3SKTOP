@@ -204,6 +204,9 @@ interface ICheckoutLinkProps {
 
   readonly style: React.CSSProperties
 
+  /** Draws the merge-conflict warning ahead of the name. */
+  readonly showConflictIcon?: boolean
+
   readonly onClick: () => void
 }
 
@@ -219,7 +222,7 @@ class CheckoutLink extends React.Component<ICheckoutLinkProps> {
   private buttonRef = createObservableRef<HTMLButtonElement>()
 
   public render() {
-    const { label, tooltip, className, style } = this.props
+    const { label, tooltip, className, style, showConflictIcon } = this.props
 
     return (
       <button
@@ -230,6 +233,12 @@ class CheckoutLink extends React.Component<ICheckoutLinkProps> {
         onClick={this.props.onClick}
       >
         <Tooltip target={this.buttonRef}>{tooltip}</Tooltip>
+        {showConflictIcon === true && (
+          <Octicon
+            className="hotflow-branch-conflict-icon"
+            symbol={octicons.alert}
+          />
+        )}
         {label}
       </button>
     )
@@ -292,6 +301,9 @@ interface ICurrentBranchNameProps {
   readonly className: string
   readonly style: React.CSSProperties
 
+  /** Draws the merge-conflict warning ahead of the name. */
+  readonly showConflictIcon?: boolean
+
   /** Null when there's nothing to explain, which is the usual case. */
   readonly tooltip: string | null
 }
@@ -309,11 +321,17 @@ class CurrentBranchName extends React.Component<ICurrentBranchNameProps> {
   private spanRef = createObservableRef<HTMLSpanElement>()
 
   public render() {
-    const { label, className, style, tooltip } = this.props
+    const { label, className, style, tooltip, showConflictIcon } = this.props
 
     return (
       <span ref={this.spanRef} className={className} style={style}>
         {tooltip !== null && <Tooltip target={this.spanRef}>{tooltip}</Tooltip>}
+        {showConflictIcon === true && (
+          <Octicon
+            className="hotflow-branch-conflict-icon"
+            symbol={octicons.alert}
+          />
+        )}
         {label}
       </span>
     )
@@ -478,18 +496,20 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           // identical to work that's already on the server.
           const localOnly = entry.isLocalOnly ? ' local-only' : ''
 
+          // A branch that won't merge is the one thing in this lane you have to
+          // act on, so it's the one thing that gets a colour and an icon rather
+          // than a line treatment.
+          const conflicts = entry.hasConflicts ? ' conflicts' : ''
+
           if (entry.branchName === this.props.currentBranchName) {
             return (
               <CurrentBranchName
                 key={entry.branchName}
                 label={entry.branchName}
-                className={`hotflow-branch-name current${localOnly}`}
+                className={`hotflow-branch-name current${localOnly}${conflicts}`}
                 style={style}
-                tooltip={
-                  entry.isLocalOnly
-                    ? `${entry.branchName} — only on this machine, not pushed yet`
-                    : null
-                }
+                showConflictIcon={entry.hasConflicts}
+                tooltip={branchNameTooltip(entry)}
               />
             )
           }
@@ -498,13 +518,12 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
             <CheckoutLink
               key={entry.branchName}
               label={entry.branchName}
-              tooltip={checkoutTooltip(
-                entry.branchName,
-                entry.isRemoteOnly,
-                entry.isLocalOnly
-              )}
-              className={`hotflow-branch-name${idle ? ' dim' : ''}${localOnly}`}
+              tooltip={checkoutTooltip(entry)}
+              className={`hotflow-branch-name${
+                idle ? ' dim' : ''
+              }${localOnly}${conflicts}`}
               style={style}
+              showConflictIcon={entry.hasConflicts}
               onClick={this.onCheckoutEntry(entry)}
             />
           )
@@ -598,13 +617,11 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
       <CheckoutLink
         key={label}
         label={label}
-        tooltip={checkoutTooltip(
-          branch.nameWithoutRemote,
-          branch.type === BranchType.Remote,
-          // develop, release and main are never unpublished — they're the refs
-          // everything else is measured against.
-          false
-        )}
+        tooltip={
+          branch.type === BranchType.Remote
+            ? `Check out ${branch.nameWithoutRemote} — creates a local branch`
+            : `Check out ${branch.nameWithoutRemote}`
+        }
         className="hotflow-node-name"
         style={style}
         onClick={this.onCheckoutRef(branch)}
@@ -1109,19 +1126,40 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
  * Says when it'll create a local branch, because a checkout that silently makes a
  * new branch is worth a heads-up rather than a surprise.
  */
-function checkoutTooltip(
-  branchName: string,
-  isRemoteOnly: boolean,
-  isLocalOnly: boolean
-): string {
-  if (isRemoteOnly) {
+function checkoutTooltip(entry: IFeatureLaneEntry): string {
+  const { branchName } = entry
+
+  // Conflicts first: it's the only one of these that asks something of you.
+  if (entry.hasConflicts) {
+    return `Check out ${branchName} — ${conflictExplanation}`
+  }
+
+  if (entry.isRemoteOnly) {
     return `Check out ${branchName} — creates a local branch`
   }
 
-  return isLocalOnly
+  return entry.isLocalOnly
     ? `Check out ${branchName} — only on this machine, not pushed yet`
     : `Check out ${branchName}`
 }
+
+/**
+ * The same, for the branch you're already standing on — where there's nothing to
+ * check out and so usually nothing to say.
+ */
+function branchNameTooltip(entry: IFeatureLaneEntry): string | null {
+  if (entry.hasConflicts) {
+    return `${entry.branchName} — ${conflictExplanation}`
+  }
+
+  return entry.isLocalOnly
+    ? `${entry.branchName} — only on this machine, not pushed yet`
+    : null
+}
+
+/** Worded as GitHub words it, since that's where you'd have seen it first. */
+const conflictExplanation =
+  'has conflicts that must be resolved before it can be merged'
 
 // `truncate` used to live here, cutting labels at a guessed character count. Every
 // branch name in the diagram is HTML now, so `text-overflow: ellipsis` does it —

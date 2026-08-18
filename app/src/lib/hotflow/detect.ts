@@ -606,7 +606,14 @@ async function collectFeatureBranches(
       continue
     }
 
-    states.push({ branch, vso: parsed.vso, slug: parsed.slug })
+    // Left unanswered here on purpose: working it out costs a `merge-tree` per
+    // branch, so it's read after the picture is up. See `mergeability.ts`.
+    states.push({
+      branch,
+      vso: parsed.vso,
+      slug: parsed.slug,
+      conflictsWithIntegration: null,
+    })
   }
 
   return states.sort((a, b) => a.vso - b.vso)

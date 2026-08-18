@@ -303,6 +303,9 @@ export class HotFlowView extends React.Component<
           isLocalOnly:
             feature.branch.type === BranchType.Local &&
             feature.branch.upstream === null,
+          // Only a definite yes marks the lane — an unanswered branch reads as
+          // fine rather than flashing a warning while the check catches up.
+          hasConflicts: feature.conflictsWithIntegration === true,
           vso: parseFeatureBranchName(name)?.vso ?? null,
         }
       })

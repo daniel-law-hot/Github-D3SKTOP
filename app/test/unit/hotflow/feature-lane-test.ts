@@ -14,6 +14,7 @@ function entry(
     pullRequestNumber,
     isRemoteOnly: false,
     isLocalOnly: false,
+    hasConflicts: false,
   }
 }
 

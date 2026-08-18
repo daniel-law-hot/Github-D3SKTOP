@@ -368,6 +368,32 @@ body.theme-dark {
     color: var(--text-color);
   }
 
+  // A branch that will not merge.
+  //
+  // The only state in this lane that asks something of you, so it gets a colour
+  // and an icon where the others get line treatments — and both, rather than
+  // colour alone, so it still reads for anyone who cannot separate the two.
+  //
+  // Beaten by nothing: a conflicted branch that is also unpushed shows this,
+  // because resolving the conflict is the thing that matters and pushing is not.
+  &.conflicts {
+    color: var(--hotflow-warn-color);
+
+    &.dim {
+      // Not dimmed away — a branch with no pull request can still be the one
+      // holding everything up.
+      color: var(--hotflow-warn-color);
+    }
+  }
+
+  .hotflow-branch-conflict-icon {
+    flex-shrink: 0;
+    margin-right: var(--spacing-third);
+    // Optically centred against the text rather than the line box.
+    position: relative;
+    top: -1px;
+  }
+
   // Unpushed work, underlined as a dashed rule.
   //
   // Nobody else can see this branch and it can't have a pull request, so drawing

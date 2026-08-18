@@ -172,6 +172,15 @@ export interface IFeatureLaneEntry {
   readonly isLocalOnly: boolean
 
   /**
+   * True when merging this branch into the integration branch would conflict.
+   *
+   * False while it hasn't been worked out yet as well as when it genuinely
+   * doesn't — the lane marks a known problem and stays quiet otherwise, rather
+   * than flickering a warning on every refresh.
+   */
+  readonly hasConflicts: boolean
+
+  /**
    * The VSO number from the branch name, or null when it doesn't carry one.
    *
    * Drives the lane's order. Null for a branch named off-convention, which sorts
@@ -253,6 +262,20 @@ export interface IFeatureBranchState {
   readonly branch: Branch
   readonly vso: number
   readonly slug: string
+
+  /**
+   * Whether merging this branch into the integration branch would conflict —
+   * GitHub's "This branch has conflicts that must be resolved".
+   *
+   * Null until it has been worked out, which is a wait rather than an answer:
+   * it costs a `git merge-tree` per branch, so it's read after the picture is up
+   * rather than as part of it. Answered from git rather than from the API, both
+   * because that's what Desktop does everywhere else and because the API is
+   * unavailable for repositories in an organisation that hasn't approved the
+   * OAuth app — precisely where this is most wanted.
+   */
+  readonly conflictsWithIntegration: boolean | null
+
   // `aheadOfIntegration` used to live here. Nothing ever read it, and computing it
   // cost one git process per feature branch — sixteen in NimbleObt — to produce a
   // number no view displayed. Whether a branch is open at all is now answered for

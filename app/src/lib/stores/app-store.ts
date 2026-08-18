@@ -407,6 +407,7 @@ import {
   loadReleaseHistoryContents,
 } from '../hotflow/detect'
 import { readRefSignature } from '../hotflow/ref-signature'
+import { loadFeatureBranchConflicts } from '../hotflow/mergeability'
 import { GitRepositoryProvider } from '../hotflow/git-repository-provider'
 import { fetchPullRequestApprovals } from '../hotflow/pull-request-approvals'
 import {
@@ -4367,6 +4368,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         this._refreshHotFlowWorkItems(repository),
         this._refreshHotFlowApprovals(repository),
         this._loadHotFlowHistoryContents(repository),
+        this._loadHotFlowMergeability(repository),
       ])
     } catch (e) {
       log.error('[AppStore] failed to refresh HotFlow state', e)
@@ -4740,6 +4742,56 @@ export class AppStore extends TypedBaseStore<IAppState> {
       this.emitUpdate()
     } catch (e) {
       log.warn('[AppStore] HotFlow could not read release history contents', e)
+    }
+  }
+
+  /**
+   * Works out which feature branches would conflict if merged into integration.
+   *
+   * Read after the picture is up rather than as part of it, for the same reason
+   * the release history's contents are: it costs a `git merge-tree` per branch —
+   * sixteen of them in NimbleObt — and nobody is waiting on it. The lane shows
+   * every branch immediately and the warnings appear a moment later.
+   *
+   * Written back by branch name rather than by position, because a refresh can
+   * land while this is in flight and rebuild the lane underneath it.
+   */
+  private async _loadHotFlowMergeability(
+    repository: Repository
+  ): Promise<void> {
+    const { openFeatureBranches, integrationBranch } =
+      this.repositoryStateCache.get(repository).hotFlowState
+
+    if (
+      integrationBranch === null ||
+      openFeatureBranches.every(f => f.conflictsWithIntegration !== null)
+    ) {
+      return
+    }
+
+    try {
+      const conflicts = await loadFeatureBranchConflicts(
+        repository,
+        integrationBranch,
+        openFeatureBranches
+      )
+
+      if (conflicts.size === 0) {
+        return
+      }
+
+      this.repositoryStateCache.updateHotFlowState(repository, s => ({
+        openFeatureBranches: s.openFeatureBranches.map(existing => {
+          const answer = conflicts.get(existing.branch.name)
+
+          return answer === undefined
+            ? existing
+            : { ...existing, conflictsWithIntegration: answer }
+        }),
+      }))
+      this.emitUpdate()
+    } catch (e) {
+      log.warn('[AppStore] HotFlow could not check branch mergeability', e)
     }
   }
 
