@@ -416,6 +416,9 @@ import {
 } from '../../models/hotflow'
 import {
   getReleaseSequenceOverrides,
+  getSuppressAssignedNotMerged,
+  setReleaseSequenceCleared,
+  setSuppressAssignedNotMerged,
   setReleaseSequenceOverride,
   getBranchOverride,
   setBranchOverride,
@@ -4361,6 +4364,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       this.repositoryStateCache.updateHotFlowState(repository, () => ({
         ...detected,
         ado: existingAdo,
+        suppressAssignedNotMerged: getSuppressAssignedNotMerged(repository),
       }))
       this.emitUpdate()
 
@@ -4889,6 +4893,39 @@ export class AppStore extends TypedBaseStore<IAppState> {
     releaseSequence: number
   ): Promise<void> {
     setReleaseSequenceOverride(repository, branchName, releaseSequence)
+    await this._refreshHotFlow(repository)
+  }
+
+  /**
+   * Records that a release branch has no sequence number at all, and re-runs
+   * reconciliation without one.
+   *
+   * Not the same as removing an override: that goes back to deriving a number
+   * from the version, whereas this says there is nothing to derive. A release that
+   * doesn't take part in the Content Orchestration cycle has no plan in Azure
+   * DevOps, so nothing is compared and its work items simply read as merged.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _clearReleaseSequence(
+    repository: Repository,
+    branchName: string
+  ): Promise<void> {
+    setReleaseSequenceCleared(repository, branchName)
+    await this._refreshHotFlow(repository)
+  }
+
+  /**
+   * Sets whether this repository is shown work items assigned to a release but
+   * missing from it.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _setSuppressAssignedNotMerged(
+    repository: Repository,
+    suppress: boolean
+  ): Promise<void> {
+    setSuppressAssignedNotMerged(repository, suppress)
     await this._refreshHotFlow(repository)
   }
 

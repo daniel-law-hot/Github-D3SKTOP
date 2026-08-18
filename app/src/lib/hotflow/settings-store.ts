@@ -32,12 +32,19 @@ interface IStoredSettings {
    * carry over. They held the same six-digit number as a string, and the reader
    * below accepts both — renaming the key would have thrown them away for nothing.
    */
-  readonly cycles?: Record<string, string | number>
+  readonly cycles?: Record<string, string | number | null>
   readonly integrationBranch?: string
   readonly productionBranch?: string
 
   /** The merge method last used for a pull request in this repository. */
   readonly mergeMethod?: string
+
+  /**
+   * Whether to stop looking for work items assigned to a release but absent from
+   * it. Absent means no, which keeps the check on for every repository that has
+   * never said otherwise.
+   */
+  readonly suppressAssignedNotMerged?: boolean
 }
 
 function storageKey(repository: Repository): string {
@@ -64,17 +71,27 @@ function write(repository: Repository, settings: IStoredSettings): void {
  */
 export function getReleaseSequenceOverrides(
   repository: Repository
-): ReadonlyMap<string, number> {
+): ReadonlyMap<string, number | null> {
   const stored = read(repository).cycles
 
   if (stored === undefined) {
-    return new Map<string, number>()
+    return new Map<string, number | null>()
   }
 
-  const overrides = new Map<string, number>()
+  const overrides = new Map<string, number | null>()
 
   for (const [branch, value] of Object.entries(stored)) {
     if (typeof branch !== 'string' || branch.length === 0) {
+      continue
+    }
+
+    // A stored null is someone saying this release has no sequence number at
+    // all, which is not the same as never having said anything: the second falls
+    // back to what the version gives, and this must not. Repositories that don't
+    // follow the Content Orchestration cycle have nothing to reconcile against,
+    // and inventing a number for them produces a list of imaginary omissions.
+    if (value === null) {
+      overrides.set(branch, null)
       continue
     }
 
@@ -117,6 +134,43 @@ export function setReleaseSequenceOverride(
   write(repository, { ...settings, cycles })
 
   return true
+}
+
+/**
+ * Records that a release has no sequence number at all.
+ *
+ * Distinct from `clearReleaseSequenceOverride`, which forgets the correction and
+ * goes back to deriving one from the version. This says there is nothing to
+ * derive — the release doesn't take part in the Content Orchestration cycle, so
+ * there is no plan in Azure DevOps to reconcile it against.
+ */
+export function setReleaseSequenceCleared(
+  repository: Repository,
+  branchName: string
+): void {
+  const settings = read(repository)
+  const cycles = { ...(settings.cycles ?? {}), [branchName]: null }
+
+  write(repository, { ...settings, cycles })
+}
+
+/**
+ * Whether this repository has asked not to be told about work items assigned to
+ * a release but missing from it.
+ */
+export function getSuppressAssignedNotMerged(repository: Repository): boolean {
+  return read(repository).suppressAssignedNotMerged === true
+}
+
+/** Records that preference. */
+export function setSuppressAssignedNotMerged(
+  repository: Repository,
+  suppress: boolean
+): void {
+  write(repository, {
+    ...read(repository),
+    suppressAssignedNotMerged: suppress,
+  })
 }
 
 /** Forgets the override for a branch, returning it to the derived number. */

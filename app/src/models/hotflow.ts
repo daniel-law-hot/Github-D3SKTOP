@@ -197,6 +197,16 @@ export type WorkItemPresence =
   | 'missing-from-release'
   /** In the release branch but not assigned to the release in ADO. */
   | 'in-release-untagged'
+  /**
+   * In the release branch, with nothing to compare it against.
+   *
+   * Either the release has no sequence number — a repository that doesn't follow
+   * the Content Orchestration cycle has no plan in Azure DevOps to reconcile
+   * with — or Azure DevOps couldn't be reached. Both mean the same thing: this
+   * work item was merged, and any claim about whether it was *supposed* to be
+   * would be invented. The three states above all rest on having asked ADO.
+   */
+  | 'merged'
 
 /** One row of the reconciled work item list. */
 export interface IReconciledWorkItem {
@@ -396,6 +406,16 @@ export interface IHotFlowState {
    */
   readonly pullRequestApprovals: ReadonlyMap<number, IPullRequestApproval>
 
+  /**
+   * Whether this repository has asked not to be shown work items assigned to a
+   * release but missing from it.
+   *
+   * A repository-level preference rather than a per-release one: it describes how
+   * the repository relates to the Content Orchestration cycle, which doesn't
+   * change from one release to the next.
+   */
+  readonly suppressAssignedNotMerged: boolean
+
   readonly ado: IAdoState
 }
 
@@ -427,5 +447,6 @@ export const defaultHotFlowState: IHotFlowState = {
   unreleasedVsoCount: 0,
   nextVersion: null,
   pullRequestApprovals: new Map<number, IPullRequestApproval>(),
+  suppressAssignedNotMerged: false,
   ado: defaultAdoState,
 }

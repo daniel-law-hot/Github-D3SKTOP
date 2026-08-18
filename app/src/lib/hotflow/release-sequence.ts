@@ -97,12 +97,24 @@ export function deriveReleaseSequence(version: IReleaseVersion): number | null {
 export function resolveReleaseSequence(
   branchName: string,
   version: IReleaseVersion,
-  overrides: ReadonlyMap<string, number> | undefined
+  overrides: ReadonlyMap<string, number | null> | undefined
 ): IReleaseSequence | null {
   const derived = deriveReleaseSequence(version)
   const stored = overrides?.get(branchName)
 
-  if (stored !== undefined && parseReleaseSequence(stored) !== null) {
+  // Explicitly cleared: the release has no sequence number, and deriving one
+  // from the version would be re-answering a question that has been answered.
+  // `has` rather than a truthiness check, because null is the answer here and
+  // "nothing stored" is a different case that falls through to the derivation.
+  if (stored === null && overrides?.has(branchName) === true) {
+    return null
+  }
+
+  if (
+    stored !== undefined &&
+    stored !== null &&
+    parseReleaseSequence(stored) !== null
+  ) {
     return { value: stored, isOverridden: stored !== derived }
   }
 

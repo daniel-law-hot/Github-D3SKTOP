@@ -70,7 +70,10 @@ import {
   StartReleaseDialog,
   UpdateReleaseDialog,
 } from './hotflow/dialogs'
-import { getMergeMethod } from '../lib/hotflow/settings-store'
+import {
+  getMergeMethod,
+  getSuppressAssignedNotMerged,
+} from '../lib/hotflow/settings-store'
 import { getMissingWorkItemCount } from '../lib/hotflow/reconcile'
 import { iconForRepository, OcticonSymbol } from './octicons'
 import * as octicons from './octicons/octicons.generated'
@@ -2955,6 +2958,9 @@ export class App extends React.Component<IAppProps, IAppState> {
             repository={popup.repository}
             dispatcher={this.props.dispatcher}
             branchName={popup.branchName}
+            suppressAssignedNotMerged={getSuppressAssignedNotMerged(
+              popup.repository
+            )}
             currentSequence={popup.currentSequence}
             derivedSequence={popup.derivedSequence}
             onDismissed={onPopupDismissedFn}

@@ -347,7 +347,10 @@ export class ReleaseContents extends React.Component<IReleaseContentsProps> {
                 key={id}
                 item={{
                   id,
-                  presence: 'in-release-tagged',
+                  // A shipped release is never reconciled — the refresh only asks
+                  // Azure DevOps about the current one — so these were merged and
+                  // nothing more is known about them.
+                  presence: 'merged',
                   workItem: ado.workItems.get(id) ?? null,
                 }}
               />

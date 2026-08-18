@@ -381,6 +381,32 @@ export class Dispatcher {
   }
 
   /**
+   * Records that a release branch has no Azure DevOps release sequence number.
+   *
+   * For a release that doesn't take part in the Content Orchestration cycle:
+   * nothing is reconciled against it and its work items simply read as merged.
+   * Distinct from removing an override, which goes back to deriving one from the
+   * version.
+   */
+  public clearReleaseSequence(
+    repository: Repository,
+    branchName: string
+  ): Promise<void> {
+    return this.appStore._clearReleaseSequence(repository, branchName)
+  }
+
+  /**
+   * Sets whether this repository is shown work items assigned to a release but
+   * missing from it.
+   */
+  public setSuppressAssignedNotMerged(
+    repository: Repository,
+    suppress: boolean
+  ): Promise<void> {
+    return this.appStore._setSuppressAssignedNotMerged(repository, suppress)
+  }
+
+  /**
    * Pin which branches HotFlow should treat as integration and production for
    * this repository.
    *

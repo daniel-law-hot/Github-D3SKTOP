@@ -20,7 +20,17 @@ import {
 export function reconcileWorkItems(
   inRelease: ReadonlyArray<number>,
   sequenceAssigned: ReadonlyArray<number>,
-  workItems: ReadonlyMap<number, IWorkItem>
+  workItems: ReadonlyMap<number, IWorkItem>,
+
+  /**
+   * Drops the planned-but-not-merged rows, for a repository that has asked not to
+   * be told about them.
+   *
+   * The rest of the reconciliation still runs: knowing an item *was* planned is
+   * what separates the happy path from an unplanned extra, and that is worth
+   * keeping. Only the absences go.
+   */
+  suppressMissing: boolean = false
 ): IReconciliation {
   const releaseSet = new Set(inRelease)
   const taggedSet = new Set(sequenceAssigned)
@@ -47,17 +57,19 @@ export function reconcileWorkItems(
   }
 
   // Assigned to the release but absent from it.
-  for (const id of taggedSet) {
-    if (releaseSet.has(id)) {
-      continue
-    }
+  if (!suppressMissing) {
+    for (const id of taggedSet) {
+      if (releaseSet.has(id)) {
+        continue
+      }
 
-    missingCount++
-    items.push({
-      id,
-      presence: 'missing-from-release',
-      workItem: workItems.get(id) ?? null,
-    })
+      missingCount++
+      items.push({
+        id,
+        presence: 'missing-from-release',
+        workItem: workItems.get(id) ?? null,
+      })
+    }
   }
 
   return {
@@ -84,6 +96,10 @@ function sortReconciledItems(
     'missing-from-release': 0,
     'in-release-tagged': 1,
     'in-release-untagged': 2,
+
+    // Never mixed with the others — a reconciliation is either comparing against
+    // a plan or it isn't — so its rank only has to be stable, not chosen.
+    merged: 3,
   }
 
   return [...items].sort((a, b) => {
@@ -102,14 +118,20 @@ export function reconcileRelease(
 ): IReconciliation {
   const { ado } = hotFlowState
 
-  if (ado.status !== 'ok') {
+  // No sequence number means there is no plan in Azure DevOps this release
+  // answers to, so there is nothing to reconcile and every comparison below
+  // would be against an empty set — which reads as "everything is missing" or
+  // "nothing was planned", neither of which is true. What's left is what git
+  // knows: these work items were merged.
+  if (release.releaseSequence === null || ado.status !== 'ok') {
     return gitOnlyReconciliation(release.vsoNumbers)
   }
 
   return reconcileWorkItems(
     release.vsoNumbers,
     ado.sequenceAssignedIds,
-    ado.workItems
+    ado.workItems,
+    hotFlowState.suppressAssignedNotMerged
   )
 }
 
@@ -140,7 +162,10 @@ export function gitOnlyReconciliation(
       .sort((a, b) => a - b)
       .map(id => ({
         id,
-        presence: 'in-release-tagged' as const,
+        // `merged`, not `in-release-tagged`: nothing was compared, so calling
+        // these assigned to the release would be asserting something nobody
+        // checked. They used to claim exactly that.
+        presence: 'merged' as const,
         workItem: null,
       })),
     inReleaseTaggedCount: inRelease.length,

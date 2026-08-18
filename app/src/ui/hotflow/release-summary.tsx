@@ -155,9 +155,13 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
     const { release, noSequenceMatches } = this.props
 
     if (release.releaseSequence === null) {
+      // "none" rather than "unknown": this is now reachable two ways — a version
+      // with no year and cycle to derive from, and someone clearing it because the
+      // release doesn't follow the cycle. The second is a decision, not a gap, and
+      // calling it unknown would read as something still to be worked out.
       return (
         <span className="hotflow-sequence-unknown">
-          unknown{' '}
+          none{' '}
           <LinkButton onClick={this.props.onEditReleaseSequence}>
             Set
           </LinkButton>

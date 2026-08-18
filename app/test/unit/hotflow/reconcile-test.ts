@@ -103,17 +103,37 @@ describe('hotflow/reconcile', () => {
       assert.strictEqual(result.missingCount, 2)
       assert.strictEqual(result.inReleaseTaggedCount, 0)
     })
+
+    it('drops the missing rows when asked to suppress them', () => {
+      const result = reconcileWorkItems([1, 3], [1, 2], details, true)
+
+      const byId = new Map(result.items.map(i => [i.id, i.presence]))
+      assert.strictEqual(byId.has(2), false)
+      assert.strictEqual(result.missingCount, 0)
+
+      // The rest of the reconciliation still ran: knowing 1 was planned and 3
+      // wasn't is worth keeping, and only the absences were asked about.
+      assert.strictEqual(byId.get(1), 'in-release-tagged')
+      assert.strictEqual(byId.get(3), 'in-release-untagged')
+      assert.strictEqual(result.inReleaseTaggedCount, 1)
+      assert.strictEqual(result.untaggedCount, 1)
+    })
   })
 
   describe('gitOnlyReconciliation', () => {
-    it('treats every found VSO as present with nothing missing', () => {
+    it('treats every found VSO as merged with nothing missing', () => {
       const result = gitOnlyReconciliation([3, 1, 2])
 
       assert.deepStrictEqual(
         result.items.map(i => i.id),
         [1, 2, 3]
       )
-      assert.ok(result.items.every(i => i.presence === 'in-release-tagged'))
+
+      // `merged`, not `in-release-tagged`. Nothing was compared here — either the
+      // release has no sequence number or ADO was unreachable — so saying these
+      // were assigned to the release asserts something nobody checked. It used
+      // to say exactly that.
+      assert.ok(result.items.every(i => i.presence === 'merged'))
       assert.strictEqual(result.missingCount, 0)
     })
 

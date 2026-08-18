@@ -52,7 +52,7 @@ const ReleaseHistoryLimit = 12
  */
 export async function detectHotFlowState(
   provider: IRepositoryProvider,
-  sequenceOverrides: ReadonlyMap<string, number> | undefined,
+  sequenceOverrides: ReadonlyMap<string, number | null> | undefined,
   branchOverride: IHotFlowBranchOverride = {}
 ): Promise<IHotFlowState> {
   const branches = await provider.getBranches()
@@ -211,6 +211,10 @@ export async function detectHotFlowState(
     // Approvals are a separate API read; the store fills these in after
     // detection so a network hiccup can't hold up the git picture.
     pullRequestApprovals: defaultHotFlowState.pullRequestApprovals,
+
+    // A stored preference rather than anything git can see, so the store fills
+    // it in for the same reason.
+    suppressAssignedNotMerged: defaultHotFlowState.suppressAssignedNotMerged,
     ado: defaultAdoState,
   }
 }
@@ -387,7 +391,7 @@ async function buildReleaseState(
   candidate: IReleaseCandidate,
   integrationRef: string,
   productionRef: string,
-  sequenceOverrides: ReadonlyMap<string, number> | undefined,
+  sequenceOverrides: ReadonlyMap<string, number | null> | undefined,
   loadCommits: boolean = true
 ): Promise<IReleaseBranchState> {
   const releaseRef = candidate.branch.name

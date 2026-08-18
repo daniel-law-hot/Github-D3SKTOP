@@ -84,6 +84,17 @@ export class WorkItemRow extends React.Component<IWorkItemRowProps> {
             title="In the release and assigned to it in Azure DevOps"
           />
         )
+      case 'merged':
+        // The same tick, without the claim about Azure DevOps. Nothing was
+        // compared — either this release has no sequence number or ADO wasn't
+        // reachable — so all that can honestly be said is that it's in there.
+        return (
+          <Octicon
+            className="ok"
+            symbol={octicons.checkCircle}
+            title="Merged into this release"
+          />
+        )
       default:
         return null
     }
@@ -98,6 +109,12 @@ export class WorkItemRow extends React.Component<IWorkItemRowProps> {
 
     if (item.presence === 'in-release-untagged') {
       return <span className="dim">Unassigned</span>
+    }
+
+    if (item.presence === 'merged') {
+      // Deliberately not "Unassigned": nobody looked, and that word would read as
+      // having looked and found nothing.
+      return <span className="dim">{item.workItem?.state ?? 'Merged'}</span>
     }
 
     return <span className="dim">{item.workItem?.state ?? '—'}</span>

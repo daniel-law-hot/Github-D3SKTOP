@@ -7,6 +7,7 @@ import { TextBox } from '../../lib/text-box'
 import { Ref } from '../../lib/ref'
 import { LinkButton } from '../../lib/link-button'
 import { parseReleaseSequence } from '../../../lib/hotflow/release-sequence'
+import { Checkbox, CheckboxValue } from '../../lib/checkbox'
 
 interface IEditReleaseSequenceDialogProps {
   readonly repository: Repository
@@ -19,11 +20,15 @@ interface IEditReleaseSequenceDialogProps {
   /** What the version gives, so this can offer to go back to it. */
   readonly derivedSequence: number | null
 
+  /** Whether this repository currently hides assigned-but-not-merged items. */
+  readonly suppressAssignedNotMerged: boolean
+
   readonly onDismissed: () => void
 }
 
 interface IEditReleaseSequenceDialogState {
   readonly value: string
+  readonly suppressAssignedNotMerged: boolean
   readonly isSaving: boolean
 }
 
@@ -45,8 +50,14 @@ export class EditReleaseSequenceDialog extends React.Component<
 
     this.state = {
       value: props.currentSequence?.toString() ?? '',
+      suppressAssignedNotMerged: props.suppressAssignedNotMerged,
       isSaving: false,
     }
+  }
+
+  /** True when the field has been emptied, meaning "this release has none". */
+  private get isCleared(): boolean {
+    return this.state.value.trim().length === 0
   }
 
   /** The typed value, or null when it isn't a usable sequence number. */
@@ -83,7 +94,8 @@ export class EditReleaseSequenceDialog extends React.Component<
             Which release sequence number should{' '}
             <Ref>{this.props.branchName}</Ref> reconcile against? Work items
             whose "Release sequence number" matches are compared with what's
-            actually in the release.
+            actually in the release. Leave it empty if this release doesn't have
+            one.
           </p>
 
           <TextBox
@@ -97,24 +109,49 @@ export class EditReleaseSequenceDialog extends React.Component<
           <div className="hotflow-name-preview">
             <span className="hotflow-name-preview-label">Reads as</span>
             <span className="hotflow-name-preview-value">
-              {parsed === null
+              {this.isCleared
+                ? 'no sequence — nothing to reconcile against'
+                : parsed === null
                 ? '—'
                 : `cycle ${parsed.cycle} of ${parsed.year}`}
             </span>
           </div>
 
-          {this.renderDerivedHint()}
+          {this.isCleared ? (
+            <p className="hotflow-dialog-note">
+              Leaving this empty is for a release that doesn't follow the
+              Content Orchestration cycle. Nothing is compared against Azure
+              DevOps, so work items are neither reported as assigned nor as
+              missing — they simply show as merged.
+            </p>
+          ) : (
+            this.renderDerivedHint()
+          )}
+
+          <Checkbox
+            label="Don't look for work items assigned to a release but not merged into it"
+            value={
+              this.state.suppressAssignedNotMerged
+                ? CheckboxValue.On
+                : CheckboxValue.Off
+            }
+            onChange={this.onSuppressChanged}
+          />
 
           <p className="hotflow-dialog-note">
-            Remembered for this branch. The next release branch goes back to
-            using its version.
+            The sequence number is remembered for this branch; the next release
+            branch goes back to using its version. The checkbox is for the whole
+            repository, since it describes how this repository relates to the
+            cycle rather than anything about one release.
           </p>
         </DialogContent>
 
         <DialogFooter>
           <OkCancelButtonGroup
             okButtonText="Save"
-            okButtonDisabled={sequence === null || this.state.isSaving}
+            okButtonDisabled={
+              (!this.isCleared && sequence === null) || this.state.isSaving
+            }
           />
         </DialogFooter>
       </Dialog>
@@ -159,20 +196,40 @@ export class EditReleaseSequenceDialog extends React.Component<
     this.setState({ value: value.replace(/[^0-9]/g, '') })
   }
 
+  private onSuppressChanged = (
+    event: React.FormEvent<HTMLInputElement>
+  ): void => {
+    this.setState({ suppressAssignedNotMerged: event.currentTarget.checked })
+  }
+
   private onSubmit = async () => {
     const sequence = this.sequence
 
-    if (sequence === null) {
+    if (!this.isCleared && sequence === null) {
       return
     }
 
     this.setState({ isSaving: true })
 
-    await this.props.dispatcher.setReleaseSequence(
-      this.props.repository,
-      this.props.branchName,
-      sequence
-    )
+    const { repository, branchName, dispatcher } = this.props
+
+    // The preference first, so that the refresh each of these triggers reads both
+    // changes rather than reconciling once against a half-applied pair.
+    if (
+      this.state.suppressAssignedNotMerged !==
+      this.props.suppressAssignedNotMerged
+    ) {
+      await dispatcher.setSuppressAssignedNotMerged(
+        repository,
+        this.state.suppressAssignedNotMerged
+      )
+    }
+
+    if (this.isCleared) {
+      await dispatcher.clearReleaseSequence(repository, branchName)
+    } else if (sequence !== null) {
+      await dispatcher.setReleaseSequence(repository, branchName, sequence)
+    }
 
     this.props.onDismissed()
   }
