@@ -4433,6 +4433,22 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return
     }
 
+    // The merge happened on GitHub's servers, so this repository knows nothing
+    // about it: `origin/develop` still points at the commit before the merge and
+    // the branch's remote ref is still there. Refreshing without fetching first
+    // therefore re-reads the same pre-merge picture and the branch stays in the
+    // lane looking unmerged — which is why this used to need a fetch and a pull
+    // by hand before the branch would go.
+    //
+    // Fetching is also what moves the local integration branch: Desktop's fetch
+    // fast-forwards local branches that are behind their upstream and aren't
+    // checked out, and being contained in that branch is what takes a feature out
+    // of the lane. Failure is logged rather than raised — the merge itself
+    // succeeded, and saying otherwise would be worse than a stale diagram.
+    await this._fetch(repository, FetchType.UserInitiatedTask).catch(e =>
+      log.warn('[AppStore] could not fetch after merging a pull request', e)
+    )
+
     // The branch has landed, so both the pull request list and the release
     // picture are now stale.
     await this._refreshPullRequests(repository)

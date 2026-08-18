@@ -134,6 +134,13 @@ export async function detectHotFlowState(
       provider,
       branches,
       integrationRef,
+      // Where a pull request merge actually lands. The local integration branch
+      // only learns about it on a fetch, and not even then when it's checked out
+      // or has diverged — so a branch merged on GitHub would sit in the lane
+      // looking unmerged until someone pulled.
+      integrationBranch.type === BranchType.Remote
+        ? null
+        : integrationBranch.upstream,
       checkedOutBranchNamePromise
     ),
     checkedOutBranchNamePromise,
@@ -539,6 +546,7 @@ async function collectFeatureBranches(
   provider: IRepositoryProvider,
   branches: ReadonlyArray<Branch>,
   integrationRef: string,
+  integrationRemoteRef: string | null,
   checkedOutBranchName: Promise<string | null>
 ): Promise<ReadonlyArray<IFeatureBranchState>> {
   const byName = new Map<string, Branch>()
@@ -563,8 +571,16 @@ async function collectFeatureBranches(
   // ahead/behind per branch. "Nothing ahead of integration" and "merged into
   // integration" are the same condition, and this was the largest remaining block
   // of git processes in the refresh — sixteen of them in NimbleObt.
-  const [merged, checkedOut] = await Promise.all([
-    provider.getMergedBranches(integrationRef, [...byName.values()]),
+  const candidates = [...byName.values()]
+
+  // Both refs, together rather than one after the other — a second
+  // `for-each-ref --merged` costs a git process but no wall-clock beside the
+  // first, and being contained in either means the work has landed.
+  const [mergedLocally, mergedOnRemote, checkedOut] = await Promise.all([
+    provider.getMergedBranches(integrationRef, candidates),
+    integrationRemoteRef === null
+      ? Promise.resolve(new Set<string>())
+      : provider.getMergedBranches(integrationRemoteRef, candidates),
     checkedOutBranchName,
   ])
 
@@ -583,7 +599,10 @@ async function collectFeatureBranches(
     const isCheckedOut =
       checkedOut !== null && branch.nameWithoutRemote === checkedOut
 
-    if (merged.has(branch.name) && !isCheckedOut) {
+    const isMerged =
+      mergedLocally.has(branch.name) || mergedOnRemote.has(branch.name)
+
+    if (isMerged && !isCheckedOut) {
       continue
     }
 
