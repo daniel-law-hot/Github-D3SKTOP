@@ -3,7 +3,7 @@
   "productName": "GitHub D3SKTOP",
   "bundleID": "com.github.GitHubClient",
   "companyName": "GitHub, Inc.",
-  "version": "1.2026.16",
+  "version": "1.2026.17",
   "main": "./main.js",
   "repository": {
     "type": "git",
