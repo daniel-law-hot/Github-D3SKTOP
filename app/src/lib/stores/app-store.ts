@@ -4578,24 +4578,57 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     // The merge happened on GitHub's servers, so this repository knows nothing
     // about it: `origin/develop` still points at the commit before the merge and
-    // the branch's remote ref is still there. Refreshing without fetching first
-    // therefore re-reads the same pre-merge picture and the branch stays in the
-    // lane looking unmerged — which is why this used to need a fetch and a pull
-    // by hand before the branch would go.
+    // the branch's remote ref is still there. Bringing that down is what takes the
+    // merged branch out of the lane, and it used to have to be done by hand.
     //
-    // Fetching is also what moves the local integration branch: Desktop's fetch
-    // fast-forwards local branches that are behind their upstream and aren't
-    // checked out, and being contained in that branch is what takes a feature out
-    // of the lane. Failure is logged rather than raised — the merge itself
-    // succeeded, and saying otherwise would be worse than a stale diagram.
-    await this._fetch(repository, FetchType.UserInitiatedTask).catch(e =>
-      log.warn('[AppStore] could not fetch after merging a pull request', e)
+    // Not awaited. It's a network round trip and the merge is already done, so
+    // making the dialog sit and watch it would be charging the user for something
+    // they have no decision left to make about. The picture catches up on its own
+    // when it lands: the fetch refreshes the repository, and the release view
+    // follows from the refs having moved — see `refreshHotFlowIfRefsChanged`.
+    this.catchUpAfterHotFlowMerge(repository).catch(e =>
+      log.warn('[AppStore] could not catch up after merging a pull request', e)
     )
 
-    // The branch has landed, so both the pull request list and the release
-    // picture are now stale.
+    // Meanwhile, what is knowable without the network: the pull request has
+    // closed, and the branch it merged is no longer waiting on review.
     await this._refreshPullRequests(repository)
     await this._refreshHotFlow(repository)
+  }
+
+  /**
+   * Brings the integration branch level with the remote after a merge landed there.
+   *
+   * Desktop's fetch fast-forwards local branches that are behind their upstream
+   * and aren't checked out, which is the integration branch in the ordinary case —
+   * you merge a feature while standing on the feature, or on a release.
+   *
+   * It can't when the integration branch is the one you're standing on, so that
+   * case is pulled explicitly. Only with a clean working directory though: pulling
+   * over someone's uncommitted work is not a thing to do to them on the strength
+   * of a merge button, and the fetch alone has already made the diagram correct —
+   * containment is tested against the remote branch too.
+   */
+  private async catchUpAfterHotFlowMerge(
+    repository: Repository
+  ): Promise<void> {
+    await this._fetch(repository, FetchType.UserInitiatedTask)
+
+    const state = this.repositoryStateCache.get(repository)
+    const integrationBranch = state.hotFlowState.integrationBranch
+    const { tip } = state.branchesState
+
+    const onIntegrationBranch =
+      integrationBranch !== null &&
+      tip.kind === TipState.Valid &&
+      tip.branch.nameWithoutRemote === integrationBranch.nameWithoutRemote
+
+    if (
+      onIntegrationBranch &&
+      state.changesState.workingDirectory.files.length === 0
+    ) {
+      await this._pull(repository)
+    }
   }
 
   /**
