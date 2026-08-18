@@ -289,20 +289,36 @@ export class HotFlowView extends React.Component<
   private get featureLane(): ReadonlyArray<IFeatureLaneEntry> {
     const integrationName = this.props.hotFlowState.integrationBranchName
 
-    // Branch name -> pull request number, for whatever pull requests we have.
+    // Branch name -> the pull request's number and where it lives.
     const pullRequests = new Map(
       this.props.branchesState.openPullRequests
         .filter(pr => pr.base.ref === integrationName)
-        .map(pr => [pr.head.ref, pr.pullRequestNumber] as const)
+        .map(pr => {
+          const baseUrl = pr.base.gitHubRepository.htmlURL
+
+          return [
+            pr.head.ref,
+            {
+              number: pr.pullRequestNumber,
+              url:
+                baseUrl === null
+                  ? null
+                  : `${baseUrl}/pull/${pr.pullRequestNumber}`,
+            },
+          ] as const
+        })
     )
 
     return sortFeatureLane(
       this.props.hotFlowState.openFeatureBranches.map(feature => {
         const name = feature.branch.nameWithoutRemote
 
+        const pullRequest = pullRequests.get(name)
+
         return {
           branchName: name,
-          pullRequestNumber: pullRequests.get(name) ?? null,
+          pullRequestNumber: pullRequest?.number ?? null,
+          pullRequestUrl: pullRequest?.url ?? null,
           isRemoteOnly: feature.branch.type === BranchType.Remote,
           // A local branch with no upstream hasn't been pushed. Pushing it sets
           // one, so this clears itself on the refresh after a publish.

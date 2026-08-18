@@ -343,6 +343,37 @@ body.theme-dark {
 }
 
 /**
+ * The pull request number on a stub, as a link to it on GitHub.
+ *
+ * Right-aligned within a box ending where the SVG text's anchor was, so the badge
+ * keeps the position it had before it became a link. The container takes no
+ * pointer events; only the link inside it does, so the empty space to the left of
+ * a short number doesn't swallow clicks meant for the branch name beneath.
+ */
+.hotflow-pr-badges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.hotflow-pr-badge-text {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 16px;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary-color);
+  font-variant-numeric: tabular-nums;
+
+  a,
+  button {
+    pointer-events: auto;
+  }
+}
+
+/**
  * The fetch button in the corner of the develop, release and main boxes.
  *
  * Sits in the names overlay, which takes no pointer events, so this takes them

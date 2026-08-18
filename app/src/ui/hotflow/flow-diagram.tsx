@@ -11,6 +11,7 @@ import * as octicons from '../octicons/octicons.generated'
 import { Branch, BranchType } from '../../models/branch'
 import { Tooltip } from '../lib/tooltip'
 import { createObservableRef } from '../lib/observable-ref'
+import { LinkButton } from '../lib/link-button'
 
 /**
  * The diagram's geometry, in viewBox units.
@@ -516,6 +517,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
         {this.renderBranchNames()}
         {this.renderNodeNames()}
         {this.renderNodeFetchButtons()}
+        {this.renderPullRequestBadges()}
         {this.renderMergeButtons()}
       </div>
     )
@@ -771,6 +773,73 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
    * free. This only works cleanly because the diagram is unscaled — one viewBox
    * unit is one pixel, so the coordinates map straight across.
    */
+  /**
+   * The `#123` on each stub, as a link to the pull request on GitHub.
+   *
+   * HTML over the SVG for the reason the branch names are: a link has to be the
+   * element that's styled and clicked, and SVG text can't be reached from an
+   * overlay. Right-aligned to the same edge the SVG text used, so the badge sits
+   * where it always did.
+   *
+   * Only a link when there's an address to go to. Desktop stores a repository's
+   * web address from the API, so it's absent for a repository whose metadata we
+   * were never allowed to read — and a number that looks clickable and isn't is
+   * worse than one that never offered.
+   */
+  private renderPullRequestBadges() {
+    const entries = this.shownEntries
+    const centres = this.stubCentres
+
+    return (
+      <div className="hotflow-pr-badges">
+        {entries.map((entry, i) => {
+          const { pullRequestNumber, pullRequestUrl } = entry
+
+          if (pullRequestNumber === null) {
+            return null
+          }
+
+          const label = `#${pullRequestNumber}`
+
+          // Right edge matches the SVG text's `textAnchor="end"` anchor, and the
+          // merge button sits in the 26px to the right of it.
+          const style: React.CSSProperties = {
+            left: featureX,
+            top: centres[i] - 8,
+            width: G.featureWidth - 32,
+          }
+
+          if (pullRequestUrl === null) {
+            return (
+              <span
+                key={entry.branchName}
+                className="hotflow-pr-badge-text"
+                style={style}
+              >
+                {label}
+              </span>
+            )
+          }
+
+          return (
+            <span
+              key={entry.branchName}
+              className="hotflow-pr-badge-text"
+              style={style}
+            >
+              <LinkButton
+                uri={pullRequestUrl}
+                title={`Open pull request ${label} on GitHub`}
+              >
+                {label}
+              </LinkButton>
+            </span>
+          )
+        })}
+      </div>
+    )
+  }
+
   private renderMergeButtons() {
     const entries = this.shownEntries
     const centres = this.stubCentres
@@ -923,7 +992,12 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
                 y={centres[i] + 4}
                 textAnchor="end"
               >
-                {this.getStubBadge(entry)}
+                {/* A PR number is drawn as an HTML link in the overlay instead —
+                    see `renderPullRequestBadges`. What's left here is the cases
+                    that aren't links: no PR, or not knowing yet. */}
+                {entry.pullRequestNumber === null
+                  ? this.getStubBadge(entry)
+                  : null}
               </text>
             </g>
           )

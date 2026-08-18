@@ -156,6 +156,17 @@ export interface IFeatureLaneEntry {
   readonly pullRequestNumber: number | null
 
   /**
+   * Where to open the pull request, or null when we can't say.
+   *
+   * Built from the base repository's web address, which Desktop stores from the
+   * API — so it is null for a repository whose metadata we were never allowed to
+   * read. Carried rather than derived at render time so the badge can be a link
+   * only when it would actually go somewhere, instead of offering a click that
+   * silently does nothing.
+   */
+  readonly pullRequestUrl: string | null
+
+  /**
    * True when only the remote has this branch, so checking it out creates a
    * local one. Worth saying out loud rather than surprising someone with it.
    */

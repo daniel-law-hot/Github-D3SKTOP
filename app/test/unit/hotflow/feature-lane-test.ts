@@ -12,6 +12,7 @@ function entry(
     branchName,
     vso,
     pullRequestNumber,
+    pullRequestUrl: null,
     isRemoteOnly: false,
     isLocalOnly: false,
     hasConflicts: false,
