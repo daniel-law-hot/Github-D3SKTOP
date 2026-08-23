@@ -1,4 +1,4 @@
-import { Branch } from '../../models/branch'
+import { Branch, BranchType } from '../../models/branch'
 import { Commit } from '../../models/commit'
 import { IHotFlowState, IReleaseBranchState } from '../../models/hotflow'
 import { IRepositoryProvider } from './repository-provider'
@@ -370,7 +370,19 @@ export async function preflightFinishRelease(
   // Local production must match its remote, or the merge lands on a stale base.
   // Without a working copy there is no local production to be stale, so the
   // question is skipped rather than answered.
-  if (provider.hasWorkingCopy) {
+  // Skipped when production is a remote branch, which it is in any repository
+  // with no local `main` — three of the four surveyed. There is then no local copy
+  // that could be out of step with the remote, so "is it in sync" isn't a question
+  // that fails, it's one that stops existing; the same reasoning as the working
+  // directory check above.
+  //
+  // It used to fail instead, reporting that main "isn't tracking a remote branch"
+  // — true of `origin/main` and entirely beside the point — and blocking the
+  // release. Fetching couldn't clear it, because staleness was never the problem;
+  // checking main out did, by creating the local branch the check was looking for.
+  // Finishing works either way: the release checks production out first, which
+  // creates that local branch anyway.
+  if (provider.hasWorkingCopy && productionBranch.type !== BranchType.Remote) {
     const productionAheadBehind = await provider.getUpstreamDivergence(
       productionBranch
     )
