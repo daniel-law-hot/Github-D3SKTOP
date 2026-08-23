@@ -1,4 +1,5 @@
 import { Branch } from '../../models/branch'
+import { Commit } from '../../models/commit'
 import { IHotFlowState, IReleaseBranchState } from '../../models/hotflow'
 import { IRepositoryProvider } from './repository-provider'
 
@@ -34,6 +35,39 @@ export interface IPreflightResult {
 
   /** True when nothing blocking failed. */
   readonly canProceed: boolean
+}
+
+/**
+ * How many production-only commits to read before giving up counting.
+ *
+ * The number is only ever shown, and "more than twenty" and "eighty" call for
+ * the same response, so there's no reason to walk a long history to tell them
+ * apart.
+ */
+const MaxStrandedCommits = 20
+
+/**
+ * The ref to measure a shared branch by: its remote counterpart when it has one.
+ *
+ * A remote branch is already the remote. A local one is only as current as the
+ * last pull, and every question here is about what everyone has rather than what
+ * this working copy happens to hold.
+ */
+function remotePreferredRef(branch: Branch): string {
+  return branch.upstream ?? branch.name
+}
+
+/**
+ * Names the first couple of stranded commits, so the warning points somewhere
+ * rather than just asserting a number.
+ */
+function describeStranded(commits: ReadonlyArray<Commit>): string {
+  const named = commits
+    .slice(0, 2)
+    .map(c => `${c.shortSha} ${c.summary}`)
+    .join(', ')
+
+  return named.length === 0 ? '' : ` — ${named}`
 }
 
 function summarise(checks: ReadonlyArray<IPreflightCheck>): IPreflightResult {
@@ -260,9 +294,16 @@ export async function preflightFinishRelease(
   provider: IRepositoryProvider,
   release: IReleaseBranchState,
   productionBranch: Branch,
-  integrationName: string,
+
+  /**
+   * The resolved integration branch, not just its name — the back-merge check
+   * below reads a commit range against it, and a name won't resolve when
+   * integration is remote-only.
+   */
+  integrationBranch: Branch,
   missingWorkItemCount: number
 ): Promise<IPreflightResult> {
+  const integrationName = integrationBranch.nameWithoutRemote
   const checks: Array<IPreflightCheck> = []
   const productionName = productionBranch.nameWithoutRemote
 
@@ -313,6 +354,56 @@ export async function preflightFinishRelease(
       blocking: true,
     })
   }
+
+  // Whether the back-merge after this will be the no-op it is supposed to be.
+  //
+  // Finishing a release merges it into production and merges it back into
+  // integration, which leaves integration holding everything the release had. The
+  // remaining question is the other direction: does production hold anything
+  // integration doesn't? It shouldn't. Everything reaches production *through* a
+  // release, and every release goes back into integration.
+  //
+  // When it isn't empty, something was committed straight onto production — a
+  // hotfix applied under pressure and never carried back is the usual story — and
+  // that work is missing from integration and from every release cut after it. It
+  // will stay missing, silently, because nothing else looks.
+  //
+  // Merge commits are excluded deliberately. Production always carries merge
+  // commits integration lacks, including the one this very release is about to
+  // create, so counting them would make this warn every single time and mean
+  // nothing. What matters is whether real work is stranded.
+  // Both sides read from the remote where there is one. This is a question about
+  // what the team actually has, and a local branch that hasn't been pulled in a
+  // while answers it wrongly: NimbleObt reported 40 stranded commits against its
+  // local develop, 63 behind at the time, against 18 measured on the remote. The
+  // other 22 were pushed long ago.
+  const productionOnly = await provider.getCommitRange(
+    remotePreferredRef(integrationBranch),
+    remotePreferredRef(productionBranch),
+    MaxStrandedCommits
+  )
+
+  const stranded = productionOnly.filter(c => !c.isMergeCommit)
+
+  checks.push({
+    id: 'production-merged-back',
+    label: `${productionName} is contained in ${integrationName}`,
+    status: stranded.length === 0 ? 'pass' : 'warn',
+    detail:
+      stranded.length === 0
+        ? undefined
+        : `${stranded.length} ${
+            stranded.length === 1 ? 'commit is' : 'commits are'
+          } on ${productionName} but not on ${integrationName}` +
+          `${describeStranded(
+            stranded
+          )}. Merging ${productionName} back into ` +
+          `${integrationName} should change nothing; here it would bring work ` +
+          `across, so that work is missing from ${integrationName} and from every ` +
+          `release cut since. Shipping this release is still safe — the gap is ` +
+          `in ${integrationName}, not here.`,
+    blocking: false,
+  })
 
   const tags = await provider.getAllTagNames()
   const tagExists = tags.has(release.version.raw)

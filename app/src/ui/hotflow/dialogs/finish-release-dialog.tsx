@@ -81,8 +81,13 @@ export class FinishReleaseDialog extends React.Component<
     const { repository, hotFlowState, missingWorkItemCount } = this.props
     const release = hotFlowState.currentRelease
     const productionBranch = hotFlowState.productionBranch
+    const integrationBranch = hotFlowState.integrationBranch
 
-    if (release === null || productionBranch === null) {
+    if (
+      release === null ||
+      productionBranch === null ||
+      integrationBranch === null
+    ) {
       this.setState({ isChecking: false })
       return
     }
@@ -91,7 +96,7 @@ export class FinishReleaseDialog extends React.Component<
       new GitRepositoryProvider(repository),
       release,
       productionBranch,
-      hotFlowState.integrationBranchName,
+      integrationBranch,
       missingWorkItemCount
     )
 
