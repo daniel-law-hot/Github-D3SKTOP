@@ -77,6 +77,21 @@ export class FinishReleaseDialog extends React.Component<
     return this.props.hotFlowState.productionBranchName
   }
 
+  /**
+   * Whether the pre-flight found work stranded on production.
+   *
+   * Read back off the check rather than kept as its own state, so the extra step
+   * shown in the preview and the one the release actually runs are decided by the
+   * same answer. Invisible when there's nothing stranded, which is the ordinary
+   * case — a step that would do nothing has no business being advertised as part
+   * of shipping.
+   */
+  private get hasStrandedCommits(): boolean {
+    return this.state.checks.some(
+      c => c.id === 'production-merged-back' && c.status === 'warn'
+    )
+  }
+
   private async runChecks() {
     const { repository, hotFlowState, missingWorkItemCount } = this.props
     const release = hotFlowState.currentRelease
@@ -241,7 +256,8 @@ export class FinishReleaseDialog extends React.Component<
               release,
               this.productionName,
               this.integrationName,
-              this.state.mergeBack
+              this.state.mergeBack,
+              this.hasStrandedCommits
             )}
           />
         </DialogContent>

@@ -407,6 +407,7 @@ import {
   loadReleaseHistoryContents,
 } from '../hotflow/detect'
 import { readRefSignature } from '../hotflow/ref-signature'
+import { findCommitsStrandedOnProduction } from '../hotflow/actions'
 import { loadFeatureBranchConflicts } from '../hotflow/mergeability'
 import { GitRepositoryProvider } from '../hotflow/git-repository-provider'
 import { fetchPullRequestApprovals } from '../hotflow/pull-request-approvals'
@@ -4757,6 +4758,60 @@ export class AppStore extends TypedBaseStore<IAppState> {
         }
 
         await this._push(repository)
+      }
+
+      // 6. Carry anything stranded on production back too.
+      //
+      //    Step 5 brings the release across, which is what integration is missing
+      //    in the ordinary case. What it doesn't touch is work committed straight
+      //    onto production — a hotfix applied under pressure and never carried
+      //    back — which is missing from integration and from every release cut
+      //    since, and stays missing because nothing looks.
+      //
+      //    Deliberately not nested inside step 5: that one is off by default
+      //    unless the release has commits of its own, and stranded work on
+      //    production has nothing to do with whether it does. Reads the
+      //    integration branch from state rather than from `mergeBackInto`, which
+      //    is null exactly when step 5 was declined.
+      //
+      //    Only when there is something to carry, so this is invisible in the
+      //    ordinary case: merging production into integration for the sake of it
+      //    would put an empty merge commit into the history of every release. The
+      //    same check the dialog warned with, so what runs is what was shown.
+      const { integrationBranch } =
+        this.repositoryStateCache.get(repository).hotFlowState
+
+      if (integrationBranch !== null) {
+        const stranded = await findCommitsStrandedOnProduction(
+          new GitRepositoryProvider(repository),
+          integrationBranch,
+          productionBranch
+        )
+
+        if (stranded.length > 0) {
+          await this._checkoutBranch(repository, integrationBranch)
+          await this._pull(repository)
+
+          const catchUp = await gitStore.merge(productionBranch)
+
+          if (catchUp !== MergeResult.Success) {
+            this.emitError(
+              new Error(
+                `Released ${version} successfully, but merging ${productionBranch.name} ` +
+                  `back into ${integrationBranch.nameWithoutRemote} did not complete. ` +
+                  `${stranded.length} ${
+                    stranded.length === 1 ? 'commit is' : 'commits are'
+                  } on ${productionBranch.name} and not on ` +
+                  `${integrationBranch.nameWithoutRemote}; resolve the merge to bring ` +
+                  `them across.`
+              )
+            )
+            await this._refreshRepository(repository)
+            return
+          }
+
+          await this._push(repository)
+        }
       }
     } catch (e) {
       log.error('[AppStore] HotFlow could not finish the release', e)

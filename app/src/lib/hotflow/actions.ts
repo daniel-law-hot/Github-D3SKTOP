@@ -285,6 +285,44 @@ export async function preflightUpdateRelease(
 }
 
 /**
+ * Commits sitting on production that the integration branch hasn't got.
+ *
+ * Should always be empty. Everything reaches production through a release, and
+ * every release goes back into integration, so integration already holds it —
+ * which is why merging production back into integration is expected to change
+ * nothing. When this isn't empty, something was committed straight onto
+ * production and never carried back, and it is missing from integration and from
+ * every release cut since.
+ *
+ * Merge commits are excluded, and that is what makes this usable rather than
+ * noise. Production always carries merge commits integration lacks — including
+ * the one a release is about to create — so counting them would report a problem
+ * on every release and mean nothing. AmadeusWebApi is exactly that shape: one
+ * commit ahead, none once merges are dropped.
+ *
+ * Both sides are read from the remote where there is one, because the question is
+ * what the team has rather than what this working copy last pulled. NimbleObt
+ * reported 40 against its local develop, 63 behind at the time, and 18 against
+ * origin/develop; the other 22 had been pushed long ago.
+ *
+ * Shared by the pre-flight warning and by the repair step that follows a release,
+ * so the two cannot disagree about whether there is anything to repair.
+ */
+export async function findCommitsStrandedOnProduction(
+  provider: IRepositoryProvider,
+  integrationBranch: Branch,
+  productionBranch: Branch
+): Promise<ReadonlyArray<Commit>> {
+  const productionOnly = await provider.getCommitRange(
+    remotePreferredRef(integrationBranch),
+    remotePreferredRef(productionBranch),
+    MaxStrandedCommits
+  )
+
+  return productionOnly.filter(c => !c.isMergeCommit)
+}
+
+/**
  * Checks for the one action that writes to production.
  *
  * This is deliberately the strictest set in HotFlow: it merges into the
@@ -372,18 +410,11 @@ export async function preflightFinishRelease(
   // commits integration lacks, including the one this very release is about to
   // create, so counting them would make this warn every single time and mean
   // nothing. What matters is whether real work is stranded.
-  // Both sides read from the remote where there is one. This is a question about
-  // what the team actually has, and a local branch that hasn't been pulled in a
-  // while answers it wrongly: NimbleObt reported 40 stranded commits against its
-  // local develop, 63 behind at the time, against 18 measured on the remote. The
-  // other 22 were pushed long ago.
-  const productionOnly = await provider.getCommitRange(
-    remotePreferredRef(integrationBranch),
-    remotePreferredRef(productionBranch),
-    MaxStrandedCommits
+  const stranded = await findCommitsStrandedOnProduction(
+    provider,
+    integrationBranch,
+    productionBranch
   )
-
-  const stranded = productionOnly.filter(c => !c.isMergeCommit)
 
   checks.push({
     id: 'production-merged-back',
@@ -453,7 +484,15 @@ export function describeFinishReleaseCommands(
   release: IReleaseBranchState,
   productionName: string,
   integrationName: string,
-  mergeBackIntoIntegration: boolean
+  mergeBackIntoIntegration: boolean,
+
+  /**
+   * Whether production holds work integration doesn't, so the repair step runs.
+   *
+   * Absent from the preview when there is nothing stranded, which is the ordinary
+   * case — a step that does nothing shouldn't be advertised as part of shipping.
+   */
+  catchIntegrationUp: boolean = false
 ): ReadonlyArray<string> {
   const releaseRef = release.branch.nameWithoutRemote
   const version = release.version.raw
@@ -470,6 +509,16 @@ export function describeFinishReleaseCommands(
     commands.push(
       `git checkout ${integrationName}`,
       `git merge ${releaseRef}`,
+      `git push origin ${integrationName}`
+    )
+  }
+
+  if (catchIntegrationUp) {
+    // Already on the integration branch by this point when the back-merge ran;
+    // the checkout is repeated for the case where it didn't.
+    commands.push(
+      `git checkout ${integrationName}`,
+      `git merge ${productionName}`,
       `git push origin ${integrationName}`
     )
   }
