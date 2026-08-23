@@ -22,7 +22,7 @@ import {
   parseReleaseBranchName,
 } from './branch-patterns'
 import { resolveReleaseSequence } from './release-sequence'
-import { pickCurrentRelease } from './pick-release'
+import { isShipped, pickCurrentRelease } from './pick-release'
 import { IRepositoryProvider } from './repository-provider'
 import {
   compareReleaseVersions,
@@ -146,6 +146,10 @@ export async function detectHotFlowState(
     checkedOutBranchNamePromise,
   ])
 
+  // What has actually gone out, by version. Both choosing the current release and
+  // judging each one's verdict rest on this, and they must not disagree.
+  const shippedVersions = releaseHistory.map(h => h.version)
+
   const { current: currentCandidate, others: otherCandidates } =
     pickCurrentRelease(
       // `nameWithoutRemote`, because that's the form HEAD reports — a local
@@ -154,7 +158,7 @@ export async function detectHotFlowState(
         ...c,
         branchName: c.branch.nameWithoutRemote,
       })),
-      releaseHistory.map(h => h.version),
+      shippedVersions,
       checkedOutBranchName
     )
 
@@ -170,7 +174,8 @@ export async function detectHotFlowState(
           currentCandidate,
           integrationRef,
           productionRef,
-          sequenceOverrides
+          sequenceOverrides,
+          shippedVersions
         ),
 
     // Other open releases get the same treatment but without loading their commit
@@ -183,6 +188,7 @@ export async function detectHotFlowState(
           integrationRef,
           productionRef,
           sequenceOverrides,
+          shippedVersions,
           false
         )
       )
@@ -392,6 +398,9 @@ async function buildReleaseState(
   integrationRef: string,
   productionRef: string,
   sequenceOverrides: ReadonlyMap<string, number | null> | undefined,
+
+  /** Versions tagged on production, for deciding whether this one has shipped. */
+  shippedVersions: ReadonlyArray<IReleaseVersion>,
   loadCommits: boolean = true
 ): Promise<IReleaseBranchState> {
   const releaseRef = candidate.branch.name
@@ -447,19 +456,43 @@ async function buildReleaseState(
     behindIntegration,
     vsoNumbers,
     contributorCount,
-    verdict: computeVerdict(aheadOfProduction, behindIntegration),
+    verdict: computeVerdict(
+      isShipped(
+        {
+          version: candidate.version,
+          isMergedIntoProduction: candidate.isMergedIntoProduction,
+          branchName: candidate.branch.nameWithoutRemote,
+        },
+        shippedVersions
+      ),
+      behindIntegration
+    ),
   }
 }
 
 /**
  * The git-only verdict. The view upgrades `ready` to `needs-update` once ADO
  * reconciliation reveals missing work items — that can't be known from git.
+ *
+ * This used to read `aheadOfProduction === 0` as shipped, which is the same
+ * mistake as reading "contains nothing new" as "already done" — and it did real
+ * damage. Cutting a release while develop held nothing unreleased produced a
+ * branch level with main, so it was called shipped the moment it was created.
+ * Worse, it stayed shipped: the emptiness check short-circuited before the behind
+ * check, so once develop moved on, the release was simultaneously "shipped" and
+ * behind, and Update from develop was disabled exactly when it was needed.
+ * NezasaWebApi's `release/1.2026.19` was in that state with no 1.2026.19 tag
+ * anywhere.
+ *
+ * `isShipped` is the same test the open-release list uses, so both now agree on
+ * what shipping means: a tag settles it, and containment only counts when the
+ * release isn't numbered above everything that has ever gone out.
  */
 function computeVerdict(
-  aheadOfProduction: number,
+  hasShipped: boolean,
   behindIntegration: number
 ): ReleaseVerdict {
-  if (aheadOfProduction === 0) {
+  if (hasShipped) {
     return 'shipped'
   }
 
