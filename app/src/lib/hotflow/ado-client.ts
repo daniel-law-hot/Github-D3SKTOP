@@ -2,6 +2,7 @@ import { IWorkItem } from '../../models/hotflow'
 import { parseReleaseSequence } from './release-sequence'
 import {
   AdoCredential,
+  getAdoCredential,
   getAuthorizationHeader,
   invalidateCachedBearer,
 } from './ado-auth'
@@ -67,7 +68,44 @@ export function clearAdoCache(): void {
   workItemCache.clear()
 }
 
+/**
+ * One request, with one retry on a different credential.
+ *
+ * The retry exists because the first credential can be one this organisation
+ * will never accept: an Azure CLI bearer token gets a sign-in page rather than
+ * data, and refusing it teaches `getAdoCredential` to reach for the personal
+ * access token instead. Re-resolving after the refusal turns what used to be an
+ * empty work item list into a working one, with nothing for anyone to do.
+ *
+ * Only the auth failures retry, and only once — a rejected personal access token
+ * re-resolves to itself, so there is nothing to gain from going round again.
+ */
 async function postJson<T>(
+  url: string,
+  body: unknown,
+  credential: AdoCredential,
+  organisation: string
+): Promise<T> {
+  try {
+    return await postJsonOnce<T>(url, body, credential)
+  } catch (e) {
+    if (!(e instanceof AdoError) || !e.isAuthFailure) {
+      throw e
+    }
+
+    // `invalidateCachedBearer` has already run by here, so this resolves past
+    // the refused bearer rather than re-minting it.
+    const replacement = await getAdoCredential(organisation)
+
+    if (replacement === null || replacement.token === credential.token) {
+      throw e
+    }
+
+    return await postJsonOnce<T>(url, body, replacement)
+  }
+}
+
+async function postJsonOnce<T>(
   url: string,
   body: unknown,
   credential: AdoCredential
@@ -187,7 +225,12 @@ export async function getWorkItemIdsForReleaseSequence(
     `WHERE [System.TeamProject] = '${config.project.replace(/'/g, "''")}' ` +
     `AND [${ReleaseSequenceField}] = ${sequence}`
 
-  const response = await postJson<IWiqlResponse>(url, { query }, credential)
+  const response = await postJson<IWiqlResponse>(
+    url,
+    { query },
+    credential,
+    config.organisation
+  )
 
   const ids = (response.workItems ?? []).map(w => w.id)
 
@@ -300,7 +343,8 @@ export async function getWorkItems(
     const response = await postJson<IWorkItemsBatchResponse>(
       url,
       { ids: chunk, fields, errorPolicy: 'omit' },
-      credential
+      credential,
+      config.organisation
     )
 
     for (const item of response.value ?? []) {
@@ -361,6 +405,7 @@ export async function testAdoConnection(
   await postJson<IWiqlResponse>(
     url,
     { query: 'SELECT [System.Id] FROM WorkItems' },
-    credential
+    credential,
+    config.organisation
   )
 }

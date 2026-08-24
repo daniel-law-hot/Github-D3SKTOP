@@ -140,10 +140,15 @@ export async function deleteStoredPat(organisation: string): Promise<void> {
 export async function getAdoCredential(
   organisation: string
 ): Promise<AdoCredential | null> {
-  const bearer = await getAzBearerToken()
+  // Skipped once refused: see `invalidateCachedBearer`. Without this a bearer the
+  // organisation will not accept is returned forever in preference to a personal
+  // access token that would have worked.
+  if (!bearerRefused) {
+    const bearer = await getAzBearerToken()
 
-  if (bearer !== null) {
-    return { kind: 'bearer', token: bearer }
+    if (bearer !== null) {
+      return { kind: 'bearer', token: bearer }
+    }
   }
 
   const pat = await getStoredPat(organisation)
@@ -155,7 +160,32 @@ export async function getAdoCredential(
   return null
 }
 
-/** Clears the in-memory bearer cache. Used after an auth failure. */
+/**
+ * Whether this Azure DevOps instance has refused an Azure CLI bearer token.
+ *
+ * Module-level rather than per-organisation because an app talks to one, and
+ * threading the organisation down to where the refusal is noticed would be
+ * plumbing for a case that doesn't arise.
+ */
+let bearerRefused = false
+
+/**
+ * Clears the in-memory bearer cache, and stops preferring one at all.
+ *
+ * Called when Azure DevOps rejects a credential. Clearing the cache alone was
+ * not enough: the next resolution simply minted the same token from the same CLI
+ * login and got refused again, so a bearer the organisation will never accept
+ * permanently shadowed a personal access token that works.
+ *
+ * That is exactly what stopped the standalone app showing any work items, while
+ * the Desktop fork appeared fine — launched from Explorer it cannot resolve `az`
+ * at all, so it fell through to the token in the credential vault by luck rather
+ * than by design. Run it from a terminal and it would have broken the same way.
+ *
+ * Not persisted. A refusal can be a misconfiguration someone then fixes, and
+ * remembering it across restarts would hide the fix.
+ */
 export function invalidateCachedBearer(): void {
   cachedBearer = null
+  bearerRefused = true
 }
