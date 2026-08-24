@@ -11,10 +11,14 @@ import { Commit } from '../../models/commit'
  * picture is entirely derivable from a remote, and requiring forty-odd clones to
  * look at it is a cost with nothing to show for it.
  *
- * So the reads live behind this. Two implementations satisfy it — one over
- * dugite for Desktop, one over the GitHub API for the standalone app — and
- * `detect.ts` cannot tell which it has. Every method here is a read; nothing in
- * this interface writes.
+ * So the reads live behind this. `git-repository-provider.ts` is the only
+ * implementation in this repository, over dugite; the standalone HotFlow app has
+ * its own over the GitHub API, in its own repository, against its own copy of
+ * this interface. Every method here is a read; nothing in this interface writes.
+ *
+ * Which means the seam earns its keep here for one reason rather than two: it
+ * keeps `detect.ts` testable and free of dugite, and it is the shape the other
+ * repository's copy has to match when logic is ported between them.
  *
  * The methods are deliberately bulk-shaped where the git implementation can
  * answer many things in one process. `getMergedBranches` takes a list rather
