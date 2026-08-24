@@ -66,6 +66,7 @@ import {
   EditReleaseSequenceDialog,
   FinishReleaseDialog,
   MergePullRequestDialog,
+  AssignSequenceDialog,
   StartFeatureDialog,
   StartReleaseDialog,
   UpdateReleaseDialog,
@@ -2920,6 +2921,23 @@ export class App extends React.Component<IAppProps, IAppState> {
             dispatcher={this.props.dispatcher}
             hotFlowState={state.hotFlowState}
             allBranches={state.branchesState.allBranches}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.HotFlowAssignSequence: {
+        const state = this.getHotFlowPopupState(popup.repository)
+
+        if (state === null) {
+          return null
+        }
+
+        return (
+          <AssignSequenceDialog
+            key="hotflow-assign-sequence"
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            hotFlowState={state.hotFlowState}
             onDismissed={onPopupDismissedFn}
           />
         )

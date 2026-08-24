@@ -1,6 +1,7 @@
 import * as React from 'react'
 import {
   IHotFlowState,
+  IReconciliation,
   IResolvedBranch,
   IReleaseBranchState,
   IShippedRelease,
@@ -16,17 +17,20 @@ import classNames from 'classnames'
 interface IReleaseSummaryProps {
   readonly hotFlowState: IHotFlowState
   readonly release: IReleaseBranchState
-  readonly missingWorkItemCount: number
+
+  /**
+   * The whole reconciliation rather than one count from it, because the panel now
+   * shows three of its numbers and the button acts on a fourth. Deriving them
+   * separately is how they'd drift apart.
+   */
+  readonly reconciliation: IReconciliation
+
   readonly onEditReleaseSequence: () => void
   readonly onViewRelease: (release: IReleaseBranchState) => void
   readonly onEditBranches: () => void
 
-  /**
-   * True when Azure DevOps answered but nothing is assigned to this release's
-   * sequence number. False when ADO is unavailable — that's not knowing rather
-   * than knowing there's nothing.
-   */
-  readonly noSequenceMatches: boolean
+  /** Assigns this release's sequence to the merged-but-unassigned work items. */
+  readonly onAssignReleaseSequence: () => void
 
   /** The shipped release being inspected, so its row reads as selected. */
   readonly selectedHistoryTag: string | null
@@ -53,6 +57,7 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
         {this.renderThisRelease()}
         <div className="hotflow-summary-rule" />
         {this.renderPosition()}
+        {this.renderAssignmentResult()}
         {this.renderOtherReleases()}
         <div className="hotflow-summary-rule" />
         {this.renderHistory()}
@@ -152,7 +157,8 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
    * number itself is what would need changing — so the mark belongs next to it too.
    */
   private renderReleaseSequence() {
-    const { release, noSequenceMatches } = this.props
+    const { release } = this.props
+    const { noSequenceMatches } = this.props.reconciliation
 
     if (release.releaseSequence === null) {
       // "none" rather than "unknown": this is now reachable two ways — a version
@@ -198,9 +204,25 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
     )
   }
 
+  /**
+   * The numbers this release is judged on.
+   *
+   * Two about commits and four about work items, in that order, because the
+   * commit counts say whether the branch is where it should be and the work item
+   * counts say whether what's on it is what was planned. The two below "Work
+   * items" are the ways that can be wrong, so they read as exceptions to the
+   * number above them rather than as unrelated figures.
+   *
+   * Unlike the commit counts, the work item rows are only meaningful when Azure
+   * DevOps answered — a zero from a failed read looks exactly like a clean
+   * release — so they're shown as an em dash when it didn't.
+   */
   private renderPosition() {
-    const { release, missingWorkItemCount } = this.props
+    const { release, reconciliation } = this.props
     const isBehind = release.behindIntegration > 0
+    const adoAnswered = this.props.hotFlowState.ado.status === 'ok'
+
+    const { missingCount, untaggedCount } = reconciliation
 
     return (
       <dl className="hotflow-dl">
@@ -219,31 +241,134 @@ export class ReleaseSummary extends React.Component<IReleaseSummaryProps> {
             : '0'}
         </dd>
 
-        {missingWorkItemCount > 0 && (
-          <>
-            <dt>Not yet merged</dt>
-            <dd className="num warn">
-              {missingWorkItemCount} work{' '}
-              {missingWorkItemCount === 1 ? 'item' : 'items'}
-            </dd>
-          </>
-        )}
+        {/* What git found in `main..release`, which is the one figure here that
+            doesn't depend on Azure DevOps answering. */}
+        <dt>Work items</dt>
+        <dd className="num">{release.vsoNumbers.length}</dd>
 
-        {release.releaseOnlyCommits.length > 0 && (
-          <>
-            <dt>Release-only commits</dt>
-            <dd
-              className="num warn"
-              title={`${release.releaseOnlyCommits.length} commits exist only on this branch and would be orphaned on ${this.productionName} unless merged back into ${this.integrationName}`}
-            >
-              {release.releaseOnlyCommits.length}
-            </dd>
-          </>
-        )}
+        <dt>Not yet merged</dt>
+        <dd
+          className={classNames('num', {
+            warn: missingCount > 0,
+            dim: !adoAnswered,
+          })}
+        >
+          {adoAnswered ? missingCount : '—'}
+        </dd>
 
+        <dt>Merges unassigned</dt>
+        <dd
+          className={classNames('num', {
+            warn: untaggedCount > 0,
+            dim: !adoAnswered,
+          })}
+        >
+          {adoAnswered ? this.renderUnassigned(untaggedCount) : '—'}
+        </dd>
+
+        {/* Release-only commits used to sit here, and read as a second name for
+            "Not yet merged" — two figures that can coincide but mean unrelated
+            things. Finishing the release is where it matters and where it is now
+            said: the merge-back step counts them and offers to fix it. */}
         <dt>Contributors</dt>
         <dd className="num">{release.contributorCount}</dd>
       </dl>
+    )
+  }
+
+  /**
+   * The count, as the thing that fixes it.
+   *
+   * The number *is* the control rather than sitting beside one: what would change
+   * is exactly what you clicked, which is the clearest possible account of a bulk
+   * edit to a shared system. It also keeps the column of right-aligned figures
+   * intact, which a button on one row never quite did.
+   *
+   * Plain text at zero, and plain text with no sequence to assign — a link that
+   * does nothing is worse than no link, and a release that has opted out of the
+   * cycle has nothing to assign by definition.
+   */
+  private renderUnassigned(untaggedCount: number) {
+    const { release, hotFlowState } = this.props
+
+    if (hotFlowState.sequenceAssignment?.isRunning === true) {
+      return (
+        <span className="hotflow-summary-assigning">
+          <Octicon symbol={octicons.sync} className="spin" />
+          {untaggedCount}
+        </span>
+      )
+    }
+
+    if (untaggedCount === 0 || release.releaseSequence === null) {
+      return untaggedCount
+    }
+
+    return (
+      <TooltippedContent
+        className="hotflow-summary-assign-tip"
+        tooltip="Assign missing sequence number"
+        direction={TooltipDirection.SOUTH}
+      >
+        <LinkButton
+          className="hotflow-summary-assign num"
+          onClick={this.props.onAssignReleaseSequence}
+        >
+          {untaggedCount}
+        </LinkButton>
+      </TooltippedContent>
+    )
+  }
+
+  /**
+   * What the last assignment did, when it did anything worth saying.
+   *
+   * Silent on a clean run: the numbers above it have already changed, which is
+   * the report. It speaks up for the two cases the numbers can't show — a work
+   * item left alone because it belongs to another release, and one Azure DevOps
+   * refused — because both look identical to never having pressed the button.
+   */
+  private renderAssignmentResult() {
+    const assignment = this.props.hotFlowState.sequenceAssignment
+
+    if (assignment === null || assignment.isRunning) {
+      return null
+    }
+
+    const { conflicts, failures, errorMessage } = assignment
+
+    if (errorMessage !== null) {
+      return <div className="hotflow-summary-note warn">{errorMessage}</div>
+    }
+
+    if (conflicts.length === 0 && failures.length === 0) {
+      return null
+    }
+
+    return (
+      <div className="hotflow-summary-note warn">
+        {conflicts.length > 0 && (
+          <div>
+            {conflicts.length === 1
+              ? `${conflicts[0].id} is assigned to ${conflicts[0].existingSequence} and was left alone.`
+              : `${conflicts.length} work items are assigned to another release and were left alone.`}
+          </div>
+        )}
+        {failures.length > 0 && (
+          <div>
+            {failures.length === 1
+              ? `${failures[0].id} could not be assigned. `
+              : `${failures.length} work items could not be assigned — ` +
+                `${failures.map(f => f.id).join(', ')}. `}
+
+            {/* The reason, not a pointer to one. Azure DevOps refuses a whole
+                batch for one reason far more often than for four different ones,
+                so the first message is almost always the message — and "see the
+                log" is no help at all when the reason is a token's scope. */}
+            {failures[0].error}
+          </div>
+        )}
+      </div>
     )
   }
 

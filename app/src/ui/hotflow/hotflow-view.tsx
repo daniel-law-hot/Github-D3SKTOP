@@ -681,7 +681,7 @@ export class HotFlowView extends React.Component<
           onHeightChanged={this.onBandHeightChanged}
           onReset={this.onBandHeightReset}
         />
-        {this.renderReleaseBody(release, missingWorkItemCount)}
+        {this.renderReleaseBody(release)}
       </>
     )
   }
@@ -828,10 +828,7 @@ export class HotFlowView extends React.Component<
     )
   }
 
-  private renderReleaseBody(
-    release: IReleaseBranchState,
-    missingWorkItemCount: number
-  ) {
+  private renderReleaseBody(release: IReleaseBranchState) {
     return (
       <div className="hotflow-body">
         <ReleaseContents
@@ -854,11 +851,11 @@ export class HotFlowView extends React.Component<
         <ReleaseSummary
           hotFlowState={this.props.hotFlowState}
           release={release}
-          missingWorkItemCount={missingWorkItemCount}
+          reconciliation={this.getReconciliation(release)}
           onEditReleaseSequence={this.onEditReleaseSequence}
           onViewRelease={this.onViewRelease}
           onEditBranches={this.onEditBranches}
-          noSequenceMatches={this.getReconciliation(release).noSequenceMatches}
+          onAssignReleaseSequence={this.onAssignReleaseSequence}
           selectedHistoryTag={this.state.selectedHistoryTag}
           onSelectHistoryRelease={this.onSelectHistoryRelease}
         />
@@ -975,6 +972,13 @@ export class HotFlowView extends React.Component<
   private onFinishRelease = () => {
     this.props.dispatcher.showPopup({
       type: PopupType.HotFlowFinishRelease,
+      repository: this.props.repository,
+    })
+  }
+
+  private onAssignReleaseSequence = () => {
+    this.props.dispatcher.showPopup({
+      type: PopupType.HotFlowAssignSequence,
       repository: this.props.repository,
     })
   }

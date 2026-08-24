@@ -1388,6 +1388,61 @@ body.theme-dark {
   }
 }
 
+/*
+ * The count that fixes itself.
+ *
+ * Styled as a link rather than given one beside it, so the figure stays in the
+ * column of right-aligned numbers and the thing you click is the thing that
+ * changes. Inherits the row's colour — including the warn amber — because the
+ * number's job is still to report, and turning it link-blue would lose that.
+ */
+.hotflow-summary-assign {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+
+  &:hover,
+  &:focus {
+    text-decoration-style: solid;
+  }
+}
+
+.hotflow-summary-assign-tip {
+  display: inline;
+}
+
+.hotflow-summary-assigning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+  color: var(--text-secondary-color);
+  font-weight: 400;
+}
+
+/*
+ * What the assignment couldn't do.
+ *
+ * Only ever the exceptions — a clean run says nothing, because the figures above
+ * have already changed to show it.
+ */
+.hotflow-summary-note {
+  margin-top: var(--spacing-half);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  color: var(--text-secondary-color);
+
+  &.warn {
+    color: var(--hotflow-warn-color);
+  }
+
+  > div + div {
+    margin-top: 2px;
+  }
+}
+
 .hotflow-sequence {
   display: inline-flex;
   align-items: center;
