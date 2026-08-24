@@ -16,17 +16,58 @@ import * as Path from 'path'
  */
 
 /** The thumbprint to sign with, or undefined when signing is off. */
+/**
+ * The newest usable code-signing certificate in the personal store.
+ *
+ * Exists because the environment variable alone made signing silently
+ * conditional on how the build was launched: a shell that had it set produced
+ * signed installers, and one that didn't produced unsigned ones that said
+ * nothing about it. 1.2026.19 was built that way and had to be redone.
+ *
+ * Newest expiry wins, so renewing a certificate is enough to start using it.
+ */
+function findCertificateInStore(): string | undefined {
+  const script = [
+    // Forward slashes: PowerShell takes them for provider paths, and they
+    // survive being written through a build script without escaping.
+    'Get-ChildItem Cert:/CurrentUser/My |',
+    'Where-Object { $_.HasPrivateKey -and',
+    "$_.EnhancedKeyUsageList.FriendlyName -contains 'Code Signing' -and",
+    '$_.NotAfter -gt (Get-Date) } |',
+    'Sort-Object NotAfter -Descending |',
+    'Select-Object -First 1 -ExpandProperty Thumbprint',
+  ].join(' ')
+
+  try {
+    const found = execFileSync(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', script],
+      { encoding: 'utf8' }
+    )
+      .trim()
+      .replace(/[^0-9a-fA-F]/g, '')
+
+    return found.length === 0 ? undefined : found
+  } catch {
+    // No PowerShell, no store, no certificate — all the same answer here.
+    return undefined
+  }
+}
+
+/** The thumbprint to sign with, or undefined when signing is off. */
 export function getSigningThumbprint(): string | undefined {
   // Copied out of the certificate dialog, the thumbprint arrives full of spaces
   // and sometimes a leading zero-width mark; signtool wants neither.
-  const thumbprint = process.env.WINDOWS_CODE_SIGNING_THUMBPRINT?.replace(
-    /[^0-9a-fA-F]/g,
-    ''
-  )
+  const configured = process.env.WINDOWS_CODE_SIGNING_THUMBPRINT
 
-  return thumbprint === undefined || thumbprint.length === 0
-    ? undefined
-    : thumbprint
+  if (configured !== undefined) {
+    const cleaned = configured.replace(/[^0-9a-fA-F]/g, '')
+
+    // Set but empty is a deliberate "don't sign this one".
+    return cleaned.length === 0 ? undefined : cleaned
+  }
+
+  return findCertificateInStore()
 }
 
 /**
