@@ -454,6 +454,20 @@ export class Dispatcher {
     )
   }
 
+  /**
+   * Assign this release's sequence number to every work item merged into it that
+   * hasn't got one.
+   *
+   * The only write HotFlow makes to Azure DevOps, so it is deliberately explicit:
+   * a button, on a number, doing the thing the number describes.
+   */
+  public assignReleaseSequenceToMerged(
+    repository: Repository,
+    overwrite: boolean = false
+  ): Promise<void> {
+    return this.appStore._assignReleaseSequenceToMerged(repository, overwrite)
+  }
+
   /** Store an Azure DevOps personal access token and reload work item detail. */
   public setAdoPat(repository: Repository, pat: string): Promise<void> {
     return this.appStore._setAdoPat(repository, pat)

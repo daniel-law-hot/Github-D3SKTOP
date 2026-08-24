@@ -406,6 +406,7 @@ import {
   detectHotFlowState,
   loadReleaseHistoryContents,
 } from '../hotflow/detect'
+import { extractVsoNumbers } from '../hotflow/branch-patterns'
 import { readRefSignature } from '../hotflow/ref-signature'
 import { findCommitsStrandedOnProduction } from '../hotflow/actions'
 import { loadFeatureBranchConflicts } from '../hotflow/mergeability'
@@ -427,6 +428,7 @@ import {
 } from '../hotflow/settings-store'
 import { getAdoCredential, setStoredPat } from '../hotflow/ado-auth'
 import {
+  assignReleaseSequence,
   clearAdoCache,
   defaultAdoConfig,
   getWorkItemIdsForReleaseSequence,
@@ -4486,6 +4488,258 @@ export class AppStore extends TypedBaseStore<IAppState> {
   }
 
   /**
+   * Turns a refused write into something worth reading.
+   *
+   * The overwhelmingly likely cause is a personal access token with Work Items
+   * (Read) and nothing more — every read HotFlow does works, so the credential
+   * looks fine right up to the first write. Azure DevOps answers that with a 401
+   * or 403 and a message about credentials, which is true and useless: nobody
+   * reading it would think to widen a token's scope.
+   */
+  private describeAssignmentFailureText(
+    error: string | null,
+    status: number | null
+  ): string {
+    const detail = error ?? 'Unknown error'
+
+    if (status === 401 || status === 403) {
+      return (
+        `${detail} A token that can read work items cannot necessarily write ` +
+        `them — this needs Work Items (Read & write).`
+      )
+    }
+
+    return detail
+  }
+
+  /**
+   * Which work items are in this release but not assigned to its sequence.
+   *
+   * Read from the same two lists the reconciliation compares, so the number the
+   * button acts on is the number shown beside it. An item assigned to a
+   * *different* sequence is in here too — it is not assigned to this release, and
+   * whether that is a mistake or someone else's plan is decided at write time.
+   */
+  private getUnassignedMergedWorkItems(
+    repository: Repository
+  ): ReadonlyArray<number> {
+    const { hotFlowState } = this.repositoryStateCache.get(repository)
+    const release = hotFlowState.currentRelease
+
+    if (release === null || release.releaseSequence === null) {
+      return []
+    }
+
+    const assigned = new Set(hotFlowState.ado.sequenceAssignedIds)
+
+    return release.vsoNumbers.filter(id => !assigned.has(id))
+  }
+
+  /**
+   * Assigns this release's sequence number to every work item merged into it that
+   * hasn't got one.
+   *
+   * The only write HotFlow makes to Azure DevOps. It exists because the field is
+   * how a release knows what belongs to it, and it is filled in by hand — so the
+   * reconciliation spends most of its time reporting bookkeeping rather than
+   * anything about the code. Setting it from what git already knows is strictly
+   * better information than a person copying numbers between two windows.
+   *
+   * A cleared sequence number means this repository has opted out of the cycle
+   * entirely, and there is no number to assign. That check is the guard the
+   * feature was asked for, and it is the same one that stops the assigned-but-not-
+   * merged reconciliation running.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _assignReleaseSequenceToMerged(
+    repository: Repository,
+
+    /** Reassign work items that already belong to a different release. */
+    overwrite: boolean = false
+  ): Promise<void> {
+    const { hotFlowState } = this.repositoryStateCache.get(repository)
+    const release = hotFlowState.currentRelease
+    const sequence = release?.releaseSequence?.value ?? null
+
+    const fail = (errorMessage: string) => {
+      this.repositoryStateCache.updateHotFlowState(repository, () => ({
+        sequenceAssignment: {
+          isRunning: false,
+          total: 0,
+          assigned: 0,
+          conflicts: [],
+          failures: [],
+          errorMessage,
+        },
+      }))
+      this.emitUpdate()
+    }
+
+    if (release === null || sequence === null) {
+      return fail(
+        'This release has no sequence number, so there is nothing to assign.'
+      )
+    }
+
+    const ids = this.getUnassignedMergedWorkItems(repository)
+
+    if (ids.length === 0) {
+      return fail('Every work item in this release is already assigned to it.')
+    }
+
+    const credential = await getAdoCredential(defaultAdoConfig.organisation)
+
+    if (credential === null) {
+      return fail(
+        'Connect to Azure DevOps before assigning release sequence numbers.'
+      )
+    }
+
+    this.repositoryStateCache.updateHotFlowState(repository, () => ({
+      sequenceAssignment: {
+        isRunning: true,
+        total: ids.length,
+        assigned: 0,
+        conflicts: [],
+        failures: [],
+        errorMessage: null,
+      },
+    }))
+    this.emitUpdate()
+
+    // What each item holds now, so an item already carrying another release's
+    // number is skipped rather than quietly moved into this one.
+    const current = new Map<number, number | null>(
+      ids.map(id => [
+        id,
+        hotFlowState.ado.workItems.get(id)?.releaseSequence ?? null,
+      ])
+    )
+
+    const results = await assignReleaseSequence(
+      defaultAdoConfig,
+      ids,
+      sequence,
+      credential,
+      current,
+      overwrite
+    )
+
+    const assigned = results.filter(r => r.outcome === 'assigned').length
+
+    this.repositoryStateCache.updateHotFlowState(repository, () => ({
+      sequenceAssignment: {
+        isRunning: false,
+        total: ids.length,
+        assigned,
+        conflicts: results
+          .filter(r => r.outcome === 'conflict')
+          .map(r => ({ id: r.id, existingSequence: r.existingSequence })),
+        failures: results
+          .filter(r => r.outcome === 'failed')
+          .map(r => ({
+            id: r.id,
+            error: this.describeAssignmentFailureText(r.error, r.status),
+          })),
+        errorMessage: null,
+      },
+    }))
+    this.emitUpdate()
+
+    log.info(
+      `[AppStore] HotFlow assigned release sequence ${sequence} to ${assigned} of ` +
+        `${ids.length} work items in ${repository.name}`
+    )
+
+    // Each failure, individually. The summary above says how many and the panel
+    // says what the first one was; this is the only place the rest of them exist,
+    // and the previous version pointed people at a log it never wrote to.
+    for (const result of results) {
+      if (result.outcome === 'failed') {
+        log.warn(
+          `[AppStore] HotFlow could not assign release sequence ${sequence} to work ` +
+            `item ${result.id} (status ${result.status ?? 'none'}): ${
+              result.error
+            }`
+        )
+      }
+    }
+
+    // The counts on screen are now stale in the direction of looking worse than
+    // reality, so re-read rather than leaving it to the next refresh.
+    if (assigned > 0) {
+      await this._refreshHotFlowWorkItems(repository)
+    }
+  }
+
+  /**
+   * Assigns the release sequence to work items HotFlow itself just merged in.
+   *
+   * The same write as the button, at the one moment HotFlow knows for certain
+   * that a work item has entered the flow — because it is what put it there. Only
+   * the items whose numbers this merge brought in, so a merge does not quietly
+   * become a bulk edit of everything already outstanding.
+   *
+   * Best-effort by design, and never awaited by the merge: the merge has already
+   * happened, and a work item field that did not get set is a thing the button
+   * beside "Merges unassigned" exists to finish. Failing the merge over it
+   * would be the wrong trade in both directions.
+   */
+  private async autoAssignReleaseSequence(
+    repository: Repository,
+    vsoNumbers: ReadonlyArray<number>
+  ): Promise<void> {
+    if (vsoNumbers.length === 0) {
+      return
+    }
+
+    const { hotFlowState } = this.repositoryStateCache.get(repository)
+    const sequence = hotFlowState.currentRelease?.releaseSequence?.value ?? null
+
+    // No sequence means the repository has opted out of the cycle, or the version
+    // carries no cycle to derive one from. Either way there is nothing to write.
+    if (sequence === null) {
+      return
+    }
+
+    const credential = await getAdoCredential(defaultAdoConfig.organisation)
+
+    if (credential === null) {
+      return
+    }
+
+    const current = new Map<number, number | null>(
+      vsoNumbers.map(id => [
+        id,
+        hotFlowState.ado.workItems.get(id)?.releaseSequence ?? null,
+      ])
+    )
+
+    const results = await assignReleaseSequence(
+      defaultAdoConfig,
+      vsoNumbers,
+      sequence,
+      credential,
+      current
+    )
+
+    for (const result of results) {
+      if (result.outcome === 'assigned') {
+        log.info(
+          `[AppStore] HotFlow assigned release sequence ${sequence} to work item ` +
+            `${result.id} after merging it`
+        )
+      } else if (result.outcome === 'failed') {
+        log.warn(
+          `[AppStore] HotFlow could not assign release sequence ${sequence} to work ` +
+            `item ${result.id}: ${result.error}`
+        )
+      }
+    }
+  }
+
+  /**
    * Loads approval counts for the open pull requests HotFlow is showing.
    *
    * Desktop fetches pull requests but not their reviews, so this is a separate
@@ -4594,6 +4848,28 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.catchUpAfterHotFlowMerge(repository).catch(e =>
       log.warn('[AppStore] could not catch up after merging a pull request', e)
     )
+
+    // The work item this merge just brought into the flow, told to Azure DevOps
+    // while we know which one it was. Read from the pull request's head ref
+    // because that is where the number lives — `feature/107715-something` — and
+    // the ref is about to stop existing.
+    const merged = this.repositoryStateCache
+      .get(repository)
+      .branchesState.openPullRequests.find(
+        pr => pr.pullRequestNumber === pullRequestNumber
+      )
+
+    if (merged !== undefined) {
+      this.autoAssignReleaseSequence(
+        repository,
+        extractVsoNumbers(merged.head.ref)
+      ).catch(e =>
+        log.warn(
+          '[AppStore] could not assign a release sequence after merging',
+          e
+        )
+      )
+    }
 
     // Meanwhile, what is knowable without the network: the pull request has
     // closed, and the branch it merged is no longer waiting on review.

@@ -68,6 +68,45 @@ export function clearAdoCache(): void {
   workItemCache.clear()
 }
 
+async function postJson<T>(
+  url: string,
+  body: unknown,
+  credential: AdoCredential,
+  organisation: string
+): Promise<T> {
+  return sendJson<T>(
+    url,
+    'POST',
+    'application/json',
+    body,
+    credential,
+    organisation
+  )
+}
+
+/**
+ * The one write this client makes, and the only place a JSON Patch is sent.
+ *
+ * Azure DevOps will not accept `application/json` on a work item update — it
+ * answers 400 and says nothing useful — so the content type is part of the
+ * request rather than a detail of it.
+ */
+async function patchJson<T>(
+  url: string,
+  body: unknown,
+  credential: AdoCredential,
+  organisation: string
+): Promise<T> {
+  return sendJson<T>(
+    url,
+    'PATCH',
+    'application/json-patch+json',
+    body,
+    credential,
+    organisation
+  )
+}
+
 /**
  * One request, with one retry on a different credential.
  *
@@ -80,14 +119,16 @@ export function clearAdoCache(): void {
  * Only the auth failures retry, and only once — a rejected personal access token
  * re-resolves to itself, so there is nothing to gain from going round again.
  */
-async function postJson<T>(
+async function sendJson<T>(
   url: string,
+  method: 'POST' | 'PATCH',
+  contentType: string,
   body: unknown,
   credential: AdoCredential,
   organisation: string
 ): Promise<T> {
   try {
-    return await postJsonOnce<T>(url, body, credential)
+    return await sendJsonOnce<T>(url, method, contentType, body, credential)
   } catch (e) {
     if (!(e instanceof AdoError) || !e.isAuthFailure) {
       throw e
@@ -101,12 +142,14 @@ async function postJson<T>(
       throw e
     }
 
-    return await postJsonOnce<T>(url, body, replacement)
+    return await sendJsonOnce<T>(url, method, contentType, body, replacement)
   }
 }
 
-async function postJsonOnce<T>(
+async function sendJsonOnce<T>(
   url: string,
+  method: 'POST' | 'PATCH',
+  contentType: string,
   body: unknown,
   credential: AdoCredential
 ): Promise<T> {
@@ -115,9 +158,9 @@ async function postJsonOnce<T>(
 
   try {
     const response = await fetch(url, {
-      method: 'POST',
+      method,
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': contentType,
         Accept: 'application/json',
         Authorization: getAuthorizationHeader(credential),
       },
@@ -387,6 +430,202 @@ export function getWorkItemUrl(config: IAdoConfig, id: number): string {
     `https://dev.azure.com/${encodeURIComponent(config.organisation)}/` +
     `${encodeURIComponent(config.project)}/_workitems/edit/${id}`
   )
+}
+
+/** What happened to one work item in a bulk assignment. */
+export interface IReleaseSequenceAssignment {
+  readonly id: number
+
+  /**
+   * `assigned` — the field was empty and now holds the sequence.
+   * `already` — it already held this sequence, so nothing was sent.
+   * `conflict` — it holds a *different* sequence, and was left alone.
+   * `failed` — Azure DevOps refused the write.
+   */
+  readonly outcome: 'assigned' | 'already' | 'conflict' | 'failed'
+
+  /** The sequence found on a conflict, so the caller can say what it was. */
+  readonly existingSequence: number | null
+
+  readonly error: string | null
+
+  /**
+   * The HTTP status behind a failure, when there was one.
+   *
+   * Kept because the single likeliest cause of a refused write is a token that
+   * can read but not write, and 401/403 is what separates that from a work item
+   * Azure DevOps would not accept the change to. Without it every failure reads
+   * the same and the fix — a wider token — isn't discoverable.
+   */
+  readonly status: number | null
+}
+
+/**
+ * Sets a work item's Release sequence number.
+ *
+ * `add` rather than `replace` because JSON Patch's `replace` requires the field
+ * to already have a value, and the whole point here is the ones that don't.
+ * Azure DevOps treats `add` on an existing field as an overwrite, which is why
+ * the caller checks for a conflicting value first rather than relying on the
+ * request to fail.
+ */
+export async function setWorkItemReleaseSequence(
+  config: IAdoConfig,
+  id: number,
+  releaseSequence: number,
+  credential: AdoCredential
+): Promise<void> {
+  if (parseReleaseSequence(releaseSequence) === null) {
+    throw new AdoError(
+      `Invalid release sequence number: ${releaseSequence}`,
+      null,
+      false
+    )
+  }
+
+  const url =
+    `https://dev.azure.com/${encodeURIComponent(config.organisation)}/` +
+    `${encodeURIComponent(config.project)}/_apis/wit/workitems/${id}` +
+    `?api-version=${ApiVersion}`
+
+  await patchJson(
+    url,
+    [
+      {
+        op: 'add',
+        path: `/fields/${ReleaseSequenceField}`,
+        value: releaseSequence,
+      },
+    ],
+    credential,
+    config.organisation
+  )
+
+  // What we just wrote is now wrong in two caches: this item's detail, and the
+  // list of ids assigned to the sequence it just joined. Dropping the entries is
+  // enough — the next read repopulates them.
+  workItemCache.delete(id)
+  sequenceIdCache.delete(
+    `${config.organisation}/${config.project}/${releaseSequence}`
+  )
+}
+
+/**
+ * Assigns a sequence number to many work items, reporting each one separately.
+ *
+ * Never throws for a single item: a bulk action across a dozen work items where
+ * one is locked or deleted should tell you which one, not lose the other eleven.
+ * The caller is expected to show the failures rather than a single "it worked".
+ *
+ * An item already carrying a *different* sequence is skipped rather than
+ * overwritten. Reassigning someone else's release is not a thing to do silently,
+ * and the interesting case — a work item merged here but planned for the next
+ * cycle — is exactly the one that reads as a mistake if it moves on its own.
+ */
+export async function assignReleaseSequence(
+  config: IAdoConfig,
+  ids: ReadonlyArray<number>,
+  releaseSequence: number,
+  credential: AdoCredential,
+  current: ReadonlyMap<number, number | null>,
+
+  /** Reassign work items that already belong to a different release. */
+  overwrite: boolean = false
+): Promise<ReadonlyArray<IReleaseSequenceAssignment>> {
+  const { write, skip } = planReleaseSequenceAssignment(
+    ids,
+    releaseSequence,
+    current,
+    overwrite
+  )
+
+  const results: Array<IReleaseSequenceAssignment> = [...skip]
+
+  // Serial, not concurrent. This is a handful of items at human pace, and the
+  // work item API rate-limits hard enough that a burst is a worse trade than a
+  // second of waiting.
+  for (const id of write) {
+    try {
+      await setWorkItemReleaseSequence(config, id, releaseSequence, credential)
+      results.push({
+        id,
+        outcome: 'assigned',
+        existingSequence: null,
+        error: null,
+        status: null,
+      })
+    } catch (e) {
+      results.push({
+        id,
+        outcome: 'failed',
+        existingSequence: null,
+        error: e instanceof Error ? e.message : String(e),
+        status: e instanceof AdoError ? e.status : null,
+      })
+    }
+  }
+
+  return results.sort((a, b) => a.id - b.id)
+}
+
+/**
+ * Decides which work items to write to, before anything is written.
+ *
+ * Separated from the writing so the rule can be tested without a network: which
+ * items get touched, and why the others don't, is the whole substance of a bulk
+ * edit against a system HotFlow otherwise only reads.
+ */
+export function planReleaseSequenceAssignment(
+  ids: ReadonlyArray<number>,
+  releaseSequence: number,
+
+  /**
+   * What each work item currently holds. Ids absent from the map are treated as
+   * unknown and attempted, because being wrong the other way — not assigning
+   * something that needed it — is the failure this exists to fix.
+   */
+  current: ReadonlyMap<number, number | null>,
+
+  /**
+   * Reassign work items already carrying a different sequence.
+   *
+   * Off by default, and deliberately a separate argument rather than a mode: the
+   * skip is the safety property of this whole feature, so turning it off has to be
+   * something a caller says out loud.
+   */
+  overwrite: boolean = false
+): {
+  readonly write: ReadonlyArray<number>
+  readonly skip: ReadonlyArray<IReleaseSequenceAssignment>
+} {
+  const write: Array<number> = []
+  const skip: Array<IReleaseSequenceAssignment> = []
+
+  for (const id of new Set(ids)) {
+    const existing = current.get(id) ?? null
+
+    if (existing === releaseSequence) {
+      skip.push({
+        id,
+        outcome: 'already',
+        existingSequence: existing,
+        error: null,
+        status: null,
+      })
+    } else if (existing !== null && !overwrite) {
+      skip.push({
+        id,
+        outcome: 'conflict',
+        existingSequence: existing,
+        error: null,
+        status: null,
+      })
+    } else {
+      write.push(id)
+    }
+  }
+
+  return { write, skip }
 }
 
 /**

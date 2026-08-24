@@ -34,8 +34,13 @@ const TokenCreationUrl =
  * Connect to Azure DevOps with a personal access token.
  *
  * Only reached when the Azure CLI isn't available — HotFlow tries `az` first and
- * says nothing if it works. Reading work items is all HotFlow ever does, so the
- * token only needs Work Items (Read).
+ * says nothing if it works.
+ *
+ * Read & write, because HotFlow now sets the Release sequence number rather than
+ * only reading it. A read-only token still gets the whole release picture and
+ * every reconciliation — it just cannot fill the field in, which fails at the
+ * point of trying rather than at the point of connecting. Saying so here is what
+ * stops that being a surprise.
  */
 export class ConnectAdoDialog extends React.Component<
   IConnectAdoDialogProps,
@@ -95,7 +100,8 @@ export class ConnectAdoDialog extends React.Component<
           />
 
           <p className="hotflow-dialog-note">
-            Needs <strong>Work Items (Read)</strong> only.{' '}
+            Needs <strong>Work Items (Read &amp; write)</strong> — read for the
+            reconciliation, write to set a release sequence number.{' '}
             <LinkButton uri={TokenCreationUrl}>Create a token</LinkButton>. It's
             stored in your operating system's credential vault, never on disk.
           </p>

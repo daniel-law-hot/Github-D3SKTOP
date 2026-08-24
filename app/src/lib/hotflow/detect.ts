@@ -221,6 +221,11 @@ export async function detectHotFlowState(
     // A stored preference rather than anything git can see, so the store fills
     // it in for the same reason.
     suppressAssignedNotMerged: defaultHotFlowState.suppressAssignedNotMerged,
+
+    // Deliberately reset by a detection rather than carried over: a run of
+    // assignments describes the release that was on screen when it happened, and
+    // re-reading the repository is exactly when it stops being current.
+    sequenceAssignment: null,
     ado: defaultAdoState,
   }
 }

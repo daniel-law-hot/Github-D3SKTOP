@@ -45,6 +45,16 @@ interface IStoredSettings {
    * never said otherwise.
    */
   readonly suppressAssignedNotMerged?: boolean
+
+  /**
+   * Whether the assign dialog's override box was left ticked.
+   *
+   * Remembered because the answer is a property of how someone works rather than
+   * of one release: a person who reassigns work items across cycles does it every
+   * cycle, and a person who never would should not have to untick it every time.
+   * Absent means off, which is the safe reading for a box that overwrites data.
+   */
+  readonly overwriteReleaseSequence?: boolean
 }
 
 function storageKey(repository: Repository): string {
@@ -170,6 +180,27 @@ export function setSuppressAssignedNotMerged(
   write(repository, {
     ...read(repository),
     suppressAssignedNotMerged: suppress,
+  })
+}
+
+/**
+ * Whether the assign dialog should overwrite a sequence number already set.
+ *
+ * Per repository, like everything else here — a repository that follows the cycle
+ * and one that doesn't call for different answers, and they are used side by side.
+ */
+export function getOverwriteReleaseSequence(repository: Repository): boolean {
+  return read(repository).overwriteReleaseSequence === true
+}
+
+/** Records that choice, so the box comes back the way it was left. */
+export function setOverwriteReleaseSequence(
+  repository: Repository,
+  overwrite: boolean
+): void {
+  write(repository, {
+    ...read(repository),
+    overwriteReleaseSequence: overwrite,
   })
 }
 

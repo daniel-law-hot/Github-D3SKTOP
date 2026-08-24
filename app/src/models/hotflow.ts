@@ -427,7 +427,42 @@ export interface IHotFlowState {
    */
   readonly suppressAssignedNotMerged: boolean
 
+  /**
+   * The last bulk assignment of release sequence numbers, or null when none has
+   * run since the view opened.
+   *
+   * Kept in state rather than in the component because the write is a network
+   * round trip against a system nothing else here writes to: what happened has
+   * to survive the re-render the refresh causes, and a work item that could not
+   * be assigned is worth seeing after the number beside it has changed.
+   */
+  readonly sequenceAssignment: ISequenceAssignmentState | null
+
   readonly ado: IAdoState
+}
+
+/** A bulk "assign the release sequence" run, in flight or finished. */
+export interface ISequenceAssignmentState {
+  readonly isRunning: boolean
+
+  /** How many work items were being assigned, for the progress wording. */
+  readonly total: number
+
+  readonly assigned: number
+
+  /** Items already carrying a different sequence, left untouched. */
+  readonly conflicts: ReadonlyArray<{
+    readonly id: number
+    readonly existingSequence: number | null
+  }>
+
+  readonly failures: ReadonlyArray<{
+    readonly id: number
+    readonly error: string
+  }>
+
+  /** Set when the run could not start at all — no credential, no sequence. */
+  readonly errorMessage: string | null
 }
 
 export const defaultAdoState: IAdoState = {
@@ -459,5 +494,6 @@ export const defaultHotFlowState: IHotFlowState = {
   nextVersion: null,
   pullRequestApprovals: new Map<number, IPullRequestApproval>(),
   suppressAssignedNotMerged: false,
+  sequenceAssignment: null,
   ado: defaultAdoState,
 }
