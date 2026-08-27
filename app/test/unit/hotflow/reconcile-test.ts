@@ -26,6 +26,50 @@ const details = new Map<number, IWorkItem>([
 
 describe('hotflow/reconcile', () => {
   describe('reconcileWorkItems', () => {
+    /*
+     * The distinction the release verdict rests on.
+     *
+     * A release contains what is in `production..release`, so work that shipped
+     * earlier is outside it by definition — indistinguishable from work nobody
+     * has started unless the merged branches are consulted. Counting it as
+     * missing made a ready release look unready and argued against shipping it.
+     */
+    it('reports work shipped in an earlier release as such, not as missing', () => {
+      const result = reconcileWorkItems(
+        [1],
+        [1, 2],
+        details,
+        false,
+        new Set([2])
+      )
+
+      assert.strictEqual(result.missingCount, 0)
+
+      const shipped = result.items.find(i => i.id === 2)
+      assert.strictEqual(shipped?.presence, 'shipped-earlier')
+    })
+
+    it('still reports work that never shipped as missing', () => {
+      const result = reconcileWorkItems([1], [1, 2], details, false, new Set())
+
+      assert.strictEqual(result.missingCount, 1)
+      assert.strictEqual(
+        result.items.find(i => i.id === 2)?.presence,
+        'missing-from-release'
+      )
+    })
+
+    it('never calls something in the release shipped earlier', () => {
+      // Being merged to production and in this release at once is ordinary: the
+      // release is what will ship it. Present wins.
+      const result = reconcileWorkItems([1], [1], details, false, new Set([1]))
+
+      assert.strictEqual(
+        result.items.find(i => i.id === 1)?.presence,
+        'in-release-tagged'
+      )
+    })
+
     it('classifies all three cases', () => {
       const result = reconcileWorkItems([1, 3], [1, 2], details)
 

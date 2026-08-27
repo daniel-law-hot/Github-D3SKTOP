@@ -30,7 +30,16 @@ export function reconcileWorkItems(
    * what separates the happy path from an unplanned extra, and that is worth
    * keeping. Only the absences go.
    */
-  suppressMissing: boolean = false
+  suppressMissing: boolean = false,
+
+  /**
+   * VSO numbers whose feature branch production already contains.
+   *
+   * Anything here is reported as shipped earlier rather than missing, and is not
+   * counted in `missingCount` — which decides the release verdict, so counting
+   * it would argue against shipping a release over work that already shipped.
+   */
+  shippedEarlier: ReadonlySet<number> = new Set()
 ): IReconciliation {
   const releaseSet = new Set(inRelease)
   const taggedSet = new Set(sequenceAssigned)
@@ -60,6 +69,16 @@ export function reconcileWorkItems(
   if (!suppressMissing) {
     for (const id of taggedSet) {
       if (releaseSet.has(id)) {
+        continue
+      }
+
+      if (shippedEarlier.has(id)) {
+        items.push({
+          id,
+          presence: 'shipped-earlier',
+          workItem: workItems.get(id) ?? null,
+        })
+
         continue
       }
 
@@ -97,9 +116,14 @@ function sortReconciledItems(
     'in-release-tagged': 1,
     'in-release-untagged': 2,
 
+    // Below the outstanding rows: work that shipped is settled, and sorting it
+    // with the things still to do would put the calmest rows at the top of a
+    // list read for what needs attention.
+    'shipped-earlier': 3,
+
     // Never mixed with the others — a reconciliation is either comparing against
     // a plan or it isn't — so its rank only has to be stable, not chosen.
-    merged: 3,
+    merged: 4,
   }
 
   return [...items].sort((a, b) => {
@@ -131,7 +155,8 @@ export function reconcileRelease(
     release.vsoNumbers,
     ado.sequenceAssignedIds,
     ado.workItems,
-    hotFlowState.suppressAssignedNotMerged
+    hotFlowState.suppressAssignedNotMerged,
+    new Set(hotFlowState.shippedFeatureVsos)
   )
 }
 

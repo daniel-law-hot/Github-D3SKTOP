@@ -218,6 +218,21 @@ export type WorkItemPresence =
    * would be invented. The three states above all rest on having asked ADO.
    */
   | 'merged'
+  /**
+   * Merged and shipped, in a release earlier than this one.
+   *
+   * Distinct from `missing-from-release` because the two look identical from
+   * inside one release and mean opposite things. A release contains the commits
+   * in `production..release`, so anything already shipped is by definition not
+   * in it — and a work item still assigned to this release in Azure DevOps came
+   * out as missing when in truth it landed weeks ago.
+   *
+   * That is not only a wrong label here. `missingCount` drives the release
+   * verdict and the warning on the finish dialog, so a work item that shipped
+   * three releases ago made a ready release look unready and argued against
+   * shipping it.
+   */
+  | 'shipped-earlier'
 
 /** One row of the reconciled work item list. */
 export interface IReconciledWorkItem {
@@ -402,6 +417,15 @@ export interface IHotFlowState {
    */
   readonly featureBranchVsos: ReadonlyArray<number>
 
+  /**
+   * VSO numbers whose feature branch production already contains.
+   *
+   * Gathered because "assigned to this release but not in it" and "shipped in an
+   * earlier release" are indistinguishable from the release's own contents, and
+   * only the first is a reason to do anything.
+   */
+  readonly shippedFeatureVsos: ReadonlyArray<number>
+
   /** Commits in `production..integration` — the full unreleased backlog. */
   readonly unreleasedCommitCount: number
   readonly unreleasedVsoCount: number
@@ -489,6 +513,7 @@ export const defaultHotFlowState: IHotFlowState = {
   releaseHistory: [],
   openFeatureBranches: [],
   featureBranchVsos: [],
+  shippedFeatureVsos: [],
   unreleasedCommitCount: 0,
   unreleasedVsoCount: 0,
   nextVersion: null,

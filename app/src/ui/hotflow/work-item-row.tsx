@@ -68,6 +68,14 @@ export class WorkItemRow extends React.Component<IWorkItemRowProps> {
             title="Assigned to this release but not merged into it"
           />
         )
+      case 'shipped-earlier':
+        return (
+          <Octicon
+            className="dim"
+            symbol={octicons.checkCircle}
+            title="Merged and shipped in an earlier release, though Azure DevOps still has it assigned to this one"
+          />
+        )
       case 'in-release-untagged':
         return (
           <Octicon
@@ -105,6 +113,17 @@ export class WorkItemRow extends React.Component<IWorkItemRowProps> {
 
     if (item.presence === 'missing-from-release') {
       return <span className="hotflow-wi-missing">Not in release</span>
+    }
+
+    if (item.presence === 'shipped-earlier') {
+      /*
+       * Shipped, not outstanding.
+       *
+       * The release contains what is in `production..release`, so anything
+       * already shipped is outside it by definition — which is why this used to
+       * read as "Not in release", the same words as work nobody has started.
+       */
+      return <span className="dim">Shipped earlier</span>
     }
 
     if (item.presence === 'in-release-untagged') {

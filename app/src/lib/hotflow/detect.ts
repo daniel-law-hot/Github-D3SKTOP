@@ -211,6 +211,11 @@ export async function detectHotFlowState(
     releaseHistory,
     openFeatureBranches: featureBranches,
     featureBranchVsos: collectFeatureBranchVsos(branches),
+    shippedFeatureVsos: await collectShippedFeatureVsos(
+      provider,
+      branches,
+      productionRef
+    ),
     unreleasedCommitCount: unreleased.commitCount,
     unreleasedVsoCount: unreleased.vsoCount,
     nextVersion: computeNextVersion(releaseCandidates, releaseHistory),
@@ -584,6 +589,60 @@ function collectFeatureBranchVsos(
  * The filter is there to hide other people's long-merged branches, and the one
  * under your feet is never that.
  */
+/**
+ * VSO numbers whose feature branch production already contains.
+ *
+ * One `for-each-ref --merged` for every feature branch at once, the same call
+ * `collectReleaseBranches` uses and for the same reason: an ahead/behind per
+ * branch was the single largest cost in a refresh, and this answers the same
+ * question in one process.
+ *
+ * The question it answers is narrow but load-bearing. A work item assigned to
+ * this release and absent from it is either outstanding work or work that
+ * shipped earlier, and the release's own contents cannot tell those apart —
+ * everything already shipped is outside `production..release` by definition.
+ */
+async function collectShippedFeatureVsos(
+  provider: IRepositoryProvider,
+  branches: ReadonlyArray<Branch>,
+  productionRef: string
+): Promise<ReadonlyArray<number>> {
+  const featureBranches = branches.filter(
+    b => !b.isDesktopForkRemoteBranch && parseFeatureBranchName(b.name) !== null
+  )
+
+  if (featureBranches.length === 0) {
+    return []
+  }
+
+  try {
+    const merged = await provider.getMergedBranches(
+      productionRef,
+      featureBranches
+    )
+
+    const vsos = new Set<number>()
+
+    for (const branch of featureBranches) {
+      if (!merged.has(branch.name)) {
+        continue
+      }
+
+      const parsed = parseFeatureBranchName(branch.name)
+
+      if (parsed !== null) {
+        vsos.add(parsed.vso)
+      }
+    }
+
+    return [...vsos].sort((a, b) => a - b)
+  } catch {
+    // Left empty rather than guessed: an empty answer costs the old behaviour,
+    // and a wrong one would mark outstanding work as shipped.
+    return []
+  }
+}
+
 async function collectFeatureBranches(
   provider: IRepositoryProvider,
   branches: ReadonlyArray<Branch>,
