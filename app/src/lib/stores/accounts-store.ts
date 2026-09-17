@@ -231,7 +231,19 @@ export class AccountsStore extends TypedBaseStore<ReadonlyArray<Account>> {
       const key = getKeyForAccount(accountWithoutToken)
       try {
         const token = await this.secureStore.getItem(key, account.login)
-        accountsWithTokens.push(accountWithoutToken.withToken(token || ''))
+
+        if (!token) {
+          // The account is listed locally but has no token in the credential
+          // store, so there is nothing to authenticate with. Leave it out
+          // rather than loading an account that looks signed in and then fails
+          // every request. The stored entry is deliberately left in place so a
+          // credential store that's temporarily unreadable doesn't permanently
+          // forget the account; signing in again overwrites it.
+          log.warn(`No token found for '${key}'. Skipping.`)
+          continue
+        }
+
+        accountsWithTokens.push(accountWithoutToken.withToken(token))
       } catch (e) {
         log.error(`Error getting token for '${key}'. Skipping.`, e)
 

@@ -1,4 +1,5 @@
 import { Account } from '../models/account'
+import { credentialStoreAppName } from './credential-store-app-name'
 
 /** Get the auth key for the user. */
 export function getKeyForAccount(account: Account): string {
@@ -7,7 +8,5 @@ export function getKeyForAccount(account: Account): string {
 
 /** Get the auth key for the endpoint. */
 export function getKeyForEndpoint(endpoint: string): string {
-  const appName = __DEV__ ? 'GitHub Desktop Dev' : 'GitHub'
-
-  return `${appName} - ${endpoint}`
+  return `${credentialStoreAppName} - ${endpoint}`
 }
