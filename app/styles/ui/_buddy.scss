@@ -228,21 +228,47 @@
  * closes and it simply has less floor to cover, instead of wandering over the
  * buttons.
  */
+/**
+ * How big the buddy is, and how much sky it needs.
+ *
+ * Declared on whatever holds the buddy rather than on the strip itself: the
+ * speech bubble is the strip's sibling, not its child, and has to sit clear of
+ * an animal whose height it can only work out from these.
+ */
+.hotflow-diagram {
+  --buddy-size: 52px;
+  --buddy-headroom: calc(var(--buddy-size) * 0.4);
+}
+
+#desktop-app-toolbar {
+  // As big as 50px of toolbar allows once a hat is accounted for, rather than
+  // the 52px the schematic gets. At 36px the animal fitted and the crown did not.
+  --buddy-size: 34px;
+  --buddy-headroom: calc(var(--buddy-size) * 0.4);
+}
+
 .hotflow-buddy-run {
   position: absolute;
-  top: 0;
   right: var(--spacing);
+
+  // The sky a hat needs.
+  //
+  // The animal's own box is --buddy-size square and a hat rides above it, so a
+  // strip exactly as tall as the animal shears the top off every crown. The
+  // strip is this much taller than the animal and the buddy stands at the
+  // bottom of it, which puts the sky above the tallest hat any species can
+  // wear — `HatRise` in hat-fit.ts, and the test that holds the two in step.
+  //
+  // Taken inside the strip rather than by starting it higher up: the band above
+  // the schematic clips ten pixels in, so headroom borrowed from there is
+  // headroom a top hat loses.
+  top: 0;
 
   // A stretch of the top right rather than the whole width: the schematic is
   // 1216px and usually scrolled, so a buddy that used all of it would spend
   // most of its walk somewhere nobody is looking.
-  // How big the buddy is. Everything else here is derived from it: the strip it
-  // walks in, and the point it turns around at. The toolbar overrides it, having
-  // only 50px of height to play with.
-  --buddy-size: 52px;
-
   width: min(360px, 44%);
-  height: calc(var(--buddy-size) + 10px);
+  height: calc(var(--buddy-headroom) + var(--buddy-size) + 4px);
   overflow: hidden;
   pointer-events: none;
 
@@ -350,14 +376,19 @@
  * window width.
  */
 #desktop-app-toolbar .hotflow-buddy-run {
-  // As big as 50px of toolbar allows, rather than the 52px the diagram gets.
-  --buddy-size: 36px;
-
   position: relative;
   top: auto;
   right: auto;
   flex: 1;
-  min-width: 0;
+
+  // Somewhere to stand, however full the bar is.
+  //
+  // At `min-width: 0` this lane is the first thing flex takes back when the
+  // buttons want more room than the window has, and on a 1489px window it had
+  // already been squeezed to nothing — leaving the buddy positioned off the end
+  // of a strip of no width, and clipped away entirely. A bar too full for
+  // `Open in Visual Studio` to spell itself out is not too full for this.
+  min-width: calc(var(--buddy-size) + 6px);
   width: auto;
   height: auto;
   align-self: stretch;
@@ -367,7 +398,7 @@
 }
 
 #desktop-app-toolbar .hotflow-buddy {
-  bottom: 3px;
+  bottom: 2px;
 }
 
 /**
@@ -412,11 +443,7 @@
  * alternatives. It reads as deliberate next to the ordinary one, which is the
  * whole point of a shiny.
  */
-.hotflow-buddy-glyph.shiny,
-.buddy-card-glyph.shiny,
-.buddy-glyph.shiny {
-  filter: invert(1);
-}
+// Superseded by .buddy-figure.shiny, which inverts the hat along with the animal.
 
 /** Holds the card, and nothing else — see the comment where it is rendered. */
 .buddy-card-anchor {
@@ -453,10 +480,11 @@
   font-size: var(--font-size-sm);
 }
 
-.buddy-card-level {
-  margin-top: var(--spacing-half);
-  color: var(--text-secondary-color);
-  font-size: var(--font-size-sm);
+// The level block sits between the head and the stats on the card, where the
+// plain "Level 3" text used to be.
+.buddy-card .buddy-level {
+  margin-top: 0;
+  margin-bottom: var(--spacing);
 }
 
 /**
@@ -497,7 +525,7 @@
 
 // In the schematic, under the corner it sits in.
 .hotflow-diagram .hotflow-buddy-speech {
-  top: calc(var(--buddy-size, 52px) + 16px);
+  top: calc(var(--buddy-headroom) + var(--buddy-size) + 12px);
   right: var(--spacing);
 }
 
@@ -511,4 +539,117 @@
   .hotflow-buddy-speech {
     animation: none;
   }
+}
+
+/**
+ * The stat bar, in two parts.
+ *
+ * What it rolled, then what it has earned since, in a different colour. One bar
+ * of a single colour would make levelling invisible: the number would creep up
+ * and nothing would say where the extra came from.
+ */
+.buddy-stat-track {
+  display: flex;
+}
+
+.buddy-stat-gain {
+  height: 100%;
+  background: var(--color-modified);
+}
+
+.buddy-stat-earned {
+  margin-left: var(--spacing-half);
+  color: var(--color-modified);
+  font-size: var(--font-size-sm);
+}
+
+// The value column has to hold "100 +55" now rather than two digits.
+.buddy-stats {
+  grid-template-columns: 5.5rem minmax(0, 1fr) 4rem;
+}
+
+.buddy-card .buddy-stats {
+  grid-template-columns: 4.5rem minmax(0, 1fr) 3.5rem;
+}
+
+/** Putting the buddy away, for the rooms where a lizard is not wanted. */
+.buddy-visibility {
+  margin-top: var(--spacing);
+  padding-top: var(--spacing);
+  border-top: 1px solid var(--box-border-color);
+}
+
+.buddy-visibility-why {
+  margin: var(--spacing-half) 0 0;
+  color: var(--text-secondary-color);
+  font-size: var(--font-size-sm);
+}
+
+/**
+ * The animal and its hat, as one figure.
+ *
+ * The hat is sized and placed in em, so it rides at the same spot on the head
+ * whether the buddy is 36px in the toolbar or 52px in the schematic. Tilted,
+ * because a hat sitting perfectly level looks like a mistake.
+ */
+.buddy-figure {
+  position: relative;
+  display: inline-block;
+  line-height: 1;
+
+  // One em square, which is what the animal actually draws.
+  //
+  // An emoji's advance is 1.373em but its artwork is about 1em wide, centred in
+  // that advance with the rest empty. Left as it came, the figure measured
+  // 71px at a 52px size, so the buddy sitting at `100% - var(--buddy-size)`
+  // hung nineteen pixels past the end of its own strip and lost its tail to the
+  // clip. Everything here positions by --buddy-size, so the box has to mean it.
+  width: 1em;
+}
+
+.buddy-figure-glyph {
+  display: block;
+  margin: 0 -0.187em; // pull the side bearings back in
+  text-align: center;
+}
+
+/**
+ * The hat, hung from the brim.
+ *
+ * `left`, `top` and `font-size` arrive as inline styles from hat-fit.ts, which
+ * knows where each animal keeps its head; the values here are only what a
+ * hatted figure would fall back to. The translate is what makes that table
+ * readable: it moves the hat half its width left and its whole height up, so
+ * the numbers in the table describe where the brim rests rather than where the
+ * top left corner of an invisible box lands.
+ *
+ * Every hat's ink ends 0.15em below its own baseline, so hanging them all by
+ * the brim lands a crown, a helmet and a mortarboard in the same place, and
+ * only their heights differ — which is the difference between the hats and not
+ * a fault in the placing.
+ */
+/**
+ * A hat that is a picture rather than a character.
+ *
+ * Block, so the span it sits in is exactly the size of it and the transform
+ * above still hangs the hat by its own bottom edge. The file is trimmed to its
+ * ink, so that edge is the brim.
+ */
+.buddy-figure-hat-art {
+  display: block;
+  height: auto;
+}
+
+.buddy-figure-hat {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  font-size: 0.42em;
+  transform: translate(-50%, calc(-100% + var(--hat-drop, 0em))) rotate(-14deg);
+  pointer-events: none;
+}
+
+// Shiny inverts the whole figure, hat included — half-inverted reads as broken.
+.buddy-figure.shiny {
+  filter: invert(1);
 }

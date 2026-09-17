@@ -7,13 +7,14 @@ import {
   onBuddyChanged,
   onBuddySpoke,
 } from '../../lib/buddy/buddy-store'
-import { MaxLevel } from '../../lib/buddy/xp'
+import { levelProgress, MaxLevel } from '../../lib/buddy/xp'
 import {
   Popover,
   PopoverAnchorPosition,
   PopoverDecoration,
 } from '../lib/popover'
 import { LinkButton } from '../lib/link-button'
+import { BuddyFigure } from './buddy-figure'
 
 interface IBuddyCompanionProps {
   /** Opens the full tab, from the link in the little panel. */
@@ -139,18 +140,67 @@ export class BuddyCompanion extends React.Component<
     this.props.onShowBuddy()
   }
 
-  private renderStat(label: string, value: number) {
+  /**
+   * The level and how far into it, the same as the tab shows.
+   *
+   * Its own row rather than a fifth stat: the four stats are fixed for the
+   * life of a buddy and this is the one number that moves, so filing it
+   * among them would be quietly misleading about both.
+   */
+  private renderLevel(buddy: IBuddy) {
+    const progress = levelProgress(buddy.xp)
+
+    return (
+      <div className="buddy-level">
+        <div className="buddy-level-head">
+          <span className="buddy-level-name">
+            Level {progress.level}
+            {progress.isMax ? ' (max)' : ''}
+          </span>
+          <span className="buddy-level-xp">
+            {progress.isMax
+              ? `${buddy.xp} experience`
+              : `${progress.into} / ${progress.needed}`}
+          </span>
+        </div>
+        <div
+          className="buddy-stat-track"
+          role="img"
+          aria-label={`Level ${progress.level} of ${MaxLevel}`}
+        >
+          <div
+            className="buddy-stat-fill"
+            style={{ width: `${Math.round(progress.fraction * 100)}%` }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  private renderStat(label: string, base: number, grown: number) {
+    const gained = Math.max(0, grown - base)
+
     return (
       <div className="buddy-stat" key={label}>
         <div className="buddy-stat-label">{label}</div>
         <div
           className="buddy-stat-track"
           role="img"
-          aria-label={`${label} ${value} out of 99`}
+          aria-label={
+            gained > 0
+              ? `${label} ${grown} out of 100, ${gained} of it earned`
+              : `${label} ${grown} out of 100`
+          }
         >
-          <div className="buddy-stat-fill" style={{ width: `${value}%` }} />
+          <div className="buddy-stat-fill" style={{ width: `${base}%` }} />
+          {gained > 0 && (
+            <div className="buddy-stat-gain" style={{ width: `${gained}%` }} />
+          )}
         </div>
-        <div className="buddy-stat-value">{value}</div>
+        <div className="buddy-stat-value">
+          {grown}
+          {gained > 0 && <span className="buddy-stat-earned">+{gained}</span>}
+        </div>
       </div>
     )
   }
@@ -176,13 +226,8 @@ export class BuddyCompanion extends React.Component<
         onMousedownOutside={this.closeMenu}
       >
         <div className="buddy-card-head">
-          <span
-            className={classNames('buddy-card-glyph', {
-              shiny: buddy.isShiny,
-            })}
-            aria-hidden="true"
-          >
-            {buddy.glyph}
+          <span className="buddy-card-glyph">
+            <BuddyFigure buddy={buddy} ariaHidden={true} />
           </span>
           <div>
             <h3 id="buddy-card-name">{buddy.name}</h3>
@@ -191,18 +236,24 @@ export class BuddyCompanion extends React.Component<
               {buddy.isShiny ? 'Shiny ' : ''}
               {RarityLabels[buddy.rarity]}
             </div>
-            <div className="buddy-card-level">
-              Level {buddy.level}
-              {buddy.level >= MaxLevel ? ' (max)' : ''}
-            </div>
           </div>
         </div>
 
+        {this.renderLevel(buddy)}
+
         <div className="buddy-stats">
-          {this.renderStat('Focus', buddy.stats.focus)}
-          {this.renderStat('Stamina', buddy.stats.stamina)}
-          {this.renderStat('Luck', buddy.stats.luck)}
-          {this.renderStat('Mischief', buddy.stats.mischief)}
+          {this.renderStat('Focus', buddy.stats.focus, buddy.grownStats.focus)}
+          {this.renderStat(
+            'Stamina',
+            buddy.stats.stamina,
+            buddy.grownStats.stamina
+          )}
+          {this.renderStat('Luck', buddy.stats.luck, buddy.grownStats.luck)}
+          {this.renderStat(
+            'Mischief',
+            buddy.stats.mischief,
+            buddy.grownStats.mischief
+          )}
         </div>
 
         <div className="buddy-card-footer">
@@ -215,7 +266,7 @@ export class BuddyCompanion extends React.Component<
   public render() {
     const { buddy } = this.state
 
-    if (buddy === null) {
+    if (buddy === null || buddy.hidden) {
       return <div className="hotflow-buddy-run" />
     }
 
@@ -238,12 +289,8 @@ export class BuddyCompanion extends React.Component<
             }. Click to send them for a walk, right click for details.`}
             title={`${buddy.name} — ${buddy.species}`}
           >
-            <span
-              className={classNames('hotflow-buddy-glyph', {
-                shiny: buddy.isShiny,
-              })}
-            >
-              {buddy.glyph}
+            <span className="hotflow-buddy-glyph">
+              <BuddyFigure buddy={buddy} ariaHidden={true} />
             </span>
           </button>
         </div>

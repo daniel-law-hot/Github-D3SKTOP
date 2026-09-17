@@ -3,6 +3,7 @@ import { IBuddy } from '../../models/buddy'
 import { getObject, setObject } from '../local-storage'
 import { freshSeed, rollBuddy } from './roll'
 import { levelForXp, MaxLevel, xpForCommit } from './xp'
+import { growStats } from './growth'
 import { pickChatter, shouldChatter, toneFor } from './chatter'
 
 export const buddyKey = 'buddy'
@@ -23,6 +24,9 @@ interface IStoredBuddy {
 
   /** Whether the shine was earned at max level rather than rolled. */
   readonly polished: boolean
+
+  /** Whether the owner has asked for it to be out of sight. */
+  readonly hidden?: boolean
 }
 
 const emitter = new Emitter()
@@ -64,7 +68,7 @@ let lastSpokeAt: number | null = null
 export function maybeChatter(now: number = Date.now()): string | null {
   const buddy = getBuddy()
 
-  if (buddy === null) {
+  if (buddy === null || buddy.hidden) {
     return null
   }
 
@@ -98,11 +102,14 @@ function read(): IStoredBuddy | null {
 function hydrate(stored: IStoredBuddy): IBuddy {
   const xp = typeof stored.xp === 'number' ? stored.xp : 0
   const rolled = rollBuddy(stored.seed, stored.rolledAt, stored.rerolls ?? 0)
+  const level = levelForXp(xp)
 
   return {
     ...rolled,
     xp,
-    level: levelForXp(xp),
+    level,
+    grownStats: growStats(rolled.stats, level),
+    hidden: stored.hidden === true,
 
     // Rolled at one in 8192, or earned by getting to the top. Both are the same
     // colours; only the tab says which it was.
@@ -213,4 +220,18 @@ export function polishBuddy(): IBuddy | null {
   }
 
   return write({ ...stored, polished: true })
+}
+
+/**
+ * Puts the buddy away, or brings it back.
+ *
+ * There are rooms where a lizard wandering the toolbar is not what anybody wants
+ * on the projector. Hiding is not deleting: the level, the experience and the
+ * animal itself are all still there, and the tab still shows them, so the way
+ * back is where the way out was.
+ */
+export function setBuddyHidden(hidden: boolean): IBuddy | null {
+  const stored = read()
+
+  return stored === null ? null : write({ ...stored, hidden })
 }

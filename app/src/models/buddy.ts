@@ -71,4 +71,25 @@ export interface IBuddy {
 
   /** Where that experience has got to, from 1 to MaxLevel. */
   readonly level: number
+
+  /**
+   * The stats as they stand now, with levelling applied.
+   *
+   * Kept beside the rolled ones rather than replacing them, so the view can show
+   * what was earned as well as what it has come to — a bar that only showed the
+   * total would hide the whole reward.
+   */
+  readonly grownStats: IBuddyStats
+
+  /** Whether it is hidden from the toolbar and the schematic. */
+  readonly hidden: boolean
+
+  /** What it turned up wearing, if anything. */
+  readonly hat: IBuddyHat | null
+}
+
+/** Headwear, which does nothing whatsoever. */
+export interface IBuddyHat {
+  readonly glyph: string
+  readonly name: string
 }

@@ -2,30 +2,40 @@ import * as React from 'react'
 import classNames from 'classnames'
 import { DialogContent } from '../dialog'
 import { Button } from '../lib/button'
+import { Checkbox, CheckboxValue } from '../lib/checkbox'
+import { BuddyFigure } from '../hotflow/buddy-figure'
 import { BuddyRarity, IBuddy } from '../../models/buddy'
 import {
   getBuddy,
   polishBuddy,
   rerollBuddy,
+  setBuddyHidden,
   spawnBuddy,
 } from '../../lib/buddy/buddy-store'
 import { levelProgress, MaxLevel } from '../../lib/buddy/xp'
 
 /**
- * How many pokes reveal the way out, and how long you have to do them in.
+ * A double click on the portrait, and how far apart the two halves can be.
  *
  * Hidden rather than secret. Nothing labels it, so the first time is always an
- * accident — but prodding an animal repeatedly is the obvious thing to do with
- * one, so it gets found.
+ * accident — but a picture of an animal is a thing people click twice, so it
+ * gets found.
+ *
+ * Counted as two activations rather than taken from the browser's `dblclick`,
+ * which never fires for somebody working from the keyboard: two presses of
+ * Enter on a button send two clicks and no double click at all. The window is a
+ * little longer than Windows' own double-click default, so a deliberate but
+ * unhurried pair still counts — this is more forgiving than `dblclick`, never
+ * less.
  */
-const PokesToReveal = 5
-const PokeWindowMs = 3000
+const ClicksToReveal = 2
+const ClickWindowMs = 600
 
 interface IBuddyPreferencesState {
   /** Null until somebody goes looking, which is the whole of the opening move. */
   readonly buddy: IBuddy | null
 
-  readonly pokes: number
+  readonly clicks: number
   readonly revealed: boolean
 
   /** Set for a moment after one arrives, so the first sight of it is an event. */
@@ -53,7 +63,7 @@ export class BuddyPreferences extends React.Component<
   {},
   IBuddyPreferencesState
 > {
-  private pokeTimer: number | null = null
+  private clickTimer: number | null = null
   private arrivalTimer: number | null = null
 
   public constructor(props: {}) {
@@ -61,14 +71,14 @@ export class BuddyPreferences extends React.Component<
 
     this.state = {
       buddy: getBuddy(),
-      pokes: 0,
+      clicks: 0,
       revealed: false,
       arriving: false,
     }
   }
 
   public componentWillUnmount() {
-    this.clearPokeTimer()
+    this.clearClickTimer()
     this.clearArrivalTimer()
   }
 
@@ -90,10 +100,10 @@ export class BuddyPreferences extends React.Component<
     }, 900)
   }
 
-  private clearPokeTimer() {
-    if (this.pokeTimer !== null) {
-      window.clearTimeout(this.pokeTimer)
-      this.pokeTimer = null
+  private clearClickTimer() {
+    if (this.clickTimer !== null) {
+      window.clearTimeout(this.clickTimer)
+      this.clickTimer = null
     }
   }
 
@@ -103,32 +113,32 @@ export class BuddyPreferences extends React.Component<
    * An easter egg that only exists for people who can use a mouse is one that
    * quietly tells some of your colleagues it was not meant for them.
    */
-  private onPoke = () => {
+  private onPortraitClick = () => {
     if (this.state.revealed || this.state.buddy === null) {
       return
     }
 
-    const pokes = this.state.pokes + 1
+    const clicks = this.state.clicks + 1
 
-    this.clearPokeTimer()
+    this.clearClickTimer()
 
-    if (pokes >= PokesToReveal) {
-      this.setState({ pokes: 0, revealed: true })
+    if (clicks >= ClicksToReveal) {
+      this.setState({ clicks: 0, revealed: true })
       return
     }
 
-    this.setState({ pokes })
+    this.setState({ clicks })
 
-    this.pokeTimer = window.setTimeout(() => {
-      this.setState({ pokes: 0 })
-      this.pokeTimer = null
-    }, PokeWindowMs)
+    this.clickTimer = window.setTimeout(() => {
+      this.setState({ clicks: 0 })
+      this.clickTimer = null
+    }, ClickWindowMs)
   }
 
   private onReroll = () => {
     this.setState({
       buddy: rerollBuddy(),
-      pokes: 0,
+      clicks: 0,
       revealed: false,
       arriving: true,
     })
@@ -217,22 +227,63 @@ export class BuddyPreferences extends React.Component<
     )
   }
 
-  private onKeep = () => {
-    this.setState({ revealed: false, pokes: 0 })
+  private onHiddenChanged = (event: React.FormEvent<HTMLInputElement>) => {
+    this.setState({ buddy: setBuddyHidden(!event.currentTarget.checked) })
   }
 
-  private renderStat(label: string, value: number) {
+  /**
+   * Putting the buddy away.
+   *
+   * There are meetings, demonstrations and screen shares where a lizard
+   * wandering the toolbar is not what anybody wants on the projector, and the
+   * answer to that should not be uninstalling the feature. Hiding leaves
+   * everything intact — the level, the experience, the animal — and this tab
+   * still shows them, so the way back is where the way out was.
+   */
+  private renderVisibility(buddy: IBuddy) {
+    return (
+      <div className="buddy-visibility">
+        <Checkbox
+          label={`Show ${buddy.name} in the toolbar and in HotFlow`}
+          value={buddy.hidden ? CheckboxValue.Off : CheckboxValue.On}
+          onChange={this.onHiddenChanged}
+        />
+        <p className="buddy-visibility-why">
+          Hidden, {buddy.name} keeps their level and stays out of the way.
+          Nothing is lost and nothing is said.
+        </p>
+      </div>
+    )
+  }
+
+  private onKeep = () => {
+    this.setState({ revealed: false, clicks: 0 })
+  }
+
+  private renderStat(label: string, base: number, grown: number) {
+    const gained = Math.max(0, grown - base)
+
     return (
       <div className="buddy-stat" key={label}>
         <div className="buddy-stat-label">{label}</div>
         <div
           className="buddy-stat-track"
           role="img"
-          aria-label={`${label} ${value} out of 99`}
+          aria-label={
+            gained > 0
+              ? `${label} ${grown} out of 100, ${gained} of it earned`
+              : `${label} ${grown} out of 100`
+          }
         >
-          <div className="buddy-stat-fill" style={{ width: `${value}%` }} />
+          <div className="buddy-stat-fill" style={{ width: `${base}%` }} />
+          {gained > 0 && (
+            <div className="buddy-stat-gain" style={{ width: `${gained}%` }} />
+          )}
         </div>
-        <div className="buddy-stat-value">{value}</div>
+        <div className="buddy-stat-value">
+          {grown}
+          {gained > 0 && <span className="buddy-stat-earned">+{gained}</span>}
+        </div>
       </div>
     )
   }
@@ -251,7 +302,9 @@ export class BuddyPreferences extends React.Component<
           up next?
         </p>
         <div className="buddy-reroll-actions">
-          <Button onClick={this.onReroll}>Find another</Button>
+          {/* Blunt on purpose. "Find another" made it sound like browsing,
+              and this ends a companion somebody may have spent months on. */}
+          <Button onClick={this.onReroll}>Murder your buddy</Button>
           <Button onClick={this.onKeep}>Keep {buddy.name}</Button>
         </div>
         <p className="buddy-reroll-warning">
@@ -312,7 +365,7 @@ export class BuddyPreferences extends React.Component<
       return this.renderEmpty()
     }
 
-    const { stats } = buddy
+    const { stats, grownStats: grown } = buddy
 
     return (
       <DialogContent>
@@ -320,13 +373,11 @@ export class BuddyPreferences extends React.Component<
           <button
             className="buddy-portrait"
             type="button"
-            onClick={this.onPoke}
+            onClick={this.onPortraitClick}
             aria-label={`${buddy.name}, a ${buddy.species}`}
           >
-            <span
-              className={classNames('buddy-glyph', { shiny: buddy.isShiny })}
-            >
-              {buddy.glyph}
+            <span className="buddy-glyph">
+              <BuddyFigure buddy={buddy} ariaHidden={true} />
             </span>
           </button>
 
@@ -346,15 +397,16 @@ export class BuddyPreferences extends React.Component<
         </div>
 
         <div className="buddy-stats">
-          {this.renderStat('Focus', stats.focus)}
-          {this.renderStat('Stamina', stats.stamina)}
-          {this.renderStat('Luck', stats.luck)}
-          {this.renderStat('Mischief', stats.mischief)}
+          {this.renderStat('Focus', stats.focus, grown.focus)}
+          {this.renderStat('Stamina', stats.stamina, grown.stamina)}
+          {this.renderStat('Luck', stats.luck, grown.luck)}
+          {this.renderStat('Mischief', stats.mischief, grown.mischief)}
         </div>
 
         {this.renderLevel(buddy)}
         {this.renderPolish(buddy)}
         {this.renderHistory()}
+        {this.renderVisibility(buddy)}
         {this.renderReroll()}
       </DialogContent>
     )

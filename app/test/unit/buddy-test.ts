@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert'
 import {
+  allHats,
+  allMythicSpecies,
+  allSpecies,
+  HatChance,
+  isHatRoll,
   isShinyRoll,
   rarityFor,
   rollBuddy,
@@ -63,13 +68,7 @@ describe('buddy', () => {
 
     /** A legendary has to be recognisable across the room. */
     it('only gives the mythic species to legendaries', () => {
-      const mythic = new Set([
-        'dragon',
-        'unicorn',
-        'phoenix',
-        'kraken',
-        'cryptid',
-      ])
+      const mythic = new Set(allMythicSpecies().map(([, name]) => name))
 
       for (let seed = 0; seed < 2000; seed++) {
         const buddy = rollBuddy(seed, 0)
@@ -160,6 +159,120 @@ describe('buddy', () => {
 
       assert.ok(count > 4, `only ${count} shinies in 200000`)
       assert.ok(count < 70, `${count} shinies in 200000 is far too many`)
+    })
+  })
+
+  describe('folding in later additions', () => {
+    /**
+     * Every entry equally likely, however many rounds of additions there have
+     * been. If the fold were wrong the newcomers would be rarer or commoner
+     * than the originals, and nobody would notice by eye.
+     */
+    it('gives the newcomers the same odds as everybody else', () => {
+      const counts = new Map()
+      const total = 60000
+      let ordinary = 0
+
+      for (let seed = 0; seed < total; seed++) {
+        const buddy = rollBuddy(seed, 0)
+
+        if (buddy.rarity !== BuddyRarity.Legendary) {
+          ordinary++
+          counts.set(buddy.species, (counts.get(buddy.species) ?? 0) + 1)
+        }
+      }
+
+      const expected = ordinary / allSpecies().length
+
+      for (const [, name] of allSpecies()) {
+        const seen = counts.get(name) ?? 0
+
+        assert.ok(
+          Math.abs(seen - expected) < expected * 0.25,
+          name +
+            ' turned up ' +
+            seen +
+            ' times, expected about ' +
+            Math.round(expected)
+        )
+      }
+    })
+
+    it('lets every ordinary species turn up', () => {
+      const seen = new Set()
+
+      for (let seed = 0; seed < 20000; seed++) {
+        seen.add(rollBuddy(seed, 0).species)
+      }
+
+      for (const [, name] of allSpecies()) {
+        assert.ok(seen.has(name), name + ' never turns up')
+      }
+    })
+  })
+
+  describe('hats', () => {
+    it('is one in three', () => {
+      assert.equal(HatChance, 1 / 3)
+    })
+
+    it('takes everything below the threshold and nothing above it', () => {
+      assert.equal(isHatRoll(0), true)
+      assert.equal(isHatRoll(0.33), true)
+      assert.equal(isHatRoll(HatChance), false)
+      assert.equal(isHatRoll(0.9), false)
+    })
+
+    it('only ever wears a hat from the wardrobe', () => {
+      const wardrobe = new Set(allHats().map(h => h.name))
+
+      for (let seed = 0; seed < 3000; seed++) {
+        const { hat } = rollBuddy(seed, 0)
+
+        if (hat !== null) {
+          assert.ok(wardrobe.has(hat.name), hat.name + ' is not a hat we have')
+          assert.ok(hat.glyph.length > 0, hat.name + ' has no glyph')
+        }
+      }
+    })
+
+    it('sticks to the seed like everything else', () => {
+      for (let seed = 0; seed < 200; seed++) {
+        const first = rollBuddy(seed, 0).hat
+        const second = rollBuddy(seed, 999).hat
+
+        assert.deepStrictEqual(first, second)
+      }
+    })
+
+    it('turns up on roughly a third of them', () => {
+      let hatted = 0
+
+      for (let seed = 0; seed < 30000; seed++) {
+        if (rollBuddy(seed, 0).hat !== null) {
+          hatted++
+        }
+      }
+
+      const share = (hatted / 30000) * 100
+
+      assert.ok(
+        Math.abs(share - 33.3) < 2,
+        'hats came out at ' + share.toFixed(2) + ' per cent'
+      )
+    })
+
+    it('can reach every hat in the wardrobe', () => {
+      const seen = new Set()
+
+      for (let seed = 0; seed < 20000; seed++) {
+        const { hat } = rollBuddy(seed, 0)
+        if (hat !== null) {
+          seen.add(hat.name)
+        }
+      }
+
+      assert.equal(seen.size, allHats().length, 'some hat never turns up')
     })
   })
 

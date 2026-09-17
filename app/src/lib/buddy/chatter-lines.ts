@@ -4,9 +4,10 @@ import { BuddyTone } from './chatter-tone'
  * Everything the buddy can say, by tone.
  *
  * A hundred each, in their own file, because the list is the feature: with eight
- * lines you hear them all in a week and the joke dies of repetition. At a hundred
- * a tone, and one remark every few minutes of actual use, it takes months to
- * notice a repeat.
+ * lines you hear them all in a morning and the joke dies of repetition. A hundred
+ * a tone is what lets the cooldown be short — at ten seconds it can afford to
+ * speak often, and still take weeks of steady use before anything comes round
+ * twice.
  *
  * Every line is short enough for the bubble, and a test enforces that rather than
  * trusting anyone to count. Snarky is cheek about the work — the branch, the
