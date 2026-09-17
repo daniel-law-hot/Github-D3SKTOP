@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert'
-import { rarityFor, rollBuddy } from '../../src/lib/buddy/roll'
+import {
+  isShinyRoll,
+  rarityFor,
+  rollBuddy,
+  ShinyChance,
+} from '../../src/lib/buddy/roll'
 import { BuddyRarity } from '../../src/models/buddy'
 
 describe('buddy', () => {
@@ -19,6 +24,7 @@ describe('buddy', () => {
       assert.equal(first.species, second.species)
       assert.equal(first.glyph, second.glyph)
       assert.equal(first.rarity, second.rarity)
+      assert.equal(first.isShiny, second.isShiny)
       assert.deepStrictEqual(first.stats, second.stats)
     })
 
@@ -79,6 +85,81 @@ describe('buddy', () => {
     it('carries the reroll count through', () => {
       assert.equal(rollBuddy(1, 0, 4).rerolls, 4)
       assert.equal(rollBuddy(1, 0).rerolls, 0)
+    })
+  })
+
+  /**
+   * The promise the whole seed scheme rests on.
+   *
+   * These four were captured from the implementation before shiny existed. If a
+   * draw is ever inserted ahead of the ones deciding rarity, stats, species or
+   * name, every buddy in the company silently becomes somebody else — and these
+   * are what notice.
+   */
+  describe('seeds already in the wild', () => {
+    const known = [
+      [12345, 'Biscuit', 'gecko', 'epic', [61, 68, 81, 69]],
+      [1034720879, 'Basil', 'gecko', 'rare', [45, 69, 73, 69]],
+      [7, 'Wren', 'bat', 'common', [7, 45, 33, 26]],
+      [999999, 'Nutmeg', 'crab', 'common', [24, 25, 37, 21]],
+    ] as const
+
+    for (const [seed, name, species, rarity, stats] of known) {
+      it(`still gives seed ${seed} the same buddy`, () => {
+        const buddy = rollBuddy(seed, 0)
+
+        assert.equal(buddy.name, name)
+        assert.equal(buddy.species, species)
+        assert.equal(buddy.rarity, rarity)
+        assert.deepStrictEqual(
+          [
+            buddy.stats.focus,
+            buddy.stats.stamina,
+            buddy.stats.luck,
+            buddy.stats.mischief,
+          ],
+          [...stats]
+        )
+      })
+    }
+  })
+
+  describe('shiny', () => {
+    it('is one in 8192', () => {
+      assert.equal(ShinyChance, 1 / 8192)
+    })
+
+    it('takes everything below the threshold and nothing above it', () => {
+      assert.equal(isShinyRoll(0), true)
+      assert.equal(isShinyRoll(ShinyChance / 2), true)
+      assert.equal(isShinyRoll(ShinyChance), false)
+      assert.equal(isShinyRoll(0.5), false)
+      assert.equal(isShinyRoll(1), false)
+    })
+
+    it('sticks to the seed like everything else', () => {
+      for (let seed = 0; seed < 200; seed++) {
+        assert.equal(rollBuddy(seed, 0).isShiny, rollBuddy(seed, 999).isShiny)
+      }
+    })
+
+    /**
+     * Wide bounds on purpose. Twenty-four expected in two hundred thousand is a
+     * small enough number that a tight assertion would fail on nothing but luck.
+     * This is here to catch a threshold wrong by orders of magnitude, which is
+     * the mistake actually worth catching.
+     */
+    it('turns up at roughly the right rate over a long sweep', () => {
+      let count = 0
+
+      for (let seed = 0; seed < 200000; seed++) {
+        if (rollBuddy(seed, 0).isShiny) {
+          count++
+        }
+      }
+
+      assert.ok(count > 4, `only ${count} shinies in 200000`)
+      assert.ok(count < 70, `${count} shinies in 200000 is far too many`)
     })
   })
 

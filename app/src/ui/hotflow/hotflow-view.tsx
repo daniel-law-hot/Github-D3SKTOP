@@ -13,6 +13,8 @@ import {
   ReleaseVerdict,
 } from '../../models/hotflow'
 import { PopupType } from '../../models/popup'
+import { PreferencesTab } from '../../models/preferences'
+import { maybeChatter } from '../../lib/buddy/buddy-store'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import { Button } from '../lib/button'
@@ -442,13 +444,42 @@ export class HotFlowView extends React.Component<
     const { missingRequiredBranches } = this.props.hotFlowState
 
     return (
-      <div className="hotflow" id="hotflow">
+      <div className="hotflow" id="hotflow" onClick={this.onHotFlowClick}>
         {this.renderHeader()}
         {missingRequiredBranches.length > 0
           ? this.renderMissingBranches()
           : this.renderFlow()}
       </div>
     )
+  }
+
+  /**
+   * Gives the buddy something to react to.
+   *
+   * One listener on the container rather than a call in every handler: what
+   * matters is that somebody is doing things in here, not which thing, and
+   * threading a chatter call through twenty callbacks would be a lot of edits
+   * for a joke.
+   *
+   * Only interactive targets count. Clicking the background is not an action
+   * and does not deserve a comment on it.
+   */
+  private onHotFlowClick = (event: React.MouseEvent) => {
+    const target = event.target
+
+    if (
+      target instanceof Element &&
+      target.closest('button, a, [role="button"], input, select') !== null
+    ) {
+      maybeChatter()
+    }
+  }
+
+  private onShowBuddy = () => {
+    this.props.dispatcher.showPopup({
+      type: PopupType.Preferences,
+      initialSelectedTab: PreferencesTab.Buddy,
+    })
   }
 
   private renderHeader() {
@@ -658,6 +689,7 @@ export class HotFlowView extends React.Component<
               aligned with the nodes above them when the band is scrolled. */}
           <div className="hotflow-flow-scroll">
             <FlowDiagram
+              onShowBuddy={this.onShowBuddy}
               hotFlowState={hotFlowState}
               missingWorkItemCount={missingWorkItemCount}
               lastShippedVersion={lastShippedVersion}

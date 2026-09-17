@@ -168,16 +168,41 @@ export function rollBuddy(
     random
   )
 
+  const name = pick(Names, random)
+
+  // Drawn last, so every buddy rolled before this existed keeps the one it had.
+  const isShiny = isShinyRoll(random())
+
   return {
     seed,
-    name: pick(Names, random),
+    name,
     species,
     glyph,
     rarity,
     stats,
     rolledAt,
     rerolls,
+    isShiny,
+
+    // A newly rolled buddy has done nothing yet; the store carries the numbers
+    // for one that has.
+    xp: 0,
+    level: 1,
   }
+}
+
+/**
+ * How often a buddy turns up in the wrong colours.
+ *
+ * The number every player of a certain game knows by heart, and chosen for
+ * exactly that reason — it is meaningful to anybody who recognises it and
+ * harmless to anybody who does not. Nothing tells you the odds.
+ */
+export const ShinyChance = 1 / 8192
+
+/** Whether a number between 0 and 1 means shiny. */
+export function isShinyRoll(roll: number): boolean {
+  return roll < ShinyChance
 }
 
 /** A seed for a buddy nobody has met yet. */

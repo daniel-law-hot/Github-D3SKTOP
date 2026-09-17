@@ -60,6 +60,7 @@ import {
   RevertProgress,
 } from './toolbar'
 import { HotFlowView } from './hotflow'
+import { BuddyCompanion } from './hotflow/buddy-companion'
 import {
   ConnectAdoDialog,
   EditBranchesDialog,
@@ -3447,6 +3448,29 @@ export class App extends React.Component<IAppProps, IAppState> {
     }
   }
 
+  /**
+   * The buddy, in the empty run of toolbar past the last button.
+   *
+   * Only while HotFlow is closed: the schematic has its own, and two of the same
+   * animal on screen at once reads as a bug rather than a joke. This is the
+   * fallback so the companion is somewhere at all times rather than only on one
+   * tab — the whole point of having one is that it is about.
+   */
+  private renderBuddy() {
+    if (this.state.hotFlowVisible) {
+      return null
+    }
+
+    return <BuddyCompanion onShowBuddy={this.onShowBuddy} />
+  }
+
+  private onShowBuddy = () => {
+    this.props.dispatcher.showPopup({
+      type: PopupType.Preferences,
+      initialSelectedTab: PreferencesTab.Buddy,
+    })
+  }
+
   private renderRepositoryToolbarButton() {
     const selection = this.state.selectedState
 
@@ -3818,6 +3842,13 @@ export class App extends React.Component<IAppProps, IAppState> {
         {this.renderBranchToolbarButton()}
         {this.renderPushPullToolbarButton()}
         {this.renderHotFlowToolbarButton()}
+
+        {/* Before the right-hand pair, not after: the buddy takes the slack in
+            the middle, which is what leaves those two against the right edge.
+            Placed after them it ate the free space their margin-left: auto
+            needed, and they drifted back towards the middle. */}
+        {this.renderBuddy()}
+
         {this.renderOpenWithClaudeToolbarButton()}
         {this.renderOpenInVisualStudioToolbarButton()}
       </Toolbar>

@@ -50,4 +50,25 @@ export interface IBuddy {
 
   /** How many have been traded in before this one. Worn with pride or shame. */
   readonly rerolls: number
+
+  /**
+   * One in 8192, drawn last.
+   *
+   * Last on purpose: the draws before it decide rarity, stats, species and name,
+   * so adding this to the end leaves every buddy that already exists exactly as
+   * it was. Putting it anywhere else would have reassigned the lot.
+   */
+  readonly isShiny: boolean
+
+  /**
+   * Experience, earned by committing.
+   *
+   * Not derived from the seed, unlike everything above it — this is the one
+   * part of a buddy that is about what its owner has done rather than about
+   * what turned up.
+   */
+  readonly xp: number
+
+  /** Where that experience has got to, from 1 to MaxLevel. */
+  readonly level: number
 }

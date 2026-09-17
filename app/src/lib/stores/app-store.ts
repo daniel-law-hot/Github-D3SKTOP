@@ -435,6 +435,7 @@ import {
   getWorkItems,
 } from '../hotflow/ado-client'
 import { scopeToRepository } from '../hotflow/work-item-scope'
+import { getBuddy, recordCommitXp } from '../buddy/buddy-store'
 
 const LastSelectedRepositoryIDKey = 'last-selected-repository-id'
 
@@ -3605,6 +3606,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
           result,
           state.commitToAmend
         )
+
+        this.awardBuddyXp(repository, result)
       } else {
         // The commit failed, but we should still refresh to ensure we
         // accurately reflect the repository state post failure. See
@@ -3636,6 +3639,30 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // Nothing here about HotFlow: a commit moves a ref, and the
     // `_refreshRepository` above notices that on its own. See
     // `refreshHotFlowIfRefsChanged`.
+  }
+
+  /**
+   * Hands the buddy the experience a commit is worth.
+   *
+   * Not awaited and never surfaced. A commit that succeeded must not report a
+   * failure because a decoration could not read its own line count, and the
+   * changed-file read is a git process the commit itself has no reason to wait
+   * for.
+   *
+   * Lines rather than commits, so a day of real work outpaces a day of typo
+   * fixes — with a cap in `xpForCommit`, because otherwise one vendored
+   * dependency would finish the whole thing at once.
+   */
+  private awardBuddyXp(repository: Repository, sha: string) {
+    if (getBuddy() === null) {
+      return
+    }
+
+    getChangedFiles(repository, sha)
+      .then(({ linesAdded, linesDeleted }) =>
+        recordCommitXp(linesAdded + linesDeleted)
+      )
+      .catch(e => log.debug('Could not award buddy experience', e))
   }
 
   private async _recordCommitStats(

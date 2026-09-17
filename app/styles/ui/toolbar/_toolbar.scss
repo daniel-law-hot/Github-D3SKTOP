@@ -3,6 +3,10 @@
 /** A React component holding the main application toolbar component. */
 #desktop-app-toolbar {
   height: var(--toolbar-height);
+
+  // So the buddy speech bubble, which hangs below the bar, is placed against
+  // the toolbar rather than against whatever ancestor happens to be positioned.
+  position: relative;
   border-bottom: 1px solid var(--toolbar-border-color);
 
   display: flex;

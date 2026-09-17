@@ -151,3 +151,364 @@
   color: var(--text-secondary-color);
   font-size: var(--font-size-sm);
 }
+
+/**
+ * Before there is anybody.
+ *
+ * Centred and quiet. The egg is the only thing on the page, because a screen
+ * that listed rarities and stats first would turn meeting yours into shopping.
+ */
+.buddy-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--spacing-half);
+  padding: var(--spacing-double) 0;
+
+  h2 {
+    margin: 0;
+  }
+
+  p {
+    margin: 0 0 var(--spacing);
+    max-width: 24rem;
+    color: var(--text-secondary-color);
+  }
+}
+
+.buddy-empty-glyph {
+  font-size: 48px;
+  line-height: 1;
+
+  // A slow rock, so the thing that is about to hatch looks like it might.
+  animation: buddy-egg 2.4s ease-in-out infinite;
+}
+
+@keyframes buddy-egg {
+  0%,
+  88%,
+  100% {
+    transform: rotate(0deg);
+  }
+  92% {
+    transform: rotate(7deg);
+  }
+  96% {
+    transform: rotate(-7deg);
+  }
+}
+
+/** The moment one turns up, which should read as an arrival rather than a swap. */
+.buddy.arriving .buddy-glyph {
+  animation: buddy-arrive 900ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes buddy-arrive {
+  0% {
+    transform: scale(0.2) rotate(-25deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15) rotate(6deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* ── the one that paces about the HotFlow header ──────────────────────────── */
+
+/**
+ * The empty stretch between the repository name and the refresh controls.
+ *
+ * A flex child rather than anything absolutely positioned, so the buddy is
+ * confined to whatever gap the header actually has. On a narrow window the gap
+ * closes and it simply has less floor to cover, instead of wandering over the
+ * buttons.
+ */
+.hotflow-buddy-run {
+  position: absolute;
+  top: 0;
+  right: var(--spacing);
+
+  // A stretch of the top right rather than the whole width: the schematic is
+  // 1216px and usually scrolled, so a buddy that used all of it would spend
+  // most of its walk somewhere nobody is looking.
+  // How big the buddy is. Everything else here is derived from it: the strip it
+  // walks in, and the point it turns around at. The toolbar overrides it, having
+  // only 50px of height to play with.
+  --buddy-size: 52px;
+
+  width: min(360px, 44%);
+  height: calc(var(--buddy-size) + 10px);
+  overflow: hidden;
+  pointer-events: none;
+
+  // Above the SVG, which paints the boxes and edges underneath it.
+  z-index: 1;
+}
+
+.hotflow-buddy {
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+  line-height: 1;
+
+  // Sat in its corner. The walk below only runs when asked for, because
+  // something pacing continuously at the edge of vision is movement nobody
+  // chose and cannot stop while they work.
+  left: calc(100% - var(--buddy-size));
+
+  &.walking {
+    // One lap: out to the far end, turn, and home. The holds at 45% and 95%
+    // are the turn itself — it stops, faces about, then sets off.
+    animation: hotflow-buddy-walk 9s ease-in-out 1;
+  }
+
+  &:hover {
+    filter: brightness(1.15);
+  }
+}
+
+.hotflow-buddy-glyph {
+  display: block;
+  font-size: var(--buddy-size);
+}
+
+// The bob is on the inner element so it does not fight the parent's flip, and
+// only while walking, so a sitting animal sits.
+.hotflow-buddy.walking .hotflow-buddy-glyph {
+  animation: hotflow-buddy-bob 620ms ease-in-out infinite;
+}
+
+@keyframes hotflow-buddy-walk {
+  0% {
+    left: calc(100% - var(--buddy-size));
+    transform: scaleX(-1);
+  }
+  45% {
+    left: 0;
+    transform: scaleX(-1);
+  }
+  50% {
+    left: 0;
+    transform: scaleX(1);
+  }
+  95% {
+    left: calc(100% - var(--buddy-size));
+    transform: scaleX(1);
+  }
+  100% {
+    left: calc(100% - var(--buddy-size));
+    transform: scaleX(1);
+  }
+}
+
+@keyframes hotflow-buddy-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+/**
+ * Still, for anybody who asked their system for that.
+ *
+ * Something pacing in the corner of the eye is exactly the kind of movement that
+ * makes reading the rest of the page harder, and this one is decoration — it has
+ * no business insisting.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .hotflow-buddy.walking,
+  .hotflow-buddy.walking .hotflow-buddy-glyph,
+  .buddy-empty-glyph,
+  .buddy.arriving .buddy-glyph {
+    animation: none;
+  }
+
+  .hotflow-buddy {
+    left: calc(100% - var(--buddy-size));
+  }
+}
+
+/**
+ * The same companion, in the run of toolbar past the last button.
+ *
+ * Where it lives whenever HotFlow is closed, so there is always one somewhere.
+ * A flex child taking what is left rather than a fixed width: the toolbar's
+ * buttons are sized to their content and what remains is different on every
+ * window width.
+ */
+#desktop-app-toolbar .hotflow-buddy-run {
+  // As big as 50px of toolbar allows, rather than the 52px the diagram gets.
+  --buddy-size: 36px;
+
+  position: relative;
+  top: auto;
+  right: auto;
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: auto;
+  align-self: stretch;
+
+  // Toolbar buttons draw their own separators; this must not add one.
+  border: none;
+}
+
+#desktop-app-toolbar .hotflow-buddy {
+  bottom: 3px;
+}
+
+/**
+ * The card on right click: the Options tab, minus everything that only belongs
+ * there. No trading one in from here — that is a permanent thing and it should
+ * take more than a stray right click and a misread button.
+ */
+.buddy-card {
+  width: 260px;
+
+  .buddy-stats {
+    grid-template-columns: 4.5rem minmax(0, 1fr) 1.75rem;
+  }
+}
+
+.buddy-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing);
+  margin-bottom: var(--spacing);
+
+  h3 {
+    margin: 0;
+  }
+}
+
+.buddy-card-glyph {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.buddy-card-footer {
+  margin-top: var(--spacing);
+  text-align: right;
+}
+
+/**
+ * Shiny: one in 8192, and drawn in the wrong colours.
+ *
+ * A straight inversion rather than a recolour, because that is what "inverted"
+ * means and because it works on any emoji without a table of per-species
+ * alternatives. It reads as deliberate next to the ordinary one, which is the
+ * whole point of a shiny.
+ */
+.hotflow-buddy-glyph.shiny,
+.buddy-card-glyph.shiny,
+.buddy-glyph.shiny {
+  filter: invert(1);
+}
+
+/** Holds the card, and nothing else — see the comment where it is rendered. */
+.buddy-card-anchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/**
+ * The level bar.
+ *
+ * Numbers beside it, because a bar with no numbers is a bar people invent
+ * theories about — and this one moves slowly enough that somebody watching it
+ * deserves to know exactly how slowly.
+ */
+.buddy-level {
+  margin-top: var(--spacing);
+}
+
+.buddy-level-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--spacing-half);
+}
+
+.buddy-level-name {
+  font-weight: var(--font-weight-semibold);
+}
+
+.buddy-level-xp {
+  color: var(--text-secondary-color);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-sm);
+}
+
+.buddy-card-level {
+  margin-top: var(--spacing-half);
+  color: var(--text-secondary-color);
+  font-size: var(--font-size-sm);
+}
+
+/**
+ * What it says, when it says anything.
+ *
+ * Positioned rather than anchored to the buddy itself, because the buddy moves:
+ * anchoring to a walking animal would drag the bubble across the header with it.
+ * It appears where the buddy sits, which is where it is whenever it is not
+ * mid-lap — and it is never mid-lap and talking at the same time by accident,
+ * because both are rare.
+ */
+.hotflow-buddy-speech {
+  position: absolute;
+  z-index: 2;
+  max-width: 260px;
+  padding: var(--spacing-half) var(--spacing);
+  border: 1px solid var(--box-border-color);
+  border-radius: var(--border-radius);
+  background: var(--background-color);
+  box-shadow: var(--base-box-shadow);
+  font-size: var(--font-size-sm);
+  pointer-events: none;
+
+  // Arrives rather than blinks into being.
+  animation: buddy-speech-in 180ms ease-out;
+}
+
+@keyframes buddy-speech-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// In the schematic, under the corner it sits in.
+.hotflow-diagram .hotflow-buddy-speech {
+  top: calc(var(--buddy-size, 52px) + 16px);
+  right: var(--spacing);
+}
+
+// In the toolbar there is no room below, so it hangs under the bar instead.
+#desktop-app-toolbar .hotflow-buddy-speech {
+  top: calc(100% + 4px);
+  right: 440px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hotflow-buddy-speech {
+    animation: none;
+  }
+}

@@ -12,6 +12,7 @@ import { Branch, BranchType } from '../../models/branch'
 import { Tooltip } from '../lib/tooltip'
 import { createObservableRef } from '../lib/observable-ref'
 import { LinkButton } from '../lib/link-button'
+import { BuddyCompanion } from './buddy-companion'
 
 /**
  * The diagram's geometry, in viewBox units.
@@ -141,6 +142,9 @@ export type PullRequestKnowledge = 'known' | 'loading' | 'unavailable'
 
 interface IFlowDiagramProps {
   readonly hotFlowState: IHotFlowState
+
+  /** Opens the Buddy tab, for anybody who clicks the thing pacing the corner. */
+  readonly onShowBuddy: () => void
 
   /** Number of work items assigned to the release but missing from it. */
   readonly missingWorkItemCount: number
@@ -458,6 +462,10 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
 
     return (
       <div className="hotflow-diagram">
+        {/* Top right of the schematic, which is empty in every layout: the
+            boxes are centred on midY and the columns stop at the production
+            node, so nothing is drawn in that corner at any band height. */}
+        <BuddyCompanion onShowBuddy={this.props.onShowBuddy} />
         {/* Explicit width and height, so one unit is one pixel and nothing is
             scaled. Resizing the band changes how many rows fit, not their size. */}
         <svg

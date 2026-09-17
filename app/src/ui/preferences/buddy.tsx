@@ -1,8 +1,15 @@
 import * as React from 'react'
+import classNames from 'classnames'
 import { DialogContent } from '../dialog'
 import { Button } from '../lib/button'
 import { BuddyRarity, IBuddy } from '../../models/buddy'
-import { getBuddy, rerollBuddy } from '../../lib/buddy/buddy-store'
+import {
+  getBuddy,
+  polishBuddy,
+  rerollBuddy,
+  spawnBuddy,
+} from '../../lib/buddy/buddy-store'
+import { levelProgress, MaxLevel } from '../../lib/buddy/xp'
 
 /**
  * How many pokes reveal the way out, and how long you have to do them in.
@@ -15,9 +22,14 @@ const PokesToReveal = 5
 const PokeWindowMs = 3000
 
 interface IBuddyPreferencesState {
-  readonly buddy: IBuddy
+  /** Null until somebody goes looking, which is the whole of the opening move. */
+  readonly buddy: IBuddy | null
+
   readonly pokes: number
   readonly revealed: boolean
+
+  /** Set for a moment after one arrives, so the first sight of it is an event. */
+  readonly arriving: boolean
 }
 
 const RarityLabels: { readonly [key in BuddyRarity]: string } = {
@@ -42,15 +54,40 @@ export class BuddyPreferences extends React.Component<
   IBuddyPreferencesState
 > {
   private pokeTimer: number | null = null
+  private arrivalTimer: number | null = null
 
   public constructor(props: {}) {
     super(props)
 
-    this.state = { buddy: getBuddy(), pokes: 0, revealed: false }
+    this.state = {
+      buddy: getBuddy(),
+      pokes: 0,
+      revealed: false,
+      arriving: false,
+    }
   }
 
   public componentWillUnmount() {
     this.clearPokeTimer()
+    this.clearArrivalTimer()
+  }
+
+  private clearArrivalTimer() {
+    if (this.arrivalTimer !== null) {
+      window.clearTimeout(this.arrivalTimer)
+      this.arrivalTimer = null
+    }
+  }
+
+  private onSpawn = () => {
+    this.setState({ buddy: spawnBuddy(), arriving: true })
+
+    this.clearArrivalTimer()
+
+    this.arrivalTimer = window.setTimeout(() => {
+      this.setState({ arriving: false })
+      this.arrivalTimer = null
+    }, 900)
   }
 
   private clearPokeTimer() {
@@ -67,7 +104,7 @@ export class BuddyPreferences extends React.Component<
    * quietly tells some of your colleagues it was not meant for them.
    */
   private onPoke = () => {
-    if (this.state.revealed) {
+    if (this.state.revealed || this.state.buddy === null) {
       return
     }
 
@@ -89,7 +126,95 @@ export class BuddyPreferences extends React.Component<
   }
 
   private onReroll = () => {
-    this.setState({ buddy: rerollBuddy(), pokes: 0, revealed: false })
+    this.setState({
+      buddy: rerollBuddy(),
+      pokes: 0,
+      revealed: false,
+      arriving: true,
+    })
+
+    this.clearArrivalTimer()
+
+    this.arrivalTimer = window.setTimeout(() => {
+      this.setState({ arriving: false })
+      this.arrivalTimer = null
+    }, 900)
+  }
+
+  private onPolish = () => {
+    this.setState({ buddy: polishBuddy(), arriving: true })
+
+    this.clearArrivalTimer()
+
+    this.arrivalTimer = window.setTimeout(() => {
+      this.setState({ arriving: false })
+      this.arrivalTimer = null
+    }, 900)
+  }
+
+  /**
+   * The level, and how far into it.
+   *
+   * Experience comes from committing, by the lines a commit touched, and the
+   * curve is deliberately long — a maxed buddy should mean somebody has been
+   * here the better part of a year. The numbers are shown because a bar with no
+   * numbers is a bar people invent theories about.
+   */
+  private renderLevel(buddy: IBuddy) {
+    const progress = levelProgress(buddy.xp)
+
+    return (
+      <div className="buddy-level">
+        <div className="buddy-level-head">
+          <span className="buddy-level-name">
+            Level {progress.level}
+            {progress.isMax ? ' — as far as they go' : ''}
+          </span>
+          <span className="buddy-level-xp">
+            {progress.isMax
+              ? `${buddy.xp} experience`
+              : `${progress.into} / ${progress.needed}`}
+          </span>
+        </div>
+        <div
+          className="buddy-stat-track"
+          role="img"
+          aria-label={`Level ${progress.level} of ${MaxLevel}`}
+        >
+          <div
+            className="buddy-stat-fill"
+            style={{ width: `${Math.round(progress.fraction * 100)}%` }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  /** The reward for getting there, offered once and never taken back. */
+  private renderPolish(buddy: IBuddy) {
+    if (buddy.level < MaxLevel) {
+      return null
+    }
+
+    if (buddy.isShiny) {
+      return (
+        <p className="buddy-history">
+          There is nothing left to earn. {buddy.name} shines already.
+        </p>
+      )
+    }
+
+    return (
+      <div className="buddy-reroll">
+        <p>
+          {buddy.name} has gone as far as they go. You can change their colours
+          for good.
+        </p>
+        <div className="buddy-reroll-actions">
+          <Button onClick={this.onPolish}>Make {buddy.name} shiny</Button>
+        </div>
+      </div>
+    )
   }
 
   private onKeep = () => {
@@ -113,29 +238,32 @@ export class BuddyPreferences extends React.Component<
   }
 
   private renderReroll() {
-    if (!this.state.revealed) {
+    const { buddy } = this.state
+
+    if (!this.state.revealed || buddy === null) {
       return null
     }
 
     return (
       <div className="buddy-reroll">
         <p>
-          {this.state.buddy.name} senses your hesitation. Trade them in for
-          whatever turns up next?
+          {buddy.name} senses your hesitation. Trade them in for whatever turns
+          up next?
         </p>
         <div className="buddy-reroll-actions">
           <Button onClick={this.onReroll}>Find another</Button>
-          <Button onClick={this.onKeep}>Keep {this.state.buddy.name}</Button>
+          <Button onClick={this.onKeep}>Keep {buddy.name}</Button>
         </div>
         <p className="buddy-reroll-warning">
-          There is no going back to this one.
+          There is no going back to this one
+          {buddy.level > 1 ? `, and level ${buddy.level} goes with them` : ''}.
         </p>
       </div>
     )
   }
 
   private renderHistory() {
-    const { rerolls } = this.state.buddy
+    const rerolls = this.state.buddy?.rerolls ?? 0
 
     if (rerolls === 0) {
       return null
@@ -150,29 +278,70 @@ export class BuddyPreferences extends React.Component<
     )
   }
 
+  /**
+   * Before there is anybody.
+   *
+   * No mention of rarity, stats or trading one in: everything this feature does
+   * is more fun found than announced, and a screen that explained the odds first
+   * would turn meeting yours into collecting one.
+   */
+  private renderEmpty() {
+    return (
+      <DialogContent>
+        <div className="buddy-empty">
+          <div className="buddy-empty-glyph" aria-hidden="true">
+            🥚
+          </div>
+          <h2>Nobody yet</h2>
+          <p>
+            Something is out there. It has not been introduced to you, and it
+            will not turn up on its own.
+          </p>
+          <Button type="submit" onClick={this.onSpawn}>
+            Go and look
+          </Button>
+        </div>
+      </DialogContent>
+    )
+  }
+
   public render() {
     const { buddy } = this.state
+
+    if (buddy === null) {
+      return this.renderEmpty()
+    }
+
     const { stats } = buddy
 
     return (
       <DialogContent>
-        <div className="buddy">
+        <div className={classNames('buddy', { arriving: this.state.arriving })}>
           <button
             className="buddy-portrait"
             type="button"
             onClick={this.onPoke}
             aria-label={`${buddy.name}, a ${buddy.species}`}
           >
-            <span className="buddy-glyph">{buddy.glyph}</span>
+            <span
+              className={classNames('buddy-glyph', { shiny: buddy.isShiny })}
+            >
+              {buddy.glyph}
+            </span>
           </button>
 
           <div className="buddy-identity">
             <h2 className="buddy-name">{buddy.name}</h2>
             <div className="buddy-species">{buddy.species}</div>
             <div className={`buddy-rarity ${buddy.rarity}`}>
+              {buddy.isShiny ? 'Shiny ' : ''}
               {RarityLabels[buddy.rarity]}
             </div>
-            <p className="buddy-blurb">{RarityBlurbs[buddy.rarity]}</p>
+            <p className="buddy-blurb">
+              {buddy.isShiny
+                ? 'The colours are wrong. One in eight thousand and ninety-two are.'
+                : RarityBlurbs[buddy.rarity]}
+            </p>
           </div>
         </div>
 
@@ -183,6 +352,8 @@ export class BuddyPreferences extends React.Component<
           {this.renderStat('Mischief', stats.mischief)}
         </div>
 
+        {this.renderLevel(buddy)}
+        {this.renderPolish(buddy)}
         {this.renderHistory()}
         {this.renderReroll()}
       </DialogContent>
