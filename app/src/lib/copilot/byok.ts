@@ -1,6 +1,7 @@
 import { isIPv4 } from 'net'
 import { TokenStore } from '../stores/token-store'
 import type { ReasoningEffort } from '../stores/copilot-store'
+import { credentialStoreAppName } from '../credential-store-app-name'
 
 /** Provider type understood by the Copilot SDK BYOK config. */
 export type BYOKProviderType = 'openai' | 'azure' | 'anthropic'
@@ -61,9 +62,7 @@ export interface IBYOKProvider {
 }
 
 const ProvidersStorageKey = 'copilot-byok-providers'
-const TokenStoreKey = `${
-  __DEV__ ? 'GitHub Desktop Dev' : 'GitHub Desktop'
-} - Copilot BYOK provider`
+const TokenStoreKey = `${credentialStoreAppName} - Copilot BYOK provider`
 
 /**
  * Loads the list of BYOK providers from local storage. Returns an empty list
