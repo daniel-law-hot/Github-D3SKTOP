@@ -42,6 +42,7 @@ import { Prompts } from './prompts'
 import { Repository } from '../../models/repository'
 import { Notifications } from './notifications'
 import { Accessibility } from './accessibility'
+import { BuddyPreferences } from './buddy'
 import type { ModelInfo } from '@github/copilot-sdk'
 import { CopilotPreferences } from './copilot'
 import type {
@@ -390,6 +391,10 @@ export class Preferences extends React.Component<
               <Octicon className="icon" symbol={octicons.accessibility} />
               Accessibility
             </span>
+            <span id={this.getTabId(PreferencesTab.Buddy)}>
+              <Octicon className="icon" symbol={octicons.heart} />
+              Buddy
+            </span>
           </TabBar>
 
           {this.renderActiveTab()}
@@ -428,6 +433,9 @@ export class Preferences extends React.Component<
         break
       case PreferencesTab.Accessibility:
         suffix = 'accessibility'
+        break
+      case PreferencesTab.Buddy:
+        suffix = 'buddy'
         break
       default:
         return assertNever(tab, `Unknown tab type: ${tab}`)
@@ -680,6 +688,9 @@ export class Preferences extends React.Component<
             onUnderlineLinksChanged={this.onUnderlineLinksChanged}
           />
         )
+        break
+      case PreferencesTab.Buddy:
+        View = <BuddyPreferences />
         break
       default:
         return assertNever(index, `Unknown tab index: ${index}`)

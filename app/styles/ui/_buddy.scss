@@ -1,0 +1,153 @@
+/**
+ * The buddy tab.
+ *
+ * Sized to the dialog rather than filling it: this is a small joke in a window
+ * full of real settings, and making it the loudest thing in Options would be
+ * funny once and irritating afterwards.
+ */
+.buddy {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-double);
+  margin-bottom: var(--spacing-double);
+}
+
+.buddy-portrait {
+  flex-shrink: 0;
+  width: 88px;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--box-border-color);
+  border-radius: var(--border-radius);
+  background: var(--box-alt-background-color);
+  cursor: pointer;
+  padding: 0;
+
+  &:hover {
+    background: var(--box-background-color);
+  }
+
+  // Poking it should feel like poking something.
+  &:active .buddy-glyph {
+    transform: scale(0.92) rotate(-4deg);
+  }
+}
+
+.buddy-glyph {
+  font-size: 44px;
+  line-height: 1;
+  transition: transform 80ms ease-out;
+}
+
+.buddy-identity {
+  min-width: 0;
+}
+
+.buddy-name {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.buddy-species {
+  color: var(--text-secondary-color);
+  text-transform: lowercase;
+}
+
+.buddy-rarity {
+  display: inline-block;
+  margin-top: var(--spacing-half);
+  padding: 1px var(--spacing-half);
+  border-radius: var(--border-radius);
+  border: 1px solid currentColor;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+
+  // The tier is the whole point, so it is the only thing here wearing colour.
+  &.common {
+    color: var(--text-secondary-color);
+  }
+  &.uncommon {
+    color: var(--color-modified);
+  }
+  &.rare {
+    color: var(--color-new);
+  }
+  &.epic {
+    color: var(--color-renamed);
+  }
+  &.legendary {
+    color: var(--color-conflicted);
+  }
+}
+
+.buddy-blurb {
+  margin: var(--spacing-half) 0 0;
+  color: var(--text-secondary-color);
+}
+
+.buddy-stats {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) 2rem;
+  gap: var(--spacing-half) var(--spacing);
+  align-items: center;
+}
+
+.buddy-stat {
+  display: contents;
+}
+
+.buddy-stat-label {
+  color: var(--text-secondary-color);
+}
+
+.buddy-stat-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--box-alt-background-color);
+  overflow: hidden;
+}
+
+.buddy-stat-fill {
+  height: 100%;
+  background: var(--color-new);
+}
+
+.buddy-stat-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text-secondary-color);
+}
+
+.buddy-history {
+  margin-top: var(--spacing);
+  color: var(--text-secondary-color);
+  font-style: italic;
+}
+
+.buddy-reroll {
+  margin-top: var(--spacing);
+  padding: var(--spacing);
+  border: 1px solid var(--box-border-color);
+  border-radius: var(--border-radius);
+  background: var(--box-alt-background-color);
+
+  p {
+    margin: 0 0 var(--spacing);
+  }
+}
+
+.buddy-reroll-actions {
+  display: flex;
+  gap: var(--spacing-half);
+}
+
+.buddy-reroll-warning {
+  margin: var(--spacing) 0 0 !important;
+  color: var(--text-secondary-color);
+  font-size: var(--font-size-sm);
+}
