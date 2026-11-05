@@ -4,6 +4,51 @@ import { WorkingDirectoryFileChange } from '../../models/status'
 import memoizeOne from 'memoize-one'
 
 /**
+ * Whether the filter text is an exclusion: a leading `^` turns "contains" into
+ * "does not contain", so `csproj` shows the project files and `^csproj` shows
+ * everything else.
+ */
+export function isNegatedFilterText(filterText: string): boolean {
+  return filterText.startsWith('^')
+}
+
+/**
+ * Whether a file passes a negated filter.
+ *
+ * A bare `^` has nothing to exclude yet, so it shows everything rather than
+ * emptying the list while someone is still typing. Matched against the whole path,
+ * case-insensitively, the same way the tree view matches the text it is given.
+ *
+ * Only ever decides what is shown. A file hidden by it stays in the commit if it was
+ * going to be in it — see `isCommittingFileHiddenByFilter`, which says so.
+ */
+export function matchesNegatedFilterText(
+  path: string,
+  filterText: string
+): boolean {
+  const term = filterText.slice(1).trim().toLowerCase()
+
+  return term === '' || !path.toLowerCase().includes(term)
+}
+
+/**
+ * Whether a path passes the filter text, in the tree view's plain
+ * "contains" sense, with the leading `^` meaning "does not contain".
+ */
+export function pathMatchesFilterText(
+  path: string,
+  filterText: string
+): boolean {
+  if (isNegatedFilterText(filterText)) {
+    return matchesNegatedFilterText(path, filterText)
+  }
+
+  return (
+    filterText === '' || path.toLowerCase().includes(filterText.toLowerCase())
+  )
+}
+
+/**
  * Apply filter options to determine if a file change should be shown.
  * Uses AND logic - the change must satisfy ALL active filters.
  * Note: This is applied after the filterText has been applied.
@@ -54,6 +99,15 @@ export function applyFilterOptions(
   // out here — tree filtering is handled before the tree is built.
   if (item.change === undefined) {
     return true
+  }
+
+  // The list's own text search can only say "matches", so an exclusion is applied
+  // here instead.
+  if (
+    isNegatedFilterText(filters.filterText) &&
+    !matchesNegatedFilterText(item.change.path, filters.filterText)
+  ) {
+    return false
   }
 
   return fileMatchesFilterOptions(item.change, filters)

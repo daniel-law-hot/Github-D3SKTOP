@@ -79,6 +79,8 @@ import {
   hasActiveFilters,
   applyFilters,
   fileMatchesFilterOptions,
+  isNegatedFilterText,
+  pathMatchesFilterText,
 } from './filter-changes-logic'
 import { ChangesListFilterOptions } from './changes-list-filter-options'
 import { HookProgress } from '../../lib/git'
@@ -545,11 +547,10 @@ export class FilterChangesList extends React.Component<
     }
 
     const { filterText } = props.fileListFilter
-    const search = filterText.toLowerCase()
 
     return files.filter(
       f =>
-        (search === '' || f.path.toLowerCase().includes(search)) &&
+        pathMatchesFilterText(f.path, filterText) &&
         fileMatchesFilterOptions(f, props.fileListFilter)
     )
   }
@@ -1677,10 +1678,12 @@ export class FilterChangesList extends React.Component<
             filterText={
               // In the tree view we filter the files ourselves before building
               // the tree, so the list must not re-filter (it would hide folder
-              // rows whose names don't match).
+              // rows whose names don't match). An exclusion (`^name`) is applied
+              // by the filter method below, not by the list's own search.
               this.props.showChangesAsTree
                 ? ''
-                : this.props.showChangesFilter
+                : this.props.showChangesFilter &&
+                  !isNegatedFilterText(this.props.fileListFilter.filterText)
                 ? this.props.fileListFilter.filterText
                 : ''
             }
@@ -1701,7 +1704,8 @@ export class FilterChangesList extends React.Component<
             filterMethod={
               this.props.showChangesAsTree
                 ? undefined
-                : this.props.fileListFilter.isIncludedInCommit ||
+                : isNegatedFilterText(this.props.fileListFilter.filterText) ||
+                  this.props.fileListFilter.isIncludedInCommit ||
                   this.props.fileListFilter.isNewFile ||
                   this.props.fileListFilter.isModifiedFile ||
                   this.props.fileListFilter.isDeletedFile ||

@@ -5,6 +5,9 @@ import { DiffSelectionType } from '../../src/models/diff'
 import { WorkingDirectoryFileChange } from '../../src/models/status'
 import { DiffSelection } from '../../src/models/diff'
 import {
+  isNegatedFilterText,
+  matchesNegatedFilterText,
+  pathMatchesFilterText,
   applyFilterOptions,
   isCommittingFileHiddenByFilter,
   getNoResultsMessage,
@@ -385,6 +388,132 @@ describe('filter-changes-logic', () => {
 
       assert.equal(applyFilters(item, false, filters), true)
       assert.equal(applyFilters(item, true, filters), false)
+    })
+  })
+
+  describe('excluding with a leading ^', () => {
+    const none: IFileListFilterState = {
+      filterText: '',
+      isIncludedInCommit: false,
+      isExcludedFromCommit: false,
+      isNewFile: false,
+      isModifiedFile: false,
+      isDeletedFile: false,
+    }
+
+    it('recognises an exclusion', () => {
+      assert.strictEqual(isNegatedFilterText('^csproj'), true)
+      assert.strictEqual(isNegatedFilterText('csproj'), false)
+      assert.strictEqual(isNegatedFilterText(''), false)
+    })
+
+    it('hides what contains the term, and shows the rest', () => {
+      assert.strictEqual(
+        matchesNegatedFilterText('src/Api/Api.csproj', '^csproj'),
+        false
+      )
+      assert.strictEqual(
+        matchesNegatedFilterText('src/Api/Program.cs', '^csproj'),
+        true
+      )
+    })
+
+    it('ignores case', () => {
+      assert.strictEqual(
+        matchesNegatedFilterText('src/Api/Api.CSPROJ', '^csproj'),
+        false
+      )
+      assert.strictEqual(
+        matchesNegatedFilterText('src/Api/Api.csproj', '^CsProj'),
+        false
+      )
+    })
+
+    it('shows everything for a bare ^, so typing it does not empty the list', () => {
+      assert.strictEqual(matchesNegatedFilterText('a/b.cs', '^'), true)
+      assert.strictEqual(matchesNegatedFilterText('a/b.cs', '^  '), true)
+    })
+
+    it('matches the whole path, not just the file name', () => {
+      assert.strictEqual(
+        matchesNegatedFilterText('src/Tests/Thing.cs', '^tests'),
+        false
+      )
+    })
+
+    it('still means "contains" without the ^', () => {
+      assert.strictEqual(pathMatchesFilterText('a/Api.csproj', 'csproj'), true)
+      assert.strictEqual(pathMatchesFilterText('a/Program.cs', 'csproj'), false)
+      assert.strictEqual(pathMatchesFilterText('a/Program.cs', ''), true)
+    })
+
+    it('uses the same rule for the tree view', () => {
+      assert.strictEqual(
+        pathMatchesFilterText('a/Api.csproj', '^csproj'),
+        false
+      )
+      assert.strictEqual(pathMatchesFilterText('a/Program.cs', '^csproj'), true)
+    })
+
+    it('applies to list items, so the flat list hides the matches', () => {
+      const project = createTestItem(
+        'src/Api.csproj',
+        AppFileStatusKind.Modified,
+        DiffSelectionType.All
+      )
+      const code = createTestItem(
+        'src/Program.cs',
+        AppFileStatusKind.Modified,
+        DiffSelectionType.All
+      )
+      const filters = { ...none, filterText: '^csproj' }
+
+      assert.strictEqual(applyFilterOptions(project, filters), false)
+      assert.strictEqual(applyFilterOptions(code, filters), true)
+    })
+
+    it('combines with the other filters', () => {
+      const newCode = createTestItem(
+        'src/New.cs',
+        AppFileStatusKind.New,
+        DiffSelectionType.All
+      )
+      const modifiedCode = createTestItem(
+        'src/Old.cs',
+        AppFileStatusKind.Modified,
+        DiffSelectionType.All
+      )
+      const filters = { ...none, filterText: '^csproj', isNewFile: true }
+
+      assert.strictEqual(applyFilterOptions(newCode, filters), true)
+      assert.strictEqual(applyFilterOptions(modifiedCode, filters), false)
+    })
+
+    it('leaves a hidden file in the commit, and says so', () => {
+      // Hiding is only a view. A committed .csproj hidden by ^csproj is still
+      // committed, which is what the warning above the commit box is for.
+      const project = createTestItem(
+        'src/Api.csproj',
+        AppFileStatusKind.Modified,
+        DiffSelectionType.All
+      )
+      const code = createTestItem(
+        'src/Program.cs',
+        AppFileStatusKind.Modified,
+        DiffSelectionType.All
+      )
+      const filters = { ...none, filterText: '^csproj' }
+      const visible = new Map([[code.id, code]])
+
+      assert.strictEqual(
+        isCommittingFileHiddenByFilter(
+          [project.id, code.id],
+          visible,
+          2,
+          filters
+        ),
+        true
+      )
     })
   })
 })
