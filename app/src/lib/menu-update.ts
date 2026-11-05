@@ -135,6 +135,7 @@ const allMenuIds: ReadonlyArray<MenuIDs> = [
   'hotflow-update-release',
   'hotflow-finish-release',
   'hotflow-refresh',
+  'hotflow-cleanup-branches',
   'show-repository-list',
   'show-branches-list',
   'open-working-directory',
@@ -276,6 +277,7 @@ function getRepositoryMenuBuilder(state: IAppState): MenuStateBuilder {
     'hotflow',
     'show-hotflow',
     'hotflow-refresh',
+    'hotflow-cleanup-branches',
   ]
 
   const menuStateBuilder = new MenuStateBuilder()

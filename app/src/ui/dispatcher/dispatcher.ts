@@ -1,3 +1,5 @@
+import { ICleanupBranch } from '../../lib/hotflow/branch-cleanup'
+import { ICleanupResult } from '../../models/hotflow'
 import { Disposable } from 'event-kit'
 
 import {
@@ -468,9 +470,43 @@ export class Dispatcher {
     return this.appStore._approveHotFlowStage(repository, approvalId, comment)
   }
 
+  /**
+   * Read the release pipeline every five seconds for ten minutes, for after a merge
+   * that sends a release down it. Otherwise it is read once a minute.
+   */
+  public watchHotFlowPipeline(repository: Repository): void {
+    this.appStore._watchHotFlowPipeline(repository)
+  }
+
   /** Close the outcome of an approval, so its panel goes away. */
   public dismissHotFlowApproval(repository: Repository): void {
     this.appStore._dismissHotFlowApproval(repository)
+  }
+
+  /** Finds the user's branches that are safe to delete: merged into develop and a release. */
+  public findCleanupBranches(
+    repository: Repository
+  ): Promise<ReadonlyArray<ICleanupBranch>> {
+    return this.appStore._findCleanupBranches(repository)
+  }
+
+  /**
+   * Deletes the chosen branches, locally and/or on the remote, reporting each one.
+   *
+   * Permanent, so callers confirm with the user first.
+   */
+  public deleteCleanupBranches(
+    repository: Repository,
+    branches: ReadonlyArray<ICleanupBranch>,
+    options: { readonly local: boolean; readonly remote: boolean },
+    onProgress?: (done: number, total: number) => void
+  ): Promise<ICleanupResult> {
+    return this.appStore._deleteCleanupBranches(
+      repository,
+      branches,
+      options,
+      onProgress
+    )
   }
 
   /** Stop showing a forgotten branch in HotFlow. */

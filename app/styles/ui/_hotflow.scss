@@ -2624,3 +2624,82 @@ body.theme-dark {
   justify-content: flex-end;
   gap: var(--spacing-half);
 }
+
+/**
+ * The clean-up dialog: a scrolling list of branches, each ticked or not, with the
+ * name taking the room and where it lives and how long ago beside it.
+ */
+#hotflow-cleanup-branches {
+  width: 560px;
+}
+
+.hotflow-cleanup-list {
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--box-border-color);
+  border-radius: var(--border-radius);
+}
+
+.hotflow-cleanup-row {
+  padding: 4px var(--spacing-half);
+  border-bottom: 1px solid var(--box-border-color);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  .checkbox-component {
+    margin: 0;
+  }
+}
+
+.hotflow-cleanup-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing);
+  min-width: 0;
+}
+
+.hotflow-cleanup-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hotflow-cleanup-meta {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  align-items: baseline;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary-color);
+}
+
+.hotflow-cleanup-where {
+  padding: 0 5px;
+  border: 1px solid var(--box-border-color);
+  border-radius: 3px;
+  font-size: var(--font-size-xs);
+}
+
+.hotflow-cleanup-options {
+  display: flex;
+  gap: var(--spacing-double);
+  margin-top: var(--spacing-half);
+}
+
+.hotflow-cleanup-failures {
+  margin-top: var(--spacing-half);
+  color: var(--hotflow-bad-color);
+
+  ul {
+    margin: 4px 0 0;
+    padding-left: var(--spacing-double);
+  }
+}

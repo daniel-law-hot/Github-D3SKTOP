@@ -321,6 +321,8 @@ export class UpdateReleaseDialog extends React.Component<
       }
     }
 
+    // Bringing develop into the release is what starts its build.
+    dispatcher.watchHotFlowPipeline(repository)
     await dispatcher.refreshHotFlow(repository)
 
     this.props.onDismissed()

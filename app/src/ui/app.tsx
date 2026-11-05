@@ -68,6 +68,7 @@ import {
   FinishReleaseDialog,
   MergePullRequestDialog,
   AssignSequenceDialog,
+  CleanupBranchesDialog,
   StartFeatureDialog,
   StartReleaseDialog,
   UpdateReleaseDialog,
@@ -482,6 +483,8 @@ export class App extends React.Component<IAppProps, IAppState> {
         return this.showHotFlowPopup(PopupType.HotFlowFinishRelease)
       case 'hotflow-refresh':
         return this.refreshHotFlow()
+      case 'hotflow-cleanup-branches':
+        return this.showHotFlowPopup(PopupType.HotFlowCleanupBranches)
       case 'choose-repository':
         return this.chooseRepository()
       case 'add-local-repository':
@@ -1003,6 +1006,7 @@ export class App extends React.Component<IAppProps, IAppState> {
       | PopupType.HotFlowStartRelease
       | PopupType.HotFlowUpdateRelease
       | PopupType.HotFlowFinishRelease
+      | PopupType.HotFlowCleanupBranches
   ) {
     const state = this.state.selectedState
     if (state == null || state.type !== SelectionType.Repository) {
@@ -2939,6 +2943,16 @@ export class App extends React.Component<IAppProps, IAppState> {
             repository={popup.repository}
             dispatcher={this.props.dispatcher}
             hotFlowState={state.hotFlowState}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.HotFlowCleanupBranches: {
+        return (
+          <CleanupBranchesDialog
+            key="hotflow-cleanup-branches"
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
             onDismissed={onPopupDismissedFn}
           />
         )

@@ -10,7 +10,6 @@ import {
   IReconciliation,
   IReleaseBranchState,
   IShippedRelease,
-  ReleaseVerdict,
 } from '../../models/hotflow'
 import { PopupType } from '../../models/popup'
 import { PreferencesTab } from '../../models/preferences'
@@ -567,7 +566,11 @@ export class HotFlowView extends React.Component<
       return <span className="hotflow-verdict none">No release branch</span>
     }
 
-    const verdict = this.getEffectiveVerdict(release)
+    // Git's own verdict, and only that. Work items assigned to the release but not
+    // in it used to make this read "Needs update" as well, which left the badge
+    // up on releases that were not behind anything; they are still marked in the
+    // work items list and counted in the side panel.
+    const verdict = release.verdict
 
     switch (verdict) {
       case 'ready':
@@ -591,21 +594,6 @@ export class HotFlowView extends React.Component<
       default:
         return <span className="hotflow-verdict none">Unknown</span>
     }
-  }
-
-  /**
-   * Combines the git verdict with what Azure DevOps knows. A release that git
-   * thinks is current is still `needs-update` if assigned work items haven't
-   * been merged.
-   */
-  private getEffectiveVerdict(release: IReleaseBranchState): ReleaseVerdict {
-    if (release.verdict === 'shipped' || release.verdict === 'unknown') {
-      return release.verdict
-    }
-
-    return this.getReconciliation(release).missingCount > 0
-      ? 'needs-update'
-      : release.verdict
   }
 
   private getReconciliation(release: IReleaseBranchState): IReconciliation {

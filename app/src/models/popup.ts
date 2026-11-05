@@ -120,6 +120,7 @@ export enum PopupType {
   HotFlowEditBranches = 'HotFlowEditBranches',
   HotFlowMergePullRequest = 'HotFlowMergePullRequest',
   HotFlowAssignSequence = 'HotFlowAssignSequence',
+  HotFlowCleanupBranches = 'HotFlowCleanupBranches',
 }
 
 interface IBasePopup {
@@ -197,6 +198,10 @@ export type PopupDetail =
     }
   | {
       type: PopupType.HotFlowAssignSequence
+      repository: Repository
+    }
+  | {
+      type: PopupType.HotFlowCleanupBranches
       repository: Repository
     }
   | {

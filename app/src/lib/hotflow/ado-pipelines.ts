@@ -183,7 +183,7 @@ export function clearPipelineCache(): void {
  * The definitions are untouched: approving a stage changes what is running, not
  * which pipelines a repository has.
  */
-function clearDeploymentCache(): void {
+export function clearDeploymentCache(): void {
   pipelineCache.clear()
   approvalCache = null
 }

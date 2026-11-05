@@ -485,8 +485,10 @@ async function buildReleaseState(
 }
 
 /**
- * The git-only verdict. The view upgrades `ready` to `needs-update` once ADO
- * reconciliation reveals missing work items — that can't be known from git.
+ * The verdict the HotFlow bar shows, from git alone: `needs-update` when the
+ * release is behind the integration branch. Work items assigned to the release in
+ * Azure DevOps but missing from it do not change it; they are flagged in the work
+ * items list instead.
  *
  * This used to read `aheadOfProduction === 0` as shipped, which is the same
  * mistake as reading "contains nothing new" as "already done" — and it did real

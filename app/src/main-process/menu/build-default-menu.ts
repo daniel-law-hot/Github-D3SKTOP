@@ -555,6 +555,15 @@ export function buildDefaultMenu({
         id: 'hotflow-refresh',
         click: emit('hotflow-refresh'),
       },
+      separator,
+      {
+        // 'o' is free in this submenu: f, p, r, u, n and d are taken above.
+        label: __DARWIN__
+          ? 'Clean Up Old Branches…'
+          : 'Clean up &old branches…',
+        id: 'hotflow-cleanup-branches',
+        click: emit('hotflow-cleanup-branches'),
+      },
     ],
   })
 

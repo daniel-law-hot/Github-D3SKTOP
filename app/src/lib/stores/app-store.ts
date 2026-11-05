@@ -413,6 +413,7 @@ import { loadFeatureBranchConflicts } from '../hotflow/mergeability'
 import { GitRepositoryProvider } from '../hotflow/git-repository-provider'
 import { fetchPullRequestApprovals } from '../hotflow/pull-request-approvals'
 import {
+  ICleanupResult,
   IHotFlowBranchOverride,
   IPipelineViewState,
   IReleaseBranchState,
@@ -439,12 +440,21 @@ import { scopeToRepository } from '../hotflow/work-item-scope'
 import { getBuddy, recordCommitXp } from '../buddy/buddy-store'
 import {
   approveReleaseStage,
+  clearDeploymentCache,
   getRepositoryPipelines,
 } from '../hotflow/ado-pipelines'
+import {
+  FastPollWindowMs,
+  mergePipelineReleases,
+  nextPollDelay,
+  PollReleaseLimit,
+} from '../hotflow/pipeline-polling'
 import {
   findForgottenBranches,
   makeHasAnyPullRequest,
 } from '../hotflow/forgotten-branches'
+import { findCleanupBranches, ICleanupBranch } from '../hotflow/branch-cleanup'
+import { parseReleaseBranchName } from '../hotflow/branch-patterns'
 import {
   getHiddenForgottenBranches,
   hideForgottenBranch,
@@ -632,6 +642,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   /** Whether the HotFlow release view is replacing the repository view. */
   private hotFlowVisible: boolean = false
+
+  /** When each repository's fast polling ends, keyed by repository hash. */
+  private readonly hotFlowFastPollUntil = new Map<string, number>()
+  private hotFlowPipelineTimer: ReturnType<typeof setTimeout> | null = null
+  private isPollingHotFlowPipeline = false
   private emitQueued = false
 
   private readonly localRepositoryStateLookup = new Map<
@@ -4298,6 +4313,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   public async _showHotFlow(repository: Repository): Promise<void> {
     this.hotFlowVisible = true
     this.emitUpdate()
+    this.scheduleHotFlowPipelinePoll()
 
     const state = this.repositoryStateCache.get(repository)
 
@@ -4315,7 +4331,90 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     this.hotFlowVisible = false
+    this.stopHotFlowPipelinePoll()
     this.emitUpdate()
+  }
+
+  /**
+   * Starts reading the release pipeline every five seconds for ten minutes.
+   *
+   * Called when something has just happened that sends a release down the
+   * pipeline: a merge into develop or the release branch, finishing a release,
+   * approving a stage. Running it again restarts the ten minutes. Outside that
+   * window the pipeline is read once a minute, so it never goes stale on its own.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public _watchHotFlowPipeline(repository: Repository): void {
+    this.hotFlowFastPollUntil.set(
+      repository.hash,
+      Date.now() + FastPollWindowMs
+    )
+    this.scheduleHotFlowPipelinePoll()
+  }
+
+  private stopHotFlowPipelinePoll(): void {
+    if (this.hotFlowPipelineTimer !== null) {
+      clearTimeout(this.hotFlowPipelineTimer)
+      this.hotFlowPipelineTimer = null
+    }
+  }
+
+  /** The repository the HotFlow view is showing, if it is showing one. */
+  private get hotFlowPollRepository(): Repository | null {
+    const repository = this.selectedRepository
+
+    return this.hotFlowVisible && repository instanceof Repository
+      ? repository
+      : null
+  }
+
+  /**
+   * Arranges the next poll, replacing any already waiting so a merge made while a
+   * slow poll is pending does not leave the first fast one a minute away.
+   */
+  private scheduleHotFlowPipelinePoll(): void {
+    this.stopHotFlowPipelinePoll()
+
+    const repository = this.hotFlowPollRepository
+
+    if (repository === null) {
+      return
+    }
+
+    const delay = nextPollDelay(
+      Date.now(),
+      this.hotFlowFastPollUntil.get(repository.hash) ?? null
+    )
+
+    this.hotFlowPipelineTimer = setTimeout(
+      () => void this.pollHotFlowPipeline(),
+      delay
+    )
+  }
+
+  private async pollHotFlowPipeline(): Promise<void> {
+    this.hotFlowPipelineTimer = null
+
+    const repository = this.hotFlowPollRepository
+
+    // Nothing to do while HotFlow is shut or the window is hidden, and the next
+    // poll is arranged either way so it carries on when they come back.
+    if (
+      repository !== null &&
+      !this.isPollingHotFlowPipeline &&
+      document.visibilityState !== 'hidden'
+    ) {
+      this.isPollingHotFlowPipeline = true
+
+      try {
+        await this._refreshHotFlowPipeline(repository, true)
+      } finally {
+        this.isPollingHotFlowPipeline = false
+      }
+    }
+
+    this.scheduleHotFlowPipelinePoll()
   }
 
   /**
@@ -4904,6 +5003,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
       log.warn('[AppStore] could not catch up after merging a pull request', e)
     )
 
+    // A merge into develop starts the pipeline moving.
+    this._watchHotFlowPipeline(repository)
+
     // The work item this merge just brought into the flow, told to Azure DevOps
     // while we know which one it was. Read from the pull request's head ref
     // because that is where the number lives — `feature/107715-something` — and
@@ -5080,6 +5182,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
       // 4. Push production and the new tag.
       await this._push(repository)
+
+      // The push is what the pipeline answers to.
+      this._watchHotFlowPipeline(repository)
 
       // 5. Optionally merge back, so commits that only ever existed on the
       //    release branch don't end up stranded on production.
@@ -5263,9 +5368,19 @@ export class AppStore extends TypedBaseStore<IAppState> {
    * Best-effort: no credential, no pipeline, or a refusal leaves the rest of the
    * view as it was and the panel saying why, rather than failing the refresh.
    */
-  private async _refreshHotFlowPipeline(repository: Repository): Promise<void> {
+  private async _refreshHotFlowPipeline(
+    repository: Repository,
+    isPoll: boolean = false
+  ): Promise<void> {
     if (!isRepositoryWithGitHubRepository(repository)) {
       return
+    }
+
+    // A poll wants what is running now, not what was true a minute ago, so it
+    // skips the short cache a deployment answer is normally kept in. Only that
+    // cache: which pipelines a repository has does not change from poll to poll.
+    if (isPoll) {
+      clearDeploymentCache()
     }
 
     const credential = await getAdoCredential(defaultAdoConfig.organisation)
@@ -5294,18 +5409,30 @@ export class AppStore extends TypedBaseStore<IAppState> {
         credential,
         gitHubRepository.owner.login,
         gitHubRepository.name,
-        PipelineReleasesToRead
+        isPoll ? PollReleaseLimit : PipelineReleasesToRead
       )
 
       this.repositoryStateCache.updateHotFlowState(repository, s => ({
         pipeline: {
           ...s.pipeline,
           status: pipelines.length === 0 ? 'unavailable' : 'ok',
-          pipelines,
+          // A poll reads only the newest few, so it is folded into what the full
+          // read found rather than replacing it.
+          pipelines: isPoll
+            ? mergePipelineReleases(s.pipeline.pipelines, pipelines)
+            : pipelines,
           errorMessage: null,
         },
       }))
     } catch (e) {
+      // A poll that fails is one of many and the next is moments away; showing an
+      // error for it would flash on every network blip, so it leaves what is on
+      // screen alone.
+      if (isPoll) {
+        log.debug('[AppStore] HotFlow pipeline poll failed', e)
+        return
+      }
+
       log.warn('[AppStore] HotFlow could not load the release pipeline', e)
 
       this.repositoryStateCache.updateHotFlowState(repository, s => ({
@@ -5371,7 +5498,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     setApproval(null)
-    await this._refreshHotFlowPipeline(repository)
+
+    // Approving moves the release on to its next stage.
+    this._watchHotFlowPipeline(repository)
+    await this._refreshHotFlowPipeline(repository, true)
   }
 
   /** Clears an approval's outcome, so its panel closes. */
@@ -5402,18 +5532,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       ? getAccountForRepository(this.accounts, repository)
       : null
 
-    // Who "mine" is: the identity commits are made under, and every address the
-    // GitHub account owns, because a commit made on another machine may carry
-    // either.
-    const myEmails = new Set<string>()
-    const commitEmail = state.commitAuthor?.email
-    if (commitEmail !== undefined) {
-      myEmails.add(commitEmail)
-    }
-    if (account !== null) {
-      myEmails.add(account.login)
-      account.emails.forEach(e => myEmails.add(e.email))
-    }
+    const myEmails = this.getHotFlowUserEmails(repository)
 
     if (myEmails.size === 0) {
       return
@@ -5472,6 +5591,173 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     this.emitUpdate()
+  }
+
+  /**
+   * Who "mine" is: the identity commits are made under, and every address the
+   * GitHub account owns, because a commit made on another machine may carry
+   * either. Empty when neither is known, which callers treat as "can't say".
+   */
+  private getHotFlowUserEmails(repository: Repository): Set<string> {
+    const myEmails = new Set<string>()
+    const commitEmail =
+      this.repositoryStateCache.get(repository).commitAuthor?.email
+
+    if (commitEmail !== undefined) {
+      myEmails.add(commitEmail)
+    }
+
+    const account = isRepositoryWithGitHubRepository(repository)
+      ? getAccountForRepository(this.accounts, repository)
+      : null
+
+    if (account !== null) {
+      myEmails.add(account.login)
+      account.emails.forEach(e => myEmails.add(e.email))
+    }
+
+    return myEmails
+  }
+
+  /**
+   * Finds the user's branches that are safe to delete: theirs, and merged into
+   * the integration branch and into a release, so nothing on them is unique.
+   *
+   * Read when the clean-up dialog opens rather than with the rest of HotFlow, since
+   * it asks git about every release branch and only matters to someone about to
+   * delete things.
+   */
+  public async _findCleanupBranches(
+    repository: Repository
+  ): Promise<ReadonlyArray<ICleanupBranch>> {
+    const state = this.repositoryStateCache.get(repository)
+    const { integrationBranch, productionBranch, integrationBranchName } =
+      state.hotFlowState
+    const productionBranchName = state.hotFlowState.productionBranchName
+
+    if (integrationBranch === null) {
+      return []
+    }
+
+    const myEmails = this.getHotFlowUserEmails(repository)
+
+    if (myEmails.size === 0) {
+      return []
+    }
+
+    const branches = state.branchesState.allBranches
+    const tip = state.branchesState.tip
+
+    // Develop wherever it lives — the local branch and its remote copy can differ,
+    // and being in either means the work has landed.
+    const integrationRefs = branches
+      .filter(
+        b =>
+          !b.isDesktopForkRemoteBranch &&
+          b.nameWithoutRemote === integrationBranchName
+      )
+      .map(b => b.name)
+
+    // Every release branch, shipped or not, and production: merged into any of
+    // them is merged into a release.
+    const releaseRefs = [
+      ...branches
+        .filter(
+          b =>
+            !b.isDesktopForkRemoteBranch &&
+            parseReleaseBranchName(b.nameWithoutRemote) !== null
+        )
+        .map(b => b.name),
+      ...(productionBranch === null ? [] : [productionBranch.name]),
+    ]
+
+    return findCleanupBranches(repository, {
+      branches,
+      integrationRefs,
+      releaseRefs,
+      integrationBranchName,
+      productionBranchName,
+      currentBranchName: tip.kind === TipState.Valid ? tip.branch.name : null,
+      myEmails,
+    })
+  }
+
+  /**
+   * Deletes branches the user chose in the clean-up dialog.
+   *
+   * Permanent on the remote, and the only place HotFlow deletes branches in bulk,
+   * so it is only ever called from a dialog whose button names how many. One
+   * branch failing (protected on GitHub, already gone, no access) is reported and
+   * the rest carry on. The checked-out branch is refused here as well as in the
+   * dialog's list, since the user may have switched branches since it opened.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _deleteCleanupBranches(
+    repository: Repository,
+    branches: ReadonlyArray<ICleanupBranch>,
+    options: { readonly local: boolean; readonly remote: boolean },
+    onProgress?: (done: number, total: number) => void
+  ): Promise<ICleanupResult> {
+    const gitStore = this.gitStoreCache.get(repository)
+    const deleted: Array<string> = []
+    const failures: Array<{ name: string; error: string }> = []
+    let done = 0
+
+    for (const branch of branches) {
+      try {
+        const tip = this.repositoryStateCache.get(repository).branchesState.tip
+
+        if (tip.kind === TipState.Valid && tip.branch.name === branch.name) {
+          throw new Error('It is checked out.')
+        }
+
+        if (options.local && branch.local !== null) {
+          await deleteLocalBranch(repository, branch.local.name)
+        }
+
+        if (options.remote && branch.remote !== null) {
+          const { remoteName, nameWithoutRemote } = branch.remote
+
+          if (remoteName === null) {
+            throw new Error(`Could not tell which remote ${branch.name} is on.`)
+          }
+
+          const remote =
+            gitStore.remotes.find(r => r.name === remoteName) ??
+            (await getRemoteURL(repository, remoteName)
+              .then(url => (url ? { name: remoteName, url } : undefined))
+              .catch(e => log.debug('Could not get remote URL', e)))
+
+          if (remote === undefined) {
+            throw new Error(`Could not find the remote ${remoteName}.`)
+          }
+
+          await deleteRemoteBranch(repository, remote, nameWithoutRemote)
+        }
+
+        // The tip is logged so the branch can be recovered if it turns out to be
+        // wanted: a deleted branch is its commits, still there until git collects.
+        log.info(
+          `Cleaned up ${branch.name} (was ${
+            (branch.local ?? branch.remote)?.tip.sha
+          })`
+        )
+        deleted.push(branch.name)
+      } catch (e) {
+        failures.push({
+          name: branch.name,
+          error: e instanceof Error ? e.message : String(e),
+        })
+      }
+
+      done++
+      onProgress?.(done, branches.length)
+    }
+
+    await this._refreshRepository(repository)
+
+    return { deleted, failures }
   }
 
   /** Stops showing a forgotten branch, until the user asks for them back. */

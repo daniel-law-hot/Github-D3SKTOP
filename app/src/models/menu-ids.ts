@@ -31,6 +31,7 @@ export type MenuIDs =
   | 'hotflow-update-release'
   | 'hotflow-finish-release'
   | 'hotflow-refresh'
+  | 'hotflow-cleanup-branches'
   | 'show-repository-list'
   | 'show-branches-list'
   | 'open-working-directory'

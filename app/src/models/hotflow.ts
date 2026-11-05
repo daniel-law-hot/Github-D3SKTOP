@@ -505,6 +505,15 @@ export interface IForgottenState {
   readonly errorMessage: string | null
 }
 
+/** What a branch clean-up did: what went, and what could not be deleted and why. */
+export interface ICleanupResult {
+  readonly deleted: ReadonlyArray<string>
+  readonly failures: ReadonlyArray<{
+    readonly name: string
+    readonly error: string
+  }>
+}
+
 export const defaultPipelineViewState: IPipelineViewState = {
   status: 'unavailable',
   pipelines: [],

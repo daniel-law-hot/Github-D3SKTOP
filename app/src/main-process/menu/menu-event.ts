@@ -13,6 +13,7 @@ export type MenuEvent =
   | 'hotflow-update-release'
   | 'hotflow-finish-release'
   | 'hotflow-refresh'
+  | 'hotflow-cleanup-branches'
   | 'add-local-repository'
   | 'create-branch'
   | 'show-branches'
