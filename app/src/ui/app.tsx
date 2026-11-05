@@ -69,6 +69,7 @@ import {
   MergePullRequestDialog,
   AssignSequenceDialog,
   CleanupBranchesDialog,
+  EditPipelinesDialog,
   StartFeatureDialog,
   StartReleaseDialog,
   UpdateReleaseDialog,
@@ -2940,6 +2941,23 @@ export class App extends React.Component<IAppProps, IAppState> {
         return (
           <AssignSequenceDialog
             key="hotflow-assign-sequence"
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            hotFlowState={state.hotFlowState}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.HotFlowEditPipelines: {
+        const state = this.getHotFlowPopupState(popup.repository)
+
+        if (state === null) {
+          return null
+        }
+
+        return (
+          <EditPipelinesDialog
+            key="hotflow-edit-pipelines"
             repository={popup.repository}
             dispatcher={this.props.dispatcher}
             hotFlowState={state.hotFlowState}

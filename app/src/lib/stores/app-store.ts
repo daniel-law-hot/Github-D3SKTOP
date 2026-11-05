@@ -441,8 +441,21 @@ import { getBuddy, recordCommitXp } from '../buddy/buddy-store'
 import {
   approveReleaseStage,
   clearDeploymentCache,
+  getReleaseDefinitionName,
   getRepositoryPipelines,
 } from '../hotflow/ado-pipelines'
+import {
+  getPipelineOverrides,
+  setPipelineOverrides,
+} from '../hotflow/pipeline-overrides-store'
+import {
+  parseReleaseDefinitionId,
+  PipelineSource,
+  withAddedPipeline,
+  withHiddenPipeline,
+  withRestoredPipeline,
+  withoutAddedPipeline,
+} from '../hotflow/pipeline-overrides'
 import {
   FastPollWindowMs,
   mergePipelineReleases,
@@ -5409,7 +5422,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
         credential,
         gitHubRepository.owner.login,
         gitHubRepository.name,
-        isPoll ? PollReleaseLimit : PipelineReleasesToRead
+        isPoll ? PollReleaseLimit : PipelineReleasesToRead,
+        getPipelineOverrides(repository)
       )
 
       this.repositoryStateCache.updateHotFlowState(repository, s => ({
@@ -5502,6 +5516,101 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // Approving moves the release on to its next stage.
     this._watchHotFlowPipeline(repository)
     await this._refreshHotFlowPipeline(repository, true)
+  }
+
+  /**
+   * Adds a release pipeline the automatic lookup did not find.
+   *
+   * Takes what someone pasted — the pipeline's address in Azure DevOps, or its
+   * definition id — checks that Azure DevOps has such a pipeline, and keeps it for
+   * this repository. Answers null when it worked and a sentence to show when it did
+   * not, because every way it can fail is something the person can fix.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _addHotFlowPipeline(
+    repository: Repository,
+    text: string
+  ): Promise<string | null> {
+    const id = parseReleaseDefinitionId(text)
+
+    if (id === null) {
+      return (
+        "That doesn't look like a release pipeline. Paste its address from " +
+        'Azure DevOps (it ends in definitionId=…), or just the number.'
+      )
+    }
+
+    const credential = await getAdoCredential(defaultAdoConfig.organisation)
+
+    if (credential === null) {
+      return 'Connect to Azure DevOps first.'
+    }
+
+    try {
+      const name = await getReleaseDefinitionName(
+        defaultAdoConfig,
+        credential,
+        id
+      )
+
+      if (name === null) {
+        return `Azure DevOps has no release pipeline with the id ${id}.`
+      }
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e)
+    }
+
+    setPipelineOverrides(
+      repository,
+      withAddedPipeline(getPipelineOverrides(repository), id, null)
+    )
+    await this.refreshHotFlowPipelineAfterOverride(repository)
+
+    return null
+  }
+
+  /**
+   * Takes a pipeline off the panel: forgets it if it was added, hides it if the
+   * lookup found it, and remembers its name so it can be offered back.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _removeHotFlowPipeline(
+    repository: Repository,
+    id: number,
+    name: string,
+    source: PipelineSource
+  ): Promise<void> {
+    const overrides = getPipelineOverrides(repository)
+
+    setPipelineOverrides(
+      repository,
+      source === 'added'
+        ? withoutAddedPipeline(overrides, id)
+        : withHiddenPipeline(overrides, id, name)
+    )
+    await this.refreshHotFlowPipelineAfterOverride(repository)
+  }
+
+  /** Shows a hidden pipeline again. See `Dispatcher`. */
+  public async _restoreHotFlowPipeline(
+    repository: Repository,
+    id: number
+  ): Promise<void> {
+    setPipelineOverrides(
+      repository,
+      withRestoredPipeline(getPipelineOverrides(repository), id)
+    )
+    await this.refreshHotFlowPipelineAfterOverride(repository)
+  }
+
+  /** Reads the pipelines afresh, past the short cache, once the list has changed. */
+  private async refreshHotFlowPipelineAfterOverride(
+    repository: Repository
+  ): Promise<void> {
+    clearDeploymentCache()
+    await this._refreshHotFlowPipeline(repository)
   }
 
   /** Clears an approval's outcome, so its panel closes. */

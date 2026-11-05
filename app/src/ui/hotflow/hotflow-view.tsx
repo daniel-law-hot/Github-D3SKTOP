@@ -745,9 +745,7 @@ export class HotFlowView extends React.Component<
     return (
       <SidePanel
         notificationCount={forgotten.branches.length}
-        showPipeline={
-          pipeline.status !== 'unavailable' || pipeline.pipelines.length > 0
-        }
+        showPipeline={this.props.repository.gitHubRepository !== null}
         pipelineCount={pipeline.pipelines.length}
         maxEarlierReleases={maxEarlierReleases(pipeline.pipelines)}
         collapsed={this.state.sideCollapsed}

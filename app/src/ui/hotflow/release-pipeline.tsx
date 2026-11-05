@@ -13,6 +13,8 @@ import {
 import { Button } from '../lib/button'
 import { RelativeTime } from '../relative-time'
 import { TooltippedContent } from '../lib/tooltipped-content'
+import { LinkButton } from '../lib/link-button'
+import { PopupType } from '../../models/popup'
 
 interface IReleasePipelineProps {
   readonly repository: Repository
@@ -115,6 +117,13 @@ export class ReleasePipeline extends React.Component<
     this.state = { confirming: null, comment: DefaultComment }
   }
 
+  private onEditPipelines = () => {
+    this.props.dispatcher.showPopup({
+      type: PopupType.HotFlowEditPipelines,
+      repository: this.props.repository,
+    })
+  }
+
   private onOpenConfirm = (approvalId: number) => () => {
     this.props.dispatcher.dismissHotFlowApproval(this.props.repository)
     this.setState({ confirming: approvalId, comment: DefaultComment })
@@ -146,13 +155,17 @@ export class ReleasePipeline extends React.Component<
   public render() {
     const { pipeline } = this.props
 
-    if (pipeline.status === 'unavailable' && pipeline.pipelines.length === 0) {
-      return null
-    }
-
     return (
       <section className="hotflow-pl" aria-label="Release pipeline">
-        <h3 className="hotflow-summary-heading">Release pipeline</h3>
+        <h3 className="hotflow-summary-heading">
+          Release pipeline
+          <LinkButton
+            className="hotflow-summary-heading-action"
+            onClick={this.onEditPipelines}
+          >
+            {pipeline.pipelines.length === 0 ? 'Add' : 'Edit'}
+          </LinkButton>
+        </h3>
         {pipeline.pipelines.length === 0
           ? this.renderEmpty()
           : pipeline.pipelines.map(p => this.renderPipeline(p))}
@@ -167,6 +180,15 @@ export class ReleasePipeline extends React.Component<
       return (
         <div className="hotflow-summary-empty">
           Could not read the releases: {pipeline.errorMessage}
+        </div>
+      )
+    }
+
+    if (pipeline.status === 'unavailable') {
+      return (
+        <div className="hotflow-summary-empty">
+          No release pipeline found for this repository. If it has one, add it
+          with its address from Azure DevOps.
         </div>
       )
     }

@@ -5,6 +5,13 @@ import {
   invalidateCachedBearer,
 } from './ado-auth'
 import { AdoError, IAdoConfig } from './ado-client'
+import {
+  IPipelineOverrides,
+  NoPipelineOverrides,
+  PipelineSource,
+  pipelineIdsToRead,
+  pipelineSource,
+} from './pipeline-overrides'
 
 /**
  * Where a repository's code has actually got to, and the one write that moves it
@@ -110,6 +117,12 @@ export interface IPipelineRelease {
 export interface IRepositoryPipeline {
   readonly definitionId: number
   readonly name: string
+
+  /**
+   * Whether the lookup found it or someone added it. Absent on one built without
+   * overrides in mind, which reads as found.
+   */
+  readonly source?: PipelineSource
 
   /** Newest first. */
   readonly releases: ReadonlyArray<IPipelineRelease>
@@ -643,15 +656,59 @@ export async function getRepositoryPipelines(
   credential: AdoCredential,
   owner: string,
   repository: string,
-  limit: number
+  limit: number,
+
+  /** Pipelines the user added or hid, for when the lookup is wrong. */
+  overrides: IPipelineOverrides = NoPipelineOverrides
 ): Promise<ReadonlyArray<IRepositoryPipeline>> {
-  const ids = await findDefinitionIds(config, credential, owner, repository)
+  const found = await findDefinitionIds(config, credential, owner, repository)
+  const ids = pipelineIdsToRead(found, overrides)
 
   const pipelines = await Promise.all(
-    ids.map(id => readPipeline(config, credential, id, limit))
+    ids.map(async (id): Promise<IRepositoryPipeline | null> => {
+      const pipeline = await readPipeline(config, credential, id, limit)
+
+      if (pipeline === null) {
+        return null
+      }
+
+      const label = overrides.added.find(a => a.id === id)?.label
+
+      return {
+        ...pipeline,
+        name: label ?? pipeline.name,
+        source: pipelineSource(id, found, overrides),
+      }
+    })
   )
 
   return pipelines.filter((p): p is IRepositoryPipeline => p !== null)
+}
+
+/**
+ * A release definition's name, or null when Azure DevOps has no such definition.
+ *
+ * What the "add a pipeline" dialog checks before it keeps an id someone pasted, so
+ * a typo is caught there and not by a panel that quietly never shows anything.
+ */
+export async function getReleaseDefinitionName(
+  config: IAdoConfig,
+  credential: AdoCredential,
+  definitionId: number
+): Promise<string | null> {
+  const definition = await withCredentialRetry(
+    config.organisation,
+    credential,
+    c =>
+      getJson<{ name?: string }>(
+        `${vsrmBase(
+          config
+        )}/release/definitions/${definitionId}?api-version=${ApiVersion}`,
+        c
+      )
+  )
+
+  return definition === null ? null : definition.name ?? `#${definitionId}`
 }
 
 /**

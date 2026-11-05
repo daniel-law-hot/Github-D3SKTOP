@@ -1,3 +1,4 @@
+import { PipelineSource } from '../../lib/hotflow/pipeline-overrides'
 import { ICleanupBranch } from '../../lib/hotflow/branch-cleanup'
 import { ICleanupResult } from '../../models/hotflow'
 import { Disposable } from 'event-kit'
@@ -476,6 +477,35 @@ export class Dispatcher {
    */
   public watchHotFlowPipeline(repository: Repository): void {
     this.appStore._watchHotFlowPipeline(repository)
+  }
+
+  /**
+   * Add a release pipeline by its address or id, for when the automatic lookup missed
+   * it. Answers null on success, or a sentence saying what is wrong.
+   */
+  public addHotFlowPipeline(
+    repository: Repository,
+    text: string
+  ): Promise<string | null> {
+    return this.appStore._addHotFlowPipeline(repository, text)
+  }
+
+  /** Take a release pipeline off the panel, hiding it if it was found automatically. */
+  public removeHotFlowPipeline(
+    repository: Repository,
+    id: number,
+    name: string,
+    source: PipelineSource
+  ): Promise<void> {
+    return this.appStore._removeHotFlowPipeline(repository, id, name, source)
+  }
+
+  /** Show a hidden release pipeline again. */
+  public restoreHotFlowPipeline(
+    repository: Repository,
+    id: number
+  ): Promise<void> {
+    return this.appStore._restoreHotFlowPipeline(repository, id)
   }
 
   /** Close the outcome of an approval, so its panel goes away. */

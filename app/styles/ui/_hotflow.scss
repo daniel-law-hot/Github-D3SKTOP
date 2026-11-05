@@ -2703,3 +2703,54 @@ body.theme-dark {
     padding-left: var(--spacing-double);
   }
 }
+
+/** The release pipelines dialog: each pipeline a row with its action beside it. */
+#hotflow-edit-pipelines {
+  width: 560px;
+}
+
+.hotflow-pipelines-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--box-border-color);
+  border-radius: var(--border-radius);
+}
+
+.hotflow-pipelines-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing);
+  padding: var(--spacing-half);
+  border-bottom: 1px solid var(--box-border-color);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.hotflow-pipelines-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hotflow-pipelines-note {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary-color);
+}
+
+.hotflow-pipelines-add {
+  display: flex;
+  gap: var(--spacing-half);
+
+  .text-box-component {
+    flex-grow: 1;
+  }
+}
+
+.hotflow-pipelines-error {
+  margin: 0;
+  color: var(--hotflow-bad-color);
+}
