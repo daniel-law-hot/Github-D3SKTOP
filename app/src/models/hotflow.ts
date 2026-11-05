@@ -1,5 +1,7 @@
 import { Branch } from './branch'
 import { Commit } from './commit'
+import { IRepositoryPipeline } from '../lib/hotflow/ado-pipelines'
+import { IForgottenBranch } from '../lib/hotflow/forgotten-branches'
 
 /**
  * Candidate names for the integration branch, in priority order.
@@ -463,6 +465,58 @@ export interface IHotFlowState {
   readonly sequenceAssignment: ISequenceAssignmentState | null
 
   readonly ado: IAdoState
+
+  /**
+   * Where this repository's releases have got to in Azure DevOps — the last few,
+   * with DEV, UAT and PROD for each. Read after the git picture, and best-effort
+   * like the rest of the Azure DevOps data.
+   */
+  readonly pipeline: IPipelineViewState
+
+  /** The user's own feature branches that nobody has raised a pull request for. */
+  readonly forgotten: IForgottenState
+}
+
+/** The release pipeline, and any approval being given from it. */
+export interface IPipelineViewState {
+  /** `unavailable` when there is no credential or no pipeline to show. */
+  readonly status: 'unavailable' | 'loading' | 'ok' | 'error'
+  readonly pipelines: ReadonlyArray<IRepositoryPipeline>
+  readonly errorMessage: string | null
+
+  /**
+   * The approval being given, if any. Held in state so the refusal Azure DevOps
+   * gives — "you can't approve a release you created" — survives the refresh the
+   * approval itself causes, and can be read rather than flashed.
+   */
+  readonly approval: {
+    readonly approvalId: number
+    readonly isRunning: boolean
+    readonly errorMessage: string | null
+  } | null
+}
+
+export interface IForgottenState {
+  readonly status: 'idle' | 'loading' | 'ok' | 'error'
+  readonly branches: ReadonlyArray<IForgottenBranch>
+
+  /** Branches the user chose to stop seeing. */
+  readonly hiddenCount: number
+  readonly errorMessage: string | null
+}
+
+export const defaultPipelineViewState: IPipelineViewState = {
+  status: 'unavailable',
+  pipelines: [],
+  errorMessage: null,
+  approval: null,
+}
+
+export const defaultForgottenState: IForgottenState = {
+  status: 'idle',
+  branches: [],
+  hiddenCount: 0,
+  errorMessage: null,
 }
 
 /** A bulk "assign the release sequence" run, in flight or finished. */
@@ -521,4 +575,6 @@ export const defaultHotFlowState: IHotFlowState = {
   suppressAssignedNotMerged: false,
   sequenceAssignment: null,
   ado: defaultAdoState,
+  pipeline: defaultPipelineViewState,
+  forgotten: defaultForgottenState,
 }

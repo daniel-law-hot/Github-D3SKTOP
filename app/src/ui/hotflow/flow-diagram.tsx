@@ -89,6 +89,18 @@ export const diagramWidth = productionRight + G.inset
 const edgeGap = 6
 
 /**
+ * The feature lane's scrollbar, which sits to the left of the stubs.
+ *
+ * Pinned here and in `.hotflow-feature-lane` rather than measured, so the stubs
+ * can be placed beside it in the same render that decides it is needed. Desktop's
+ * own width, so it looks like every other scrollbar in the app.
+ */
+const laneScrollbarWidth = 10
+
+/** Between the scrollbar and the stubs, so the thumb doesn't touch them. */
+const laneScrollbarGap = 2
+
+/**
  * The shortest the diagram ever renders, with one stub drawn.
  *
  * The band can't usefully be dragged below this plus its own chrome: the diagram
@@ -417,7 +429,65 @@ class CurrentBranchName extends React.Component<ICurrentBranchNameProps> {
  * All colour comes from CSS custom properties, so light and dark themes are
  * handled by the stylesheet rather than by branching here.
  */
-export class FlowDiagram extends React.Component<IFlowDiagramProps> {
+interface IFlowDiagramState {
+  /** How far the feature lane is scrolled, so the connectors can follow it. */
+  readonly laneScrollTop: number
+}
+
+export class FlowDiagram extends React.Component<
+  IFlowDiagramProps,
+  IFlowDiagramState
+> {
+  private readonly laneRef = React.createRef<HTMLDivElement>()
+
+  /** The frame a scroll has asked for, so a burst of scroll events draws once. */
+  private laneFrame: number | null = null
+
+  public constructor(props: IFlowDiagramProps) {
+    super(props)
+    this.state = { laneScrollTop: 0 }
+  }
+
+  /**
+   * Picks up a scroll position the browser moved on its own — a shorter band or
+   * fewer branches clamps it without anybody scrolling.
+   */
+  public componentDidUpdate() {
+    this.syncLaneScroll()
+  }
+
+  public componentWillUnmount() {
+    if (this.laneFrame !== null) {
+      cancelAnimationFrame(this.laneFrame)
+      this.laneFrame = null
+    }
+  }
+
+  /**
+   * The lane scrolls natively, which is what keeps it smooth: the stubs, their
+   * names and their buttons all move with the container, and none of them is
+   * re-rendered. Only the connectors are, once a frame, because they live in the
+   * main schematic and have to bend from wherever each stub has got to.
+   */
+  private onLaneScroll = () => {
+    if (this.laneFrame !== null) {
+      return
+    }
+
+    this.laneFrame = requestAnimationFrame(() => {
+      this.laneFrame = null
+      this.syncLaneScroll()
+    })
+  }
+
+  private syncLaneScroll() {
+    const top = this.laneRef.current?.scrollTop ?? 0
+
+    if (top !== this.state.laneScrollTop) {
+      this.setState({ laneScrollTop: top })
+    }
+  }
+
   /**
    * The resolved branch names. Never assumed — repositories disagree about
    * whether integration is `develop`, `development` or `dev`.
@@ -430,9 +500,39 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
     return this.props.hotFlowState.productionBranchName
   }
 
-  /** The stubs actually drawn, limited by the room the band has. */
+  /**
+   * Every stub. All of them are drawn; the band's height decides how many are in
+   * view at once, and the lane scrolls through the rest.
+   */
   private get shownEntries(): ReadonlyArray<IFeatureLaneEntry> {
-    return this.props.featureLane.slice(0, Math.max(1, this.props.maxStubs))
+    return this.props.featureLane
+  }
+
+  /** How many stubs the band has room to show at once. */
+  private get visibleCount(): number {
+    return Math.min(this.shownEntries.length, Math.max(1, this.props.maxStubs))
+  }
+
+  /**
+   * Where the lane puts its stubs, which depends on whether it scrolls.
+   *
+   * The scrollbar takes the 10px at the far left, so a scrolling lane starts its
+   * stubs just past it rather than under it. `x` is in the lane's own
+   * coordinates, whose content box starts to the right of the scrollbar.
+   */
+  private get laneGeometry() {
+    const scrollable = this.shownEntries.length > this.visibleCount
+    const contentLeft = scrollable ? laneScrollbarWidth : 0
+    const stubLeft = scrollable
+      ? laneScrollbarWidth + laneScrollbarGap
+      : featureX
+
+    return {
+      scrollable,
+      contentWidth: featureRight - contentLeft,
+      x: stubLeft - contentLeft,
+      stubWidth: featureRight - stubLeft,
+    }
   }
 
   /**
@@ -443,15 +543,25 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
    * scaled, so resizing shows more rows rather than a bigger picture.
    */
   private get layout() {
-    const count = Math.max(this.shownEntries.length, 1)
+    const count = Math.max(this.visibleCount, 1)
     const stackHeight = count * G.stubHeight + (count - 1) * G.stubGap
 
+    const all = Math.max(this.shownEntries.length, 1)
+    const laneHeight = all * G.stubHeight + (all - 1) * G.stubGap
+
     const contentHeight = Math.max(stackHeight, G.minContentHeight)
+    const midY = G.padding + contentHeight / 2
 
     return {
       height: contentHeight + G.captionHeight + G.padding * 2,
-      midY: G.padding + contentHeight / 2,
+      midY,
       stackHeight,
+
+      /** The top of the window the lane scrolls within, centred on the flow. */
+      windowTop: midY - stackHeight / 2,
+
+      /** Every stub stacked, which is what scrolls. */
+      laneHeight,
     }
   }
 
@@ -512,7 +622,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
             </marker>
           </defs>
 
-          {this.renderFeatureStubs()}
+          {this.renderLaneCaption()}
           {this.renderFeatureConnectors()}
           {this.renderIntegrationNode()}
           {this.renderDriftEdge()}
@@ -522,11 +632,53 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           {this.renderProductionEdge()}
           {this.renderProductionNode()}
         </svg>
-        {this.renderBranchNames()}
+        {this.renderFeatureLane()}
         {this.renderNodeNames()}
         {this.renderNodeFetchButtons()}
-        {this.renderPullRequestBadges()}
-        {this.renderMergeButtons()}
+      </div>
+    )
+  }
+
+  /**
+   * The feature stubs, in a window of their own that scrolls.
+   *
+   * Everything that belongs to a stub — the box, its name, its pull request and
+   * its merge button — lives inside the one scroll container, so it all moves as
+   * one and nothing has to be repositioned by hand. The scrollbar is on the left,
+   * the side nothing else is drawn on, away from the connectors leaving the
+   * stubs' right-hand edge.
+   */
+  private renderFeatureLane() {
+    if (this.shownEntries.length === 0) {
+      return null
+    }
+
+    const { windowTop, stackHeight, laneHeight } = this.layout
+    const { scrollable, contentWidth } = this.laneGeometry
+
+    return (
+      <div
+        ref={this.laneRef}
+        className={`hotflow-feature-lane${scrollable ? ' scrollable' : ''}`}
+        style={{ top: windowTop, width: featureRight, height: stackHeight }}
+        onScroll={this.onLaneScroll}
+      >
+        <div
+          className="hotflow-feature-lane-content"
+          style={{ width: contentWidth, height: laneHeight }}
+        >
+          <svg
+            className="hotflow-feature-lane-svg"
+            width={contentWidth}
+            height={laneHeight}
+            aria-hidden={true}
+          >
+            {this.renderFeatureStubs()}
+          </svg>
+          {this.renderBranchNames()}
+          {this.renderPullRequestBadges()}
+          {this.renderMergeButtons()}
+        </div>
       </div>
     )
   }
@@ -547,7 +699,8 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
 
     // Left inset plus the right-hand slot the pull request badge and merge
     // button share. Matches the SVG's own coordinates for both.
-    const maxWidth = G.featureWidth - 10 - 86
+    const { x, stubWidth } = this.laneGeometry
+    const maxWidth = stubWidth - 10 - 86
 
     return (
       <div className="hotflow-branch-names">
@@ -557,7 +710,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
             this.props.pullRequestKnowledge === 'known'
 
           const style = {
-            left: featureX + 10,
+            left: x + 10,
             top: centres[i] - G.stubHeight / 2,
             height: G.stubHeight,
             maxWidth,
@@ -797,6 +950,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
   private renderPullRequestBadges() {
     const entries = this.shownEntries
     const centres = this.stubCentres
+    const { x, stubWidth } = this.laneGeometry
 
     return (
       <div className="hotflow-pr-badges">
@@ -812,9 +966,9 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           // Right edge matches the SVG text's `textAnchor="end"` anchor, and the
           // merge button sits in the 26px to the right of it.
           const style: React.CSSProperties = {
-            left: featureX,
+            left: x,
             top: centres[i] - 8,
-            width: G.featureWidth - 32,
+            width: stubWidth - 32,
           }
 
           if (pullRequestUrl === null) {
@@ -851,6 +1005,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
   private renderMergeButtons() {
     const entries = this.shownEntries
     const centres = this.stubCentres
+    const { x, stubWidth } = this.laneGeometry
 
     return (
       <div className="hotflow-merge-buttons">
@@ -867,7 +1022,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
               entry={entry}
               approval={approval}
               label={this.getMergeButtonLabel(entry, approval)}
-              left={featureX + G.featureWidth - 26}
+              left={x + stubWidth - 26}
               top={centres[i] - 9}
               onMerge={this.props.onMergePullRequest}
             />
@@ -939,29 +1094,35 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
     return parts.join(' ')
   }
 
-  /** The y centre of each drawn stub. */
+  /** The y centre of each stub, in the lane's own (scrolling) coordinates. */
   private get stubCentres(): ReadonlyArray<number> {
-    const { stackHeight, midY } = this.layout
-
-    if (this.shownEntries.length === 0) {
-      return []
-    }
-
-    // Centre the stack on the flow's midline.
-    const top = midY - stackHeight / 2
-
     return this.shownEntries.map(
-      (_, i) => top + i * (G.stubHeight + G.stubGap) + G.stubHeight / 2
+      (_, i) => i * (G.stubHeight + G.stubGap) + G.stubHeight / 2
     )
+  }
+
+  /**
+   * The stubs whose centre is in view, and where that centre sits in the
+   * schematic once the lane's scroll is taken off. A stub scrolled out of sight
+   * has nothing to connect from, so it gets no connector.
+   */
+  private get visibleStubCentres(): ReadonlyArray<{
+    readonly index: number
+    readonly y: number
+  }> {
+    const { windowTop, stackHeight } = this.layout
+    const scrollTop = this.state.laneScrollTop
+
+    return this.stubCentres
+      .map((centre, index) => ({ index, local: centre - scrollTop }))
+      .filter(c => c.local >= 0 && c.local <= stackHeight)
+      .map(c => ({ index: c.index, y: windowTop + c.local }))
   }
 
   private renderFeatureStubs() {
     const entries = this.shownEntries
     const centres = this.stubCentres
-    const lane = this.props.featureLane
-    const { midY } = this.layout
-
-    const withPr = lane.filter(e => e.pullRequestNumber !== null).length
+    const { x, stubWidth } = this.laneGeometry
 
     return (
       <g>
@@ -981,9 +1142,9 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
                 className={`hotflow-stub${idle ? ' idle' : ''}${
                   current ? ' current' : ''
                 }`}
-                x={featureX}
+                x={x}
                 y={centres[i] - G.stubHeight / 2}
-                width={G.featureWidth}
+                width={stubWidth}
                 height={G.stubHeight}
                 rx={4}
               />
@@ -992,11 +1153,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
                 className="hotflow-text xs dim"
                 // Only branches with a pull request give up the right-hand slot
                 // to the merge button; the rest keep the full width.
-                x={
-                  featureX +
-                  G.featureWidth -
-                  (entry.pullRequestNumber === null ? 10 : 32)
-                }
+                x={x + stubWidth - (entry.pullRequestNumber === null ? 10 : 32)}
                 y={centres[i] + 4}
                 textAnchor="end"
               >
@@ -1010,8 +1167,20 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
             </g>
           )
         })}
+      </g>
+    )
+  }
 
-        {entries.length === 0 && (
+  /** Under the lane, in the schematic: the counts, or that there is nothing. */
+  private renderLaneCaption() {
+    const lane = this.props.featureLane
+    const { midY } = this.layout
+
+    const withPr = lane.filter(e => e.pullRequestNumber !== null).length
+
+    return (
+      <g>
+        {lane.length === 0 && (
           <text className="hotflow-text sm dim" x={featureX} y={midY + 4}>
             No open feature branches
           </text>
@@ -1022,7 +1191,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
           x={featureX}
           y={this.layout.height - G.padding - 4}
         >
-          {this.getLaneCaption(lane.length, withPr, entries.length)}
+          {this.getLaneCaption(lane.length, withPr, this.visibleCount)}
         </text>
       </g>
     )
@@ -1059,7 +1228,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
     }
 
     const branches = `${total} ${total === 1 ? 'branch' : 'branches'}`
-    const overflow = total > shown ? ` · showing ${shown}` : ''
+    const overflow = total > shown ? ` · ${shown} in view, scroll for more` : ''
 
     const prs =
       this.props.pullRequestKnowledge === 'unavailable'
@@ -1074,7 +1243,9 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
   }
 
   private renderFeatureConnectors() {
-    const centres = this.stubCentres
+    // Where each stub in view has scrolled to, so the fan follows the lane.
+    const visible = this.visibleStubCentres
+    const centres = visible.map(c => c.y)
     const { midY } = this.layout
 
     // From the stubs' right edge to just short of the integration node.
@@ -1095,7 +1266,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
     // Only draw a connector faint when we know the branch has no pull request.
     // Without pull request data every connector would otherwise look idle.
     const isIdle = (i: number) =>
-      this.shownEntries[i].pullRequestNumber === null &&
+      this.shownEntries[visible[i].index].pullRequestNumber === null &&
       this.props.pullRequestKnowledge === 'known'
 
     // The last solid connector carries the arrowhead, so the fan reads as one
@@ -1107,7 +1278,7 @@ export class FlowDiagram extends React.Component<IFlowDiagramProps> {
         {centres.map((y, i) => {
           return (
             <path
-              key={i}
+              key={this.shownEntries[visible[i].index].branchName}
               className={isIdle(i) ? 'hotflow-edge faint' : 'hotflow-edge'}
               d={curve(y)}
               fill="none"

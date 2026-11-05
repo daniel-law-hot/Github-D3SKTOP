@@ -414,6 +414,7 @@ import { GitRepositoryProvider } from '../hotflow/git-repository-provider'
 import { fetchPullRequestApprovals } from '../hotflow/pull-request-approvals'
 import {
   IHotFlowBranchOverride,
+  IPipelineViewState,
   IReleaseBranchState,
 } from '../../models/hotflow'
 import {
@@ -436,6 +437,26 @@ import {
 } from '../hotflow/ado-client'
 import { scopeToRepository } from '../hotflow/work-item-scope'
 import { getBuddy, recordCommitXp } from '../buddy/buddy-store'
+import {
+  approveReleaseStage,
+  getRepositoryPipelines,
+} from '../hotflow/ado-pipelines'
+import {
+  findForgottenBranches,
+  makeHasAnyPullRequest,
+} from '../hotflow/forgotten-branches'
+import {
+  getHiddenForgottenBranches,
+  hideForgottenBranch,
+  unhideAllForgottenBranches,
+} from '../hotflow/forgotten-hidden-store'
+
+/**
+ * How many releases of a pipeline to read. Every redeploy is its own release, so a
+ * busy version can take two dozen of them; the panel shows one per version, as many
+ * as fit, and needs enough left over after that.
+ */
+const PipelineReleasesToRead = 100
 
 const LastSelectedRepositoryIDKey = 'last-selected-repository-id'
 
@@ -4388,12 +4409,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
       // Preserve whatever we already know from Azure DevOps — detection is
       // git-only and shouldn't blow away work item detail on every refresh.
-      const existingAdo =
-        this.repositoryStateCache.get(repository).hotFlowState.ado
+      const existing = this.repositoryStateCache.get(repository).hotFlowState
+      const existingAdo = existing.ado
 
       this.repositoryStateCache.updateHotFlowState(repository, () => ({
         ...detected,
         ado: existingAdo,
+        // Read after detection and kept across it, for the same reason as the
+        // work items: they are slower and fail independently, so a refresh
+        // should not blank them while it waits for them again.
+        pipeline: existing.pipeline,
+        forgotten: existing.forgotten,
         suppressAssignedNotMerged: getSuppressAssignedNotMerged(repository),
       }))
       this.emitUpdate()
@@ -4403,6 +4429,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
         this._refreshHotFlowApprovals(repository),
         this._loadHotFlowHistoryContents(repository),
         this._loadHotFlowMergeability(repository),
+        this._refreshHotFlowPipeline(repository),
+        this._refreshHotFlowForgotten(repository),
       ])
     } catch (e) {
       log.error('[AppStore] failed to refresh HotFlow state', e)
@@ -5227,6 +5255,235 @@ export class AppStore extends TypedBaseStore<IAppState> {
     } catch (e) {
       log.warn('[AppStore] HotFlow could not check branch mergeability', e)
     }
+  }
+
+  /**
+   * Reads where the repository's releases have got to in Azure DevOps.
+   *
+   * Best-effort: no credential, no pipeline, or a refusal leaves the rest of the
+   * view as it was and the panel saying why, rather than failing the refresh.
+   */
+  private async _refreshHotFlowPipeline(repository: Repository): Promise<void> {
+    if (!isRepositoryWithGitHubRepository(repository)) {
+      return
+    }
+
+    const credential = await getAdoCredential(defaultAdoConfig.organisation)
+
+    if (credential === null) {
+      this.repositoryStateCache.updateHotFlowState(repository, s => ({
+        pipeline: { ...s.pipeline, status: 'unavailable' as const },
+      }))
+      this.emitUpdate()
+      return
+    }
+
+    const gitHubRepository = getNonForkGitHubRepository(repository)
+
+    this.repositoryStateCache.updateHotFlowState(repository, s => ({
+      pipeline: {
+        ...s.pipeline,
+        status: s.pipeline.status === 'ok' ? s.pipeline.status : 'loading',
+      },
+    }))
+    this.emitUpdate()
+
+    try {
+      const pipelines = await getRepositoryPipelines(
+        defaultAdoConfig,
+        credential,
+        gitHubRepository.owner.login,
+        gitHubRepository.name,
+        PipelineReleasesToRead
+      )
+
+      this.repositoryStateCache.updateHotFlowState(repository, s => ({
+        pipeline: {
+          ...s.pipeline,
+          status: pipelines.length === 0 ? 'unavailable' : 'ok',
+          pipelines,
+          errorMessage: null,
+        },
+      }))
+    } catch (e) {
+      log.warn('[AppStore] HotFlow could not load the release pipeline', e)
+
+      this.repositoryStateCache.updateHotFlowState(repository, s => ({
+        pipeline: {
+          ...s.pipeline,
+          status: 'error' as const,
+          errorMessage: e instanceof Error ? e.message : String(e),
+        },
+      }))
+    }
+
+    this.emitUpdate()
+  }
+
+  /**
+   * Approves a release stage that is waiting on the signed-in user.
+   *
+   * The second write HotFlow makes to Azure DevOps, and the only one that moves a
+   * deployment. Never called without the user having pressed Approve on a panel
+   * naming the release and stage, and the comment says where it came from.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _approveHotFlowStage(
+    repository: Repository,
+    approvalId: number,
+    comment: string
+  ): Promise<void> {
+    const credential = await getAdoCredential(defaultAdoConfig.organisation)
+
+    const setApproval = (approval: IPipelineViewState['approval']): void => {
+      this.repositoryStateCache.updateHotFlowState(repository, s => ({
+        pipeline: { ...s.pipeline, approval },
+      }))
+      this.emitUpdate()
+    }
+
+    if (credential === null) {
+      setApproval({
+        approvalId,
+        isRunning: false,
+        errorMessage: 'Connect to Azure DevOps first.',
+      })
+      return
+    }
+
+    setApproval({ approvalId, isRunning: true, errorMessage: null })
+
+    try {
+      await approveReleaseStage(
+        defaultAdoConfig,
+        credential,
+        approvalId,
+        comment
+      )
+    } catch (e) {
+      setApproval({
+        approvalId,
+        isRunning: false,
+        errorMessage: e instanceof Error ? e.message : String(e),
+      })
+      return
+    }
+
+    setApproval(null)
+    await this._refreshHotFlowPipeline(repository)
+  }
+
+  /** Clears an approval's outcome, so its panel closes. */
+  public _dismissHotFlowApproval(repository: Repository) {
+    this.repositoryStateCache.updateHotFlowState(repository, s => ({
+      pipeline: { ...s.pipeline, approval: null },
+    }))
+    this.emitUpdate()
+  }
+
+  /**
+   * Finds the user's own feature branches that never became a pull request.
+   *
+   * Read after the picture is up, like mergeability: it asks git about each
+   * candidate and GitHub about the few that survive, and nobody is waiting on it.
+   */
+  private async _refreshHotFlowForgotten(
+    repository: Repository
+  ): Promise<void> {
+    const state = this.repositoryStateCache.get(repository)
+    const { integrationBranch, openFeatureBranches } = state.hotFlowState
+
+    if (integrationBranch === null) {
+      return
+    }
+
+    const account = isRepositoryWithGitHubRepository(repository)
+      ? getAccountForRepository(this.accounts, repository)
+      : null
+
+    // Who "mine" is: the identity commits are made under, and every address the
+    // GitHub account owns, because a commit made on another machine may carry
+    // either.
+    const myEmails = new Set<string>()
+    const commitEmail = state.commitAuthor?.email
+    if (commitEmail !== undefined) {
+      myEmails.add(commitEmail)
+    }
+    if (account !== null) {
+      myEmails.add(account.login)
+      account.emails.forEach(e => myEmails.add(e.email))
+    }
+
+    if (myEmails.size === 0) {
+      return
+    }
+
+    this.repositoryStateCache.updateHotFlowState(repository, s => ({
+      forgotten: {
+        ...s.forgotten,
+        status: s.forgotten.status === 'ok' ? s.forgotten.status : 'loading',
+      },
+    }))
+    this.emitUpdate()
+
+    try {
+      const gitHubRepository =
+        account !== null && isRepositoryWithGitHubRepository(repository)
+          ? getNonForkGitHubRepository(repository)
+          : null
+
+      const result = await findForgottenBranches(repository, {
+        integrationRef: integrationBranch.name,
+        candidates: openFeatureBranches,
+        myEmails,
+        openPullRequestHeads: new Set(
+          state.branchesState.openPullRequests.map(pr => pr.head.ref)
+        ),
+        hasAnyPullRequest:
+          account !== null && gitHubRepository !== null
+            ? makeHasAnyPullRequest(
+                account,
+                gitHubRepository.owner.login,
+                gitHubRepository.name
+              )
+            : undefined,
+        hidden: getHiddenForgottenBranches(repository),
+      })
+
+      this.repositoryStateCache.updateHotFlowState(repository, () => ({
+        forgotten: {
+          status: 'ok' as const,
+          branches: result.shown,
+          hiddenCount: result.hiddenCount,
+          errorMessage: null,
+        },
+      }))
+    } catch (e) {
+      log.warn('[AppStore] HotFlow could not look for forgotten branches', e)
+
+      this.repositoryStateCache.updateHotFlowState(repository, s => ({
+        forgotten: {
+          ...s.forgotten,
+          status: 'error' as const,
+          errorMessage: e instanceof Error ? e.message : String(e),
+        },
+      }))
+    }
+
+    this.emitUpdate()
+  }
+
+  /** Stops showing a forgotten branch, until the user asks for them back. */
+  public async _hideForgottenBranch(repository: Repository, name: string) {
+    hideForgottenBranch(repository, name)
+    await this._refreshHotFlowForgotten(repository)
+  }
+
+  /** Brings back every forgotten branch the user hid. */
+  public async _unhideForgottenBranches(repository: Repository) {
+    unhideAllForgottenBranches(repository)
+    await this._refreshHotFlowForgotten(repository)
   }
 
   /**

@@ -28,7 +28,8 @@ import { MergeResult } from '../../../lib/git'
  * release is in. `fast-forward` moves the release pointer instead, leaving no
  * merge commits behind — only possible while the release has nothing of its own,
  * which is the common case for a release branch that's only ever been a snapshot
- * of develop.
+ * of develop, and so the default. When the release has commits of its own the
+ * check says so and Merge is one change of the dropdown away.
  */
 type UpdateMethod = 'merge' | 'fast-forward'
 
@@ -72,7 +73,7 @@ export class UpdateReleaseDialog extends React.Component<
       canProceed: false,
       isChecking: true,
       isMerging: false,
-      method: 'merge',
+      method: 'fast-forward',
     }
   }
 
@@ -215,8 +216,8 @@ export class UpdateReleaseDialog extends React.Component<
             onChange={this.onMethodChanged}
             disabled={this.state.isMerging}
           >
-            <option value="merge">Merge (records a merge commit)</option>
             <option value="fast-forward">Fast-forward (no merge commit)</option>
+            <option value="merge">Merge (records a merge commit)</option>
           </Select>
 
           <PreflightChecks

@@ -455,6 +455,38 @@ export class Dispatcher {
   }
 
   /**
+   * Approve a release stage that is waiting on the signed-in user.
+   *
+   * A write to Azure DevOps that moves a deployment, so callers confirm with the
+   * user first.
+   */
+  public approveHotFlowStage(
+    repository: Repository,
+    approvalId: number,
+    comment: string
+  ): Promise<void> {
+    return this.appStore._approveHotFlowStage(repository, approvalId, comment)
+  }
+
+  /** Close the outcome of an approval, so its panel goes away. */
+  public dismissHotFlowApproval(repository: Repository): void {
+    this.appStore._dismissHotFlowApproval(repository)
+  }
+
+  /** Stop showing a forgotten branch in HotFlow. */
+  public hideForgottenBranch(
+    repository: Repository,
+    name: string
+  ): Promise<void> {
+    return this.appStore._hideForgottenBranch(repository, name)
+  }
+
+  /** Show every forgotten branch the user had hidden. */
+  public unhideForgottenBranches(repository: Repository): Promise<void> {
+    return this.appStore._unhideForgottenBranches(repository)
+  }
+
+  /**
    * Assign this release's sequence number to every work item merged into it that
    * hasn't got one.
    *

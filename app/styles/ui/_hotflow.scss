@@ -149,26 +149,21 @@ body.theme-dark {
 .hotflow-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing);
+  gap: var(--spacing-half);
   height: 44px;
+  box-sizing: border-box;
   flex-shrink: 0;
   padding: 0 var(--spacing);
   border-bottom: 1px solid var(--box-border-color);
 }
 
-.hotflow-header-left {
+// At the right-hand end of the left column, which is as far right as the header
+// goes now that the side panel takes the top of the window beside it.
+.hotflow-header-actions {
   display: flex;
   align-items: center;
   gap: var(--spacing-half);
-  min-width: 0;
-}
-
-.hotflow-header-right {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-half);
-  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .hotflow-title {
@@ -319,6 +314,60 @@ body.theme-dark {
 }
 
 .hotflow-diagram-svg {
+  display: block;
+}
+
+/**
+ * The feature stubs' own scrolling window.
+ *
+ * Sized and placed by `renderFeatureLane` to the rows the band has room for;
+ * everything past that scrolls. Native scrolling, so the wheel and trackpad are
+ * as smooth here as anywhere else in the app, and only the connectors beside it
+ * are redrawn as it moves.
+ *
+ * The scrollbar goes on the left, which `direction: rtl` is the only way to ask
+ * for. The content puts the direction back so nothing inside reads backwards.
+ */
+.hotflow-feature-lane {
+  position: absolute;
+  left: 0;
+  overflow: hidden;
+  direction: rtl;
+
+  // Scrolling the lane to its end shouldn't carry on into the band.
+  overscroll-behavior: contain;
+
+  &.scrollable {
+    overflow-y: auto;
+  }
+
+  // Pinned to match `laneScrollbarWidth` in flow-diagram.tsx, which places the
+  // stubs beside it. Desktop's own look, on every platform.
+  &::-webkit-scrollbar {
+    width: 10px;
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--scroll-bar-thumb-background-color);
+    border-radius: 10px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+
+    &:hover,
+    &:active {
+      border-width: 1px;
+      background-color: var(--scroll-bar-thumb-background-color-active);
+    }
+  }
+}
+
+.hotflow-feature-lane-content {
+  position: relative;
+  direction: ltr;
+}
+
+.hotflow-feature-lane-svg {
   display: block;
 }
 
@@ -913,9 +962,38 @@ body.theme-dark {
 
 // ── body: contents + summary ──────────────────────────────────────────────────
 
-.hotflow-body {
+/**
+ * The view below the header: the diagram, resizer and contents in one column and
+ * the side panel in the other, so the panel runs the full height.
+ */
+.hotflow-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 268px;
+  // The width of the toolbar's Open in Visual Studio button and its arrow, so the
+  // panel's left edge lines up with the button above it.
+  grid-template-columns: minmax(0, 1fr) 230px;
+  flex-grow: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+// Folded away, the side panel is a thin bar and the rest takes the room.
+.hotflow-main.side-collapsed {
+  // The width of the Open in Visual Studio arrow, so the thin bar sits under it.
+  grid-template-columns: minmax(0, 1fr) 30px;
+}
+
+.hotflow-main-left {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--box-border-color);
+}
+
+.hotflow-body {
+  display: flex;
+  flex-direction: column;
   flex-grow: 1;
   min-height: 0;
   overflow: hidden;
@@ -924,10 +1002,10 @@ body.theme-dark {
 .hotflow-contents {
   display: flex;
   flex-direction: column;
+  flex-grow: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border-right: 1px solid var(--box-border-color);
 }
 
 /**
@@ -2054,4 +2132,495 @@ body.theme-dark {
   &.ok {
     color: var(--hotflow-ok-color);
   }
+}
+
+/**
+ * The side panel: full height, with a tab for the release and one for what is
+ * waiting on the user.
+ */
+:root {
+  --hotflow-bad-color: #{$red-600};
+  --hotflow-bad-background: #{$red-000};
+  --hotflow-bad-line: #{$red-400};
+}
+
+body.theme-dark {
+  --hotflow-bad-color: #{$red-400};
+  --hotflow-bad-background: #{darken($red-900, 8%)};
+  --hotflow-bad-line: #{$red-600};
+}
+
+.hotflow-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hotflow-side-body {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+// The way to fold the panel away or bring it back: a square at the header's height.
+.hotflow-side-fold {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 43px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary-color);
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--text-color);
+    background: var(--hotflow-focus-background);
+  }
+}
+
+// What the folded panel shows: the fold button, then each tab on its side.
+.hotflow-side-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex-grow: 1;
+  min-height: 0;
+}
+
+.hotflow-side-rail-tab {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: var(--spacing) 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--box-border-color);
+  color: var(--text-secondary-color);
+  font-family: inherit;
+  font-size: var(--font-size);
+  writing-mode: vertical-rl;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--text-color);
+    background: var(--hotflow-focus-background);
+  }
+}
+
+.hotflow-side.collapsed {
+  .hotflow-side-fold {
+    width: 100%;
+    // The header's full height, border included, so its line meets the header's.
+    height: 44px;
+    border-bottom: 1px solid var(--box-border-color);
+  }
+}
+
+.hotflow-side-tabs {
+  display: flex;
+  flex-shrink: 0;
+  // The header's height, so the tabs and the title bar share one line.
+  height: 44px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--box-border-color);
+}
+
+.hotflow-side-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--spacing-half) var(--spacing);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary-color);
+  font-family: inherit;
+  font-size: var(--font-size);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text-color);
+  }
+
+  &.selected {
+    color: var(--text-color);
+    font-weight: var(--font-weight-semibold);
+    border-bottom-color: var(--hotflow-focus-line);
+  }
+}
+
+.hotflow-side-badge {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--hotflow-warn-background);
+  color: var(--hotflow-warn-color);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 18px;
+  text-align: center;
+}
+
+.hotflow-side-release {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+// As tall as what is in it, so there is never blank space under the releases. The
+// divider adds or removes whole releases; this only steps in when the window is
+// too short for the cycle info to keep its room.
+.hotflow-side-pipeline {
+  flex-shrink: 0;
+  min-height: 0;
+  max-height: calc(100% - 129px);
+  overflow-y: auto;
+}
+
+.hotflow-side-summary {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+
+  .hotflow-summary {
+    overflow-y: visible;
+  }
+}
+
+.hotflow-side-notifications {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.hotflow-side-splitter {
+  position: relative;
+  flex-shrink: 0;
+  height: 9px;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--box-border-color);
+  border-bottom: 1px solid var(--box-border-color);
+  cursor: row-resize;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--hotflow-focus-background);
+  }
+}
+
+.hotflow-side-splitter-grip {
+  display: block;
+  width: 28px;
+  height: 3px;
+  margin: 2px auto;
+  border-radius: 2px;
+  background: var(--text-secondary-color);
+  opacity: 0.5;
+}
+
+.hotflow-forgotten {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-half);
+  padding: var(--spacing);
+}
+
+.hotflow-forgotten-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-half);
+}
+
+.hotflow-forgotten-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--spacing-half);
+  border: 1px solid var(--box-border-color);
+  border-radius: var(--border-radius);
+}
+
+.hotflow-forgotten-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+}
+
+.hotflow-forgotten-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--spacing-half);
+  align-items: center;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary-color);
+}
+
+.hotflow-forgotten-badge {
+  padding: 0 5px;
+  border: 1px solid var(--hotflow-focus-line);
+  border-radius: 3px;
+  background: var(--hotflow-focus-background);
+  font-weight: var(--font-weight-semibold);
+
+  &.local {
+    border-color: var(--hotflow-warn-line);
+    background: var(--hotflow-warn-background);
+    color: var(--hotflow-warn-color);
+  }
+}
+
+.hotflow-forgotten-actions {
+  display: flex;
+  gap: var(--spacing-half);
+}
+
+/**
+ * The release pipeline, at the top of the release tab: the newest release in
+ * full, the ones before it as a bar of three.
+ */
+.hotflow-pl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-half);
+  padding: var(--spacing);
+}
+
+.hotflow-pl-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-half);
+}
+
+// The pipeline's name, giving way to the version beside it when space is short.
+.hotflow-pl-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary-color);
+}
+
+.hotflow-pl-latest {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: var(--spacing-half);
+  border-bottom: 1px solid var(--box-border-color);
+}
+
+.hotflow-pl-latest-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-half);
+  min-width: 0;
+}
+
+.hotflow-pl-version {
+  flex-shrink: 0;
+  font-weight: var(--font-weight-semibold);
+}
+
+.hotflow-pl-age {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary-color);
+}
+
+.hotflow-pl-stages {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.hotflow-pl-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--box-border-color);
+  border-radius: 3px;
+  font-family: inherit;
+  text-align: left;
+
+  .hotflow-pl-stage-name {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .hotflow-pl-stage-note {
+    font-size: var(--font-size-xs);
+    opacity: 0.85;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  &.clickable {
+    cursor: pointer;
+
+    &:hover {
+      box-shadow: 0 0 0 1px var(--hotflow-warn-line);
+    }
+  }
+}
+
+.hotflow-pl-stage,
+.hotflow-pl-bar {
+  &.tone-ok {
+    color: var(--hotflow-ok-color);
+    background: var(--hotflow-ok-background);
+    border-color: var(--hotflow-ok-line);
+  }
+
+  &.tone-run {
+    color: var(--link-button-color);
+    background: var(--hotflow-focus-background);
+    border-color: var(--hotflow-focus-line);
+  }
+
+  &.tone-wait {
+    color: var(--hotflow-warn-color);
+    background: var(--hotflow-warn-background);
+    border-color: var(--hotflow-warn-line);
+  }
+
+  &.tone-bad {
+    color: var(--hotflow-bad-color);
+    background: var(--hotflow-bad-background);
+    border-color: var(--hotflow-bad-line);
+  }
+
+  &.tone-idle {
+    color: var(--text-secondary-color);
+    background: var(--hotflow-stub-background);
+    border-color: var(--box-border-color);
+  }
+}
+
+.hotflow-pl-earlier {
+  display: flex;
+  flex-direction: column;
+}
+
+.hotflow-pl-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--spacing-half);
+  padding: 4px 0;
+  font-size: var(--font-size-sm);
+}
+
+.hotflow-pl-legend {
+  padding-bottom: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary-color);
+}
+
+.hotflow-pl-ver {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.hotflow-pl-bars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+  align-items: center;
+}
+
+.hotflow-pl-bar {
+  display: block;
+  height: 6px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+
+  &.tone-ok {
+    background: var(--hotflow-ok-line);
+  }
+
+  &.tone-run {
+    background: var(--hotflow-focus-line);
+  }
+
+  &.tone-wait {
+    background: var(--hotflow-warn-line);
+  }
+
+  &.tone-bad {
+    background: var(--hotflow-bad-line);
+  }
+
+  &.tone-idle {
+    background: var(--hotflow-stub-background);
+    border-color: var(--box-border-color);
+  }
+}
+
+.hotflow-pl-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-half);
+  padding: var(--spacing-half);
+  border: 1px solid var(--box-border-color);
+  border-radius: var(--border-radius);
+  background: var(--box-background-color);
+  box-shadow: var(--base-box-shadow);
+  font-size: var(--font-size-sm);
+
+  &.error {
+    border-color: var(--hotflow-bad-line);
+  }
+
+  textarea {
+    width: 100%;
+    resize: vertical;
+  }
+}
+
+.hotflow-pl-error {
+  color: var(--hotflow-bad-color);
+}
+
+.hotflow-pl-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-half);
 }

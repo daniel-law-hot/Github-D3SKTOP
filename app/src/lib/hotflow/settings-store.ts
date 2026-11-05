@@ -241,10 +241,14 @@ export function getBranchOverride(
 /** The merge strategies GitHub offers. */
 export type StoredMergeMethod = 'merge' | 'squash' | 'rebase'
 
-const defaultMergeMethod: StoredMergeMethod = 'merge'
+/**
+ * Squash and merge, so a feature branch lands as one commit on develop. Only the
+ * starting point: the dialog still offers the others, and remembers the choice.
+ */
+const defaultMergeMethod: StoredMergeMethod = 'squash'
 
 /**
- * The merge method last used in this repository, defaulting to a merge commit.
+ * The merge method last used in this repository, defaulting to squash and merge.
  *
  * Remembered per repository rather than globally, since different repositories
  * reasonably want different strategies.

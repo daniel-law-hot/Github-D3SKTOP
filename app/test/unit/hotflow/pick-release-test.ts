@@ -213,6 +213,33 @@ describe('hotflow/pick-release', () => {
       assert.deepStrictEqual(selection.others, [])
     })
 
+    it('shows no release once the latest has shipped, despite older open ones', () => {
+      // BasterPricer2: 1.2026.29 finished into main and tagged, with an older
+      // release that was cut and never merged still lying around. Finishing
+      // used to land on that one instead of offering to start 1.2026.30.
+      const selection = pickCurrentRelease(
+        [release('1.2026.27'), release('1.2026.29', true)],
+        versions(['1.2026.26', '1.2026.29']),
+        'main'
+      )
+
+      assert.strictEqual(picked(selection), null)
+      assert.deepStrictEqual(
+        selection.others.map(o => o.version.raw),
+        ['1.2026.27']
+      )
+    })
+
+    it('still shows an older open release when it is checked out', () => {
+      const selection = pickCurrentRelease(
+        [release('1.2026.27'), release('1.2026.29', true)],
+        versions(['1.2026.29']),
+        'release/1.2026.27'
+      )
+
+      assert.strictEqual(picked(selection), '1.2026.27')
+    })
+
     it('returns null when there are no release branches at all', () => {
       const selection = pickCurrentRelease([], [], null)
 

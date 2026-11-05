@@ -14,6 +14,8 @@ import {
   ProductionBranchAliases,
   ReleaseVerdict,
   defaultAdoState,
+  defaultForgottenState,
+  defaultPipelineViewState,
   defaultHotFlowState,
 } from '../../models/hotflow'
 import {
@@ -232,6 +234,8 @@ export async function detectHotFlowState(
     // re-reading the repository is exactly when it stops being current.
     sequenceAssignment: null,
     ado: defaultAdoState,
+    pipeline: defaultPipelineViewState,
+    forgotten: defaultForgottenState,
   }
 }
 

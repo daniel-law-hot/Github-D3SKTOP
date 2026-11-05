@@ -85,11 +85,7 @@ export function isShipped(
     return false
   }
 
-  const highestShipped = shippedVersions.reduce<IReleaseVersion | null>(
-    (highest, v) =>
-      highest === null || compareReleaseVersions(v, highest) > 0 ? v : highest,
-    null
-  )
+  const highestShipped = highestVersion(shippedVersions)
 
   return (
     highestShipped === null ||
@@ -131,10 +127,32 @@ export function pickCurrentRelease<T extends IReleaseChoice>(
       ? undefined
       : candidates.find(c => c.branchName === checkedOutBranchName)
 
-  const current = checkedOut ?? open[0] ?? null
+  // The highest open release is only the default while nothing later has
+  // shipped. Finishing 1.2026.29 used to hand the view to an older release that
+  // was cut and never merged — the highest one still open, but long since
+  // overtaken — when what's next is starting 1.2026.30. Anything below the newest
+  // tag stays in the others, and checking it out still shows it.
+  const highestShipped = highestVersion(shippedVersions)
+  const latest = open[0]
+  const isAheadOfShipped =
+    latest !== undefined &&
+    (highestShipped === null ||
+      compareReleaseVersions(latest.version, highestShipped) > 0)
+
+  const current = checkedOut ?? (isAheadOfShipped ? latest : null)
 
   return {
     current,
     others: open.filter(c => c !== current),
   }
+}
+
+function highestVersion(
+  versions: ReadonlyArray<IReleaseVersion>
+): IReleaseVersion | null {
+  return versions.reduce<IReleaseVersion | null>(
+    (highest, v) =>
+      highest === null || compareReleaseVersions(v, highest) > 0 ? v : highest,
+    null
+  )
 }

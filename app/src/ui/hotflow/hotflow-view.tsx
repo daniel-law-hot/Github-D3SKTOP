@@ -18,6 +18,10 @@ import { maybeChatter } from '../../lib/buddy/buddy-store'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import { Button } from '../lib/button'
+import { SidePanel } from './side-panel'
+import { getBoolean, setBoolean } from '../../lib/local-storage'
+import { maxEarlierReleases, ReleasePipeline } from './release-pipeline'
+import { ForgottenBranchesPanel } from './forgotten-branches-panel'
 import { RelativeTime } from '../relative-time'
 import {
   DiagramGeometry,
@@ -118,7 +122,12 @@ interface IHotFlowViewState {
    * doesn't leave this pointing at a stale copy — the tag is what's stable.
    */
   readonly selectedHistoryTag: string | null
+
+  /** The side panel folded away to a thin bar. Remembered. */
+  readonly sideCollapsed: boolean
 }
+
+const SideCollapsedKey = 'hotflow-side-collapsed'
 
 /**
  * The HotFlow release view.
@@ -146,6 +155,7 @@ export class HotFlowView extends React.Component<
       selectedTab: 'work-items',
       bandHeight: getStoredFlowBandHeight(),
       selectedHistoryTag: null,
+      sideCollapsed: getBoolean(SideCollapsedKey, false),
     }
   }
 
@@ -441,14 +451,25 @@ export class HotFlowView extends React.Component<
   }
 
   public render() {
-    const { missingRequiredBranches } = this.props.hotFlowState
+    const { missingRequiredBranches, currentRelease } = this.props.hotFlowState
+
+    // With a release the side panel takes the whole right edge, top to bottom, so
+    // the header belongs to the left column and renderFlow draws it there.
+    const withSidePanel =
+      missingRequiredBranches.length === 0 && currentRelease !== null
 
     return (
       <div className="hotflow" id="hotflow" onClick={this.onHotFlowClick}>
-        {this.renderHeader()}
-        {missingRequiredBranches.length > 0
-          ? this.renderMissingBranches()
-          : this.renderFlow()}
+        {withSidePanel ? (
+          this.renderFlow()
+        ) : (
+          <>
+            {this.renderHeader()}
+            {missingRequiredBranches.length > 0
+              ? this.renderMissingBranches()
+              : this.renderFlow()}
+          </>
+        )}
       </div>
     )
   }
@@ -488,14 +509,12 @@ export class HotFlowView extends React.Component<
 
     return (
       <div className="hotflow-header">
-        <div className="hotflow-header-left">
-          <h1 className="hotflow-title">HotFlow</h1>
-          <span className="hotflow-repo">
-            {repository.alias ?? repository.name}
-          </span>
-          {this.renderVerdict()}
-        </div>
-        <div className="hotflow-header-right">
+        <h1 className="hotflow-title">HotFlow</h1>
+        <span className="hotflow-repo">
+          {repository.alias ?? repository.name}
+        </span>
+        {this.renderVerdict()}
+        <div className="hotflow-header-actions">
           {isLoading ? (
             <span className="dim">Refreshing…</span>
           ) : lastRefreshed !== null ? (
@@ -673,49 +692,153 @@ export class HotFlowView extends React.Component<
       return this.renderNoRelease()
     }
 
+    // The side panel runs the full height beside everything else, so the diagram,
+    // its resizer and the contents share a column and the panel has the other.
     return (
-      <>
-        {/* Dimmed while re-reading, because the boxes and their counts still
+      <div
+        className={classNames('hotflow-main', {
+          'side-collapsed': this.state.sideCollapsed,
+        })}
+      >
+        <div className="hotflow-main-left">
+          {this.renderHeader()}
+          {/* Dimmed while re-reading, because the boxes and their counts still
             describe the release being switched away from. Dimmed rather than
             emptied: the shape of the flow doesn't change between releases, and
             blanking it would make the whole view flash on every branch switch. */}
-        <div
-          className={classNames('hotflow-flow-band', {
-            loading: hotFlowState.isLoading,
-          })}
-          style={{ height: this.state.bandHeight }}
-        >
-          {/* Diagram and actions share one scroll container so the buttons stay
+          <div
+            className={classNames('hotflow-flow-band', {
+              loading: hotFlowState.isLoading,
+            })}
+            style={{ height: this.state.bandHeight }}
+          >
+            {/* Diagram and actions share one scroll container so the buttons stay
               aligned with the nodes above them when the band is scrolled. */}
-          <div className="hotflow-flow-scroll">
-            <FlowDiagram
-              onShowBuddy={this.onShowBuddy}
-              hotFlowState={hotFlowState}
-              missingWorkItemCount={missingWorkItemCount}
-              lastShippedVersion={lastShippedVersion}
-              featureLane={this.featureLane}
-              isNetworkBusy={this.props.isNetworkBusy}
-              onFetchBranch={this.onFetchBranch}
-              maxStubs={this.maxStubs}
-              pullRequestKnowledge={this.pullRequestKnowledge}
-              approvals={hotFlowState.pullRequestApprovals}
-              onMergePullRequest={this.onMergePullRequest}
-              currentBranchName={this.currentBranchName}
-              onCheckoutBranch={this.onCheckoutFeatureBranch}
-              onCheckoutRef={this.onCheckoutRef}
-            />
-            {this.renderActions()}
+            <div className="hotflow-flow-scroll">
+              <FlowDiagram
+                onShowBuddy={this.onShowBuddy}
+                hotFlowState={hotFlowState}
+                missingWorkItemCount={missingWorkItemCount}
+                lastShippedVersion={lastShippedVersion}
+                featureLane={this.featureLane}
+                isNetworkBusy={this.props.isNetworkBusy}
+                onFetchBranch={this.onFetchBranch}
+                maxStubs={this.maxStubs}
+                pullRequestKnowledge={this.pullRequestKnowledge}
+                approvals={hotFlowState.pullRequestApprovals}
+                onMergePullRequest={this.onMergePullRequest}
+                currentBranchName={this.currentBranchName}
+                onCheckoutBranch={this.onCheckoutFeatureBranch}
+                onCheckoutRef={this.onCheckoutRef}
+              />
+              {this.renderActions()}
+            </div>
           </div>
-        </div>
 
-        <FlowBandResizer
-          height={this.state.bandHeight}
-          onHeightChanged={this.onBandHeightChanged}
-          onReset={this.onBandHeightReset}
-        />
-        {this.renderReleaseBody(release)}
-      </>
+          <FlowBandResizer
+            height={this.state.bandHeight}
+            onHeightChanged={this.onBandHeightChanged}
+            onReset={this.onBandHeightReset}
+          />
+          {this.renderReleaseBody(release)}
+        </div>
+        {this.renderSidePanel()}
+      </div>
     )
+  }
+
+  /**
+   * The full-height column on the right: the release and its pipeline on one tab,
+   * what is waiting on the user on the other.
+   */
+  private renderSidePanel() {
+    const { pipeline, forgotten } = this.props.hotFlowState
+
+    return (
+      <SidePanel
+        notificationCount={forgotten.branches.length}
+        showPipeline={
+          pipeline.status !== 'unavailable' || pipeline.pipelines.length > 0
+        }
+        pipelineCount={pipeline.pipelines.length}
+        maxEarlierReleases={maxEarlierReleases(pipeline.pipelines)}
+        collapsed={this.state.sideCollapsed}
+        onCollapsedChanged={this.onSideCollapsedChanged}
+        renderPipeline={this.renderPipelineSection}
+        renderSummary={this.renderSummarySection}
+        renderNotifications={this.renderNotificationsTab}
+      />
+    )
+  }
+
+  private onSideCollapsedChanged = (sideCollapsed: boolean) => {
+    this.setState({ sideCollapsed })
+    setBoolean(SideCollapsedKey, sideCollapsed)
+  }
+
+  private renderPipelineSection = (earlierCount: number) => {
+    const { hotFlowState, repository, dispatcher } = this.props
+
+    return (
+      <ReleasePipeline
+        repository={repository}
+        dispatcher={dispatcher}
+        pipeline={hotFlowState.pipeline}
+        earlierCount={earlierCount}
+      />
+    )
+  }
+
+  /** The facts about the release: version, sequence, branches and counts. */
+  private renderSummarySection = () => {
+    const { hotFlowState } = this.props
+    const release = hotFlowState.currentRelease
+
+    if (release === null) {
+      return <></>
+    }
+
+    return (
+      <ReleaseSummary
+        hotFlowState={hotFlowState}
+        release={release}
+        reconciliation={this.getReconciliation(release)}
+        onEditReleaseSequence={this.onEditReleaseSequence}
+        onViewRelease={this.onViewRelease}
+        onEditBranches={this.onEditBranches}
+        onAssignReleaseSequence={this.onAssignReleaseSequence}
+        selectedHistoryTag={this.state.selectedHistoryTag}
+        onSelectHistoryRelease={this.onSelectHistoryRelease}
+      />
+    )
+  }
+
+  private renderNotificationsTab = () => {
+    const { hotFlowState, repository, dispatcher } = this.props
+
+    return (
+      <ForgottenBranchesPanel
+        repository={repository}
+        dispatcher={dispatcher}
+        forgotten={hotFlowState.forgotten}
+        integrationBranchName={this.integrationName}
+        onCheckout={this.onCheckoutForgotten}
+      />
+    )
+  }
+
+  /** Checks out one of the user's forgotten branches. */
+  private onCheckoutForgotten = (branchName: string) => {
+    const feature = this.props.hotFlowState.openFeatureBranches.find(
+      f => f.branch.nameWithoutRemote === branchName
+    )
+
+    if (feature !== undefined) {
+      this.props.dispatcher.checkoutBranch(
+        this.props.repository,
+        feature.branch
+      )
+    }
   }
 
   /**
@@ -879,17 +1002,6 @@ export class HotFlowView extends React.Component<
             this.props.changesPaneProps.state.changesState.workingDirectory
               .files.length
           }
-        />
-        <ReleaseSummary
-          hotFlowState={this.props.hotFlowState}
-          release={release}
-          reconciliation={this.getReconciliation(release)}
-          onEditReleaseSequence={this.onEditReleaseSequence}
-          onViewRelease={this.onViewRelease}
-          onEditBranches={this.onEditBranches}
-          onAssignReleaseSequence={this.onAssignReleaseSequence}
-          selectedHistoryTag={this.state.selectedHistoryTag}
-          onSelectHistoryRelease={this.onSelectHistoryRelease}
         />
       </div>
     )
