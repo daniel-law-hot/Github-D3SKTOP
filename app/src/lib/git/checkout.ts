@@ -26,11 +26,13 @@ function getCheckoutArgs(progressCallback?: ProgressCallback) {
 }
 
 async function getBranchCheckoutArgs(branch: Branch) {
+  // Remote refs are starting points for -b: use the canonical ref so a leading
+  // dash isn't parsed as an option. Local branches need their short name to
+  // avoid detaching HEAD. The trailing -- separates paths, not branch targets.
   return [
-    branch.name,
     ...(branch.type === BranchType.Remote
-      ? ['-b', branch.nameWithoutRemote]
-      : []),
+      ? ['-b', branch.nameWithoutRemote, branch.ref]
+      : [branch.name]),
     '--',
   ]
 }
@@ -212,7 +214,7 @@ export async function checkoutPaths(
   paths: ReadonlyArray<string>
 ): Promise<void> {
   await git(
-    ['checkout', 'HEAD', '--', ...paths],
+    ['--literal-pathspecs', 'checkout', 'HEAD', '--', ...paths],
     repository.path,
     'checkoutPaths'
   )
@@ -228,7 +230,7 @@ export async function checkoutConflictedFile(
   resolution: ManualConflictResolution
 ) {
   await git(
-    ['checkout', `--${resolution}`, '--', file.path],
+    ['--literal-pathspecs', 'checkout', `--${resolution}`, '--', file.path],
     repository.path,
     'checkoutConflictedFile'
   )

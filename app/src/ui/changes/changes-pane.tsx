@@ -18,6 +18,8 @@ import {
 import { ImageDiffType } from '../../models/diff'
 import { StashedChangesLoadStates } from '../../models/stash-entry'
 import { PopupType } from '../../models/popup'
+import { isAssistedCommitRepositoryLocked } from '../../models/assisted-commit-run'
+import { isRepositoryAffectedByAssistedCommit } from '../../lib/git/repository-operation'
 import { TipState } from '../../models/tip'
 import { Account } from '../../models/account'
 import { Emoji } from '../../lib/emoji'
@@ -154,7 +156,11 @@ export class ChangesSidebarPane extends React.Component<IChangesSidebarPaneProps
         issuesStore={this.props.issuesStore}
         availableWidth={this.props.availableWidth}
         gitHubUserStore={this.props.gitHubUserStore}
-        isCommitting={state.isCommitting}
+        isCommitting={
+          state.isCommitting ||
+          isRepositoryAffectedByAssistedCommit(this.props.repository.path) ||
+          isAssistedCommitRepositoryLocked(state.changesState.assistedCommit)
+        }
         hookProgress={state.hookProgress}
         onShowCommitProgress={
           state.subscribeToCommitOutput ? this.onShowCommitProgress : undefined
@@ -260,7 +266,13 @@ export class ChangesDiffPane extends React.Component<IChangesDiffPaneProps> {
         dispatcher={this.props.dispatcher}
         file={selectedFile}
         diff={diff}
-        isCommitting={this.props.state.isCommitting}
+        isCommitting={
+          this.props.state.isCommitting ||
+          isRepositoryAffectedByAssistedCommit(this.props.repository.path) ||
+          isAssistedCommitRepositoryLocked(
+            this.props.state.changesState.assistedCommit
+          )
+        }
         imageDiffType={this.props.imageDiffType}
         hideWhitespaceInDiff={this.props.hideWhitespaceInChangesDiff}
         showSideBySideDiff={this.props.showSideBySideDiff}

@@ -11,6 +11,7 @@ import {
 import { IFilterListGroup } from '../lib/filter-list'
 import { IMatches } from '../../lib/fuzzy-find'
 import { ILocalRepositoryState, Repository } from '../../models/repository'
+import { Account } from '../../models/account'
 import { Dispatcher } from '../dispatcher'
 import { Button } from '../lib/button'
 import { Octicon } from '../octicons'
@@ -23,6 +24,7 @@ import { TooltippedContent } from '../lib/tooltipped-content'
 import memoizeOne from 'memoize-one'
 import { KeyboardShortcut } from '../keyboard-shortcut/keyboard-shortcut'
 import { generateRepositoryListContextMenu } from '../repositories-list/repository-list-item-context-menu'
+import { enableWorktreeSupport } from '../../lib/feature-flag'
 import { SectionFilterList } from '../lib/section-filter-list'
 import { assertNever } from '../../lib/fatal-error'
 import { IAheadBehind } from '../../models/branch'
@@ -72,6 +74,18 @@ interface IRepositoriesListProps {
 
   /** The text entered by the user to filter their repository list */
   readonly filterText: string
+
+  /** The signed-in accounts, used to offer repository account choices. */
+  readonly accounts: ReadonlyArray<Account>
+
+  /** Called when the repository should be assigned to another account. */
+  readonly onChangeRepositoryAccount: (
+    repository: Repository,
+    login: string
+  ) => void
+
+  /** Called when the repository's settings should be shown. */
+  readonly onShowRepositorySettings: (repository: Repository) => void
 
   readonly dispatcher: Dispatcher
 }
@@ -293,10 +307,19 @@ export class RepositoriesList extends React.Component<
       onOpenInExternalEditor: this.props.onOpenInExternalEditor,
       askForConfirmationOnRemoveRepository:
         this.props.askForConfirmationOnRemoveRepository,
+      accounts: this.props.accounts,
+      onChangeRepositoryAccount: this.props.onChangeRepositoryAccount,
+      onShowRepositorySettings: this.props.onShowRepositorySettings,
       externalEditorLabel: this.props.externalEditorLabel,
       onChangeRepositoryAlias: this.onChangeRepositoryAlias,
       onRemoveRepositoryAlias: this.onRemoveRepositoryAlias,
       onViewOnGitHub: this.props.onViewOnGitHub,
+      onCreateWorktree: enableWorktreeSupport()
+        ? this.onCreateWorktree
+        : undefined,
+      onShowWorktrees: enableWorktreeSupport()
+        ? this.onShowWorktrees
+        : undefined,
       repository: item.repository,
       shellLabel: this.props.shellLabel,
     })
@@ -455,5 +478,17 @@ export class RepositoriesList extends React.Component<
 
   private onRemoveRepositoryAlias = (repository: Repository) => {
     this.props.dispatcher.changeRepositoryAlias(repository, null)
+  }
+
+  private onCreateWorktree = (repository: Repository) => {
+    this.props.dispatcher.showPopup({
+      type: PopupType.AddWorktree,
+      repository,
+    })
+  }
+
+  private onShowWorktrees = (repository: Repository) => {
+    this.props.dispatcher.selectRepository(repository)
+    this.props.dispatcher.showWorktreesFoldout()
   }
 }

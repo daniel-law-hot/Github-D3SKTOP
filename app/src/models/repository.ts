@@ -8,6 +8,7 @@ import {
 } from './workflow-preferences'
 import { assertNever, fatalError } from '../lib/fatal-error'
 import { createEqualityHash } from './equality-hash'
+import { IAccountIdentity } from './account'
 
 function getBaseName(path: string): string {
   const baseName = Path.basename(path)
@@ -21,19 +22,9 @@ function getBaseName(path: string): string {
   return baseName
 }
 
-/** Base type for a directory you can run git commands successfully */
-export type WorkingTree = {
-  readonly path: string
-}
-
 /** A local repository. */
 export class Repository {
   public readonly name: string
-  /**
-   * The main working tree (what we commonly
-   * think of as the repository's working directory)
-   */
-  private readonly mainWorkTree: WorkingTree
 
   /**
    * A hash of the properties of the object.
@@ -47,7 +38,7 @@ export class Repository {
    * @param missing Was the repository missing on disk last we checked?
    */
   public constructor(
-    path: string,
+    public readonly path: string,
     public readonly id: number,
     public readonly gitHubRepository: GitHubRepository | null,
     public readonly missing: boolean,
@@ -64,9 +55,21 @@ export class Repository {
      * hasn't been resolved yet (e.g. for repositories added before this
      * property was introduced).
      */
-    public readonly gitDir: string | undefined = undefined
+    public readonly gitDir: string | undefined = undefined,
+    /**
+     * The path to the main worktree of this repository, recorded when Desktop
+     * switches onto one of its linked worktrees, or undefined if it hasn't been
+     * resolved yet (e.g. for repositories added before this property was
+     * introduced).
+     *
+     * Deleting a linked worktree can take its administrative git metadata with
+     * it, so the worktree set is not always discoverable after the fact. This
+     * records the main worktree while it is still known.
+     */
+    public readonly mainWorktreePath: string | undefined = undefined,
+    /** The explicitly assigned account login, or null if no account is assigned. */
+    public readonly login: string | null = null
   ) {
-    this.mainWorkTree = { path }
     this.name = (gitHubRepository && gitHubRepository.name) || getBaseName(path)
 
     this.hash = createEqualityHash(
@@ -76,12 +79,9 @@ export class Repository {
       this.missing,
       this.alias,
       this.workflowPreferences.forkContributionTarget,
-      this.isTutorialRepository
+      this.isTutorialRepository,
+      this.login
     )
-  }
-
-  public get path(): string {
-    return this.mainWorkTree.path
   }
 
   /**
@@ -95,10 +95,19 @@ export class Repository {
   }
 }
 
-/** A worktree linked to a main working tree (aka `Repository`) */
-export type LinkedWorkTree = WorkingTree & {
-  /** The sha of the head commit in this work tree */
-  readonly head: string
+/**
+ * A key identifying the working directory a repository refers to.
+ *
+ * Unlike `hash`, the key doesn't change when the repository's account,
+ * GitHub repository or other metadata changes, so in-memory state and
+ * in-flight operations survive those changes. Worktrees share a repository id,
+ * so the path is part of the key. Repositories that haven't been persisted
+ * (id -1) fall back to the hash so unrelated placeholders don't share state.
+ */
+export function getRepositoryStateKey(repository: Repository): string {
+  return repository.id < 0
+    ? `hash:${repository.hash}`
+    : `${repository.id}:${repository.path}`
 }
 
 /** Identical to `Repository`, except it **must** have a `gitHubRepository` */
@@ -136,6 +145,19 @@ export function assertIsRepositoryWithGitHubRepository(
   if (!isRepositoryWithGitHubRepository(repository)) {
     return fatalError(`Repository must be GitHub repository`)
   }
+}
+
+/**
+ * Get the identity of the account assigned to the repository, or null when
+ * the repository isn't a GitHub repository or has no assigned account.
+ */
+export function getRepositoryAccountIdentity(
+  repository: Repository
+): IAccountIdentity | null {
+  const { gitHubRepository, login } = repository
+  return gitHubRepository === null || login === null
+    ? null
+    : { endpoint: gitHubRepository.endpoint, login }
 }
 
 /**

@@ -23,6 +23,7 @@ on:
         default: false
 
 permissions:
+  copilot-requests: write
   contents: write
   pull-requests: write
 
@@ -34,13 +35,13 @@ jobs:
     steps:
       - name: Generate app token
         id: generate-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.DESKTOP_RELEASES_APP_ID }}
           private-key: ${{ secrets.DESKTOP_RELEASES_APP_PRIVATE_KEY }}
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -48,18 +49,22 @@ jobs:
           token: ${{ steps.generate-token.outputs.token }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: yarn
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            app/package-lock.json
+            vendor/*/package-lock.json
 
       - name: Install dependencies
-        run: yarn --frozen-lockfile
+        run: npm ci
 
       - name: Determine previous and next versions
         id: version
         run: >
-          yarn ts-node -P script/tsconfig.json script/draft-release/ci.ts
+          npm exec -- ts-node -P script/tsconfig.json script/draft-release/ci.ts
           version ${{ inputs.channel }}
 
       - name: Generate release notes (beta only)
@@ -72,7 +77,7 @@ jobs:
           instructions: .github/release-notes-instructions.md
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ github.token }}
 
       - name: Parse changelog entries
         id: changelog
@@ -87,7 +92,7 @@ jobs:
         run: |
           if [ "$CHANNEL" = "production" ]; then
             # Production: aggregate existing beta entries via shared script
-            ENTRIES=$(yarn --silent ts-node -P script/tsconfig.json \
+            ENTRIES=$(npm exec --silent -- ts-node -P script/tsconfig.json \
               script/draft-release/ci.ts changelog-entries "$PREVIOUS")
           else
             # Beta: extract descriptions from structured JSON output
@@ -169,15 +174,19 @@ jobs:
             git checkout -b "$BRANCH"
           fi
 
-          # Bump app/package.json and update changelog.json
-          yarn --silent ts-node -P script/tsconfig.json \
+          # Bump app/package.json and its lockfile, and update changelog.json
+          npm exec --silent -- ts-node -P script/tsconfig.json \
             script/draft-release/ci.ts prepare "$NEXT_VERSION" "$ENTRIES"
 
           # Ensure changelog.json passes Prettier (ci.ts writes with
           # JSON.stringify which differs from Prettier's formatting)
-          yarn prettier --write changelog.json
+          npm exec -- prettier --write changelog.json
 
           git add app/package.json changelog.json
+          # Release refs from before the npm migration have no npm lockfile.
+          if [ -f app/package-lock.json ]; then
+            git add app/package-lock.json
+          fi
           git commit -m "Draft release $NEXT_VERSION"
           git push origin "$BRANCH"
           echo "✅ Pushed $BRANCH — release-pr.yml will create the draft PR"

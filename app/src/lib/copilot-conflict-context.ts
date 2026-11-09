@@ -3,7 +3,6 @@ import { extname } from 'path'
 
 import { Repository } from '../models/repository'
 import { Commit } from '../models/commit'
-import { PullRequest } from '../models/pull-request'
 import { getMergeBase } from './git/merge'
 import { getCommits } from './git/log'
 import { resolveWithin } from './path'
@@ -26,10 +25,26 @@ export interface IConflictHunk {
 export interface IFileConflictContext {
   /** Repository-relative file path */
   readonly path: string
-  /** All conflict hunks in the file (empty if skipped) */
+  /** All conflict hunks in the file (empty if skipped or delete-vs-modify) */
   readonly hunks: ReadonlyArray<IConflictHunk>
   /** If the file was skipped, the reason why (shown in prompt so Copilot knows) */
   readonly skippedReason?: string
+  /**
+   * The full file content on disk (including conflict markers). Used after
+   * the model responds to reassemble the resolved file by splicing per-hunk
+   * resolutions into the original content. Omitted when the file is skipped.
+   */
+  readonly rawContent?: string
+  /**
+   * Present when this is a delete-vs-modify conflict (no text markers).
+   * One side deleted the file while the other modified it; the model
+   * responds with `"action": "keep"` or `"action": "delete"` instead of
+   * per-hunk resolutions.
+   */
+  readonly deleteConflict?: {
+    /** Which side of the merge deleted the file. */
+    readonly deletedSide: 'ours' | 'theirs'
+  }
 }
 
 /**
@@ -53,13 +68,92 @@ export interface IConflictCommitContext {
   readonly theirCommits: ReadonlyArray<Commit>
 }
 
+/**
+ * A pull request gathered as conflict context, in display-ready form.
+ *
+ * Captured once while the data is fresh so the same object can be fed to
+ * the prompt *and* rendered in the dialog's "Context" list — no post-hoc
+ * re-hydration required.
+ */
+export interface IConflictContextPullRequest {
+  /** The pull-request number (no leading `#`). */
+  readonly number: number
+  /** The pull-request title. */
+  readonly title: string
+  /** The pull-request body/description (may be empty). */
+  readonly body: string
+}
+
+/**
+ * A commit gathered as conflict context, in display-ready form.
+ */
+export interface IConflictContextCommit {
+  /** Full commit SHA. */
+  readonly sha: string
+  /** Abbreviated commit SHA for display. */
+  readonly shortSha: string
+  /** First line of the commit message. */
+  readonly summary: string
+  /** Whether the commit is reachable from a remote (i.e. pushed). */
+  readonly isOnRemote: boolean
+}
+
+/**
+ * The full, display-ready context gathered for a conflict resolution.
+ *
+ * Extends the file-level {@linkcode ICopilotConflictContext} with the
+ * pull requests and commits from both sides. This single object is the
+ * source of truth for both the Copilot prompt and the dialog's summary
+ * card, so the data is gathered exactly once.
+ */
+export interface IConflictResolutionContext extends ICopilotConflictContext {
+  /**
+   * All pull requests referenced in either side's commit history, resolved
+   * against the local cache and API. The model infers which PRs relate to
+   * which side from the commit context.
+   */
+  readonly pullRequests: ReadonlyArray<IConflictContextPullRequest>
+  /** Recent commits on the *ours* (current) side. */
+  readonly ourCommits: ReadonlyArray<IConflictContextCommit>
+  /** Recent commits on the *theirs* (incoming) side. */
+  readonly theirCommits: ReadonlyArray<IConflictContextCommit>
+}
+
 const oursMarker = /^<{7}(?:\s|$)/
 const baseMarker = /^\|{7}(?:\s|$)/
 const separatorMarker = /^={7}$/
 const theirsMarker = /^>{7}(?:\s|$)/
 
-/** Maximum file size (in bytes) to include in conflict context */
-const MAX_CONFLICT_FILE_SIZE = 1_048_576
+/**
+ * Absolute upper bound (in bytes) on a conflicted file we'll read into memory.
+ *
+ * This is a memory-safety guard only, not a resolvability heuristic — we only
+ * ever send the *conflict hunks* to the model, never the whole file, so a large
+ * file with a small conflict is still perfectly resolvable. Files above this
+ * size are skipped before reading to avoid loading pathological blobs (e.g. a
+ * multi-megabyte generated lockfile) into a string.
+ */
+const MAX_CONFLICT_FILE_READ_SIZE = 10_485_760 // 10MB
+
+/**
+ * Maximum length (in characters) of any single line within a conflict hunk.
+ *
+ * Mirrors the diff renderer's `MaxCharactersPerLine`. Conflicts containing a
+ * line longer than this are almost always minified/generated content where a
+ * line-oriented resolution is meaningless, so we skip them rather than sending
+ * an enormous single line to the model.
+ */
+const MAX_CONFLICT_LINE_LENGTH = 5000
+
+/**
+ * Maximum combined size (in characters) of the actual conflict content in a
+ * single file — the sum of the ours/base/theirs text across every hunk.
+ *
+ * Unlike a whole-file cap, this measures what we actually send to the model, so
+ * it protects prompt size and output quality (truncation/malformed JSON)
+ * without penalising large files whose conflicts are small.
+ */
+const MAX_CONFLICT_CONTENT_SIZE = 262_144 // 256KB
 
 function isConflictMarker(line: string): boolean {
   return (
@@ -185,6 +279,42 @@ export function extractConflictHunks(
 }
 
 /**
+ * Determine whether a file's conflict hunks are too large or too unwieldy to
+ * send to the model, returning a human-readable skip reason or null when the
+ * conflict is resolvable.
+ *
+ * We gate on the size of the conflict content itself (what we actually send)
+ * rather than the whole-file size, so a large file with a small conflict is
+ * still resolved. Two conditions trigger a skip:
+ *   1. Any single conflict line exceeds `MAX_CONFLICT_LINE_LENGTH` (minified or
+ *      generated content where a line-oriented resolution is meaningless).
+ *   2. The combined ours/base/theirs content exceeds `MAX_CONFLICT_CONTENT_SIZE`
+ *      (protects prompt size and output quality).
+ */
+export function getHunkSkipReason(
+  hunks: ReadonlyArray<IConflictHunk>
+): string | null {
+  let totalContent = 0
+
+  for (const hunk of hunks) {
+    const sides = [hunk.oursContent, hunk.theirsContent, hunk.baseContent ?? '']
+    for (const side of sides) {
+      totalContent += side.length
+      for (const line of side.split('\n')) {
+        if (line.length > MAX_CONFLICT_LINE_LENGTH) {
+          return 'Conflict contains lines too long to resolve automatically'
+        }
+      }
+    }
+    if (totalContent > MAX_CONFLICT_CONTENT_SIZE) {
+      return 'Conflict region too large to resolve automatically'
+    }
+  }
+
+  return null
+}
+
+/**
  * Gather commit messages from both sides of the merge to provide intent
  * context for conflict resolution.
  *
@@ -238,10 +368,25 @@ export async function buildConflictContext(
   ourLabel: string,
   theirLabel: string,
   workingDirectory: string,
-  files: ReadonlyArray<{ readonly path: string }>
+  files: ReadonlyArray<{
+    readonly path: string
+    /** Which side deleted the file (for delete-vs-modify conflicts). */
+    readonly deletedSide?: 'ours' | 'theirs'
+  }>
 ): Promise<ICopilotConflictContext> {
   const results = await Promise.all(
     files.map(async (file): Promise<IFileConflictContext> => {
+      // Delete-vs-modify conflicts have no text markers on disk. Include
+      // them in the context with metadata so the model can recommend
+      // keep or delete — no file content is needed.
+      if (file.deletedSide !== undefined) {
+        return {
+          path: file.path,
+          hunks: [],
+          deleteConflict: { deletedSide: file.deletedSide },
+        }
+      }
+
       // Guard against path traversal and symlink escapes (cross-platform)
       let absolutePath: string | null
       try {
@@ -261,14 +406,16 @@ export async function buildConflictContext(
         }
       }
 
-      // Check file size before reading to avoid loading huge files into memory
+      // Guard against reading pathologically large files into memory. This is
+      // a memory-safety bound only — resolvability is decided from the conflict
+      // hunks below, not the whole-file size.
       try {
         const fileStat = await stat(absolutePath)
-        if (fileStat.size > MAX_CONFLICT_FILE_SIZE) {
+        if (fileStat.size > MAX_CONFLICT_FILE_READ_SIZE) {
           return {
             path: file.path,
             hunks: [],
-            skippedReason: 'File exceeds 1MB size limit',
+            skippedReason: 'File too large to resolve automatically',
           }
         }
       } catch {
@@ -299,7 +446,18 @@ export async function buildConflictContext(
         }
       }
 
-      return { path: file.path, hunks }
+      // Gate on the size of the conflict content we'd actually send to the
+      // model, not the whole-file size.
+      const hunkSkipReason = getHunkSkipReason(hunks)
+      if (hunkSkipReason !== null) {
+        return {
+          path: file.path,
+          hunks: [],
+          skippedReason: hunkSkipReason,
+        }
+      }
+
+      return { path: file.path, hunks, rawContent: content }
     })
   )
 
@@ -314,15 +472,15 @@ export async function buildConflictContext(
  * Convert a structured conflict context into a human-readable prompt
  * string suitable for sending to the Copilot SDK as a user message.
  *
- * @param context - The structured conflict context to format
- * @param commitContext - Optional commit history from both sides
- * @param pullRequest - Optional pull request associated with the merge
+ * Reads the pull requests and commits straight off the unified context
+ * so the prompt and the dialog summary are built from the exact same
+ * gathered data.
+ *
+ * @param context - The unified conflict-resolution context to format
  * @returns A formatted string describing the merge conflicts
  */
 export function formatConflictContextForPrompt(
-  context: ICopilotConflictContext,
-  commitContext?: IConflictCommitContext | null,
-  pullRequest?: PullRequest | null
+  context: IConflictResolutionContext
 ): string {
   const parts: Array<string> = []
 
@@ -331,36 +489,32 @@ export function formatConflictContextForPrompt(
   )
   parts.push('')
 
-  if (pullRequest) {
+  if (context.pullRequests.length > 0) {
     parts.push('## Pull Request Context')
-    parts.push(`PR #${pullRequest.pullRequestNumber}: ${pullRequest.title}`)
+    parts.push(
+      'These pull requests were referenced in the commit history and may explain the intent behind either side:'
+    )
     parts.push('')
-    if (pullRequest.body) {
-      parts.push('Description:')
-      parts.push(makeFencedBlock(pullRequest.body))
-      parts.push('')
+    for (const pr of context.pullRequests) {
+      appendPullRequest(parts, pr)
     }
   }
 
-  if (
-    commitContext &&
-    (commitContext.ourCommits.length > 0 ||
-      commitContext.theirCommits.length > 0)
-  ) {
+  if (context.ourCommits.length > 0 || context.theirCommits.length > 0) {
     parts.push('## Recent Commits')
     parts.push('')
 
-    if (commitContext.ourCommits.length > 0) {
+    if (context.ourCommits.length > 0) {
       parts.push(`### Ours (${context.ourLabel}) commits:`)
-      for (const commit of commitContext.ourCommits) {
+      for (const commit of context.ourCommits) {
         parts.push(`- ${commit.shortSha}: ${commit.summary}`)
       }
       parts.push('')
     }
 
-    if (commitContext.theirCommits.length > 0) {
+    if (context.theirCommits.length > 0) {
       parts.push(`### Theirs (${context.theirLabel}) commits:`)
-      for (const commit of commitContext.theirCommits) {
+      for (const commit of context.theirCommits) {
         parts.push(`- ${commit.shortSha}: ${commit.summary}`)
       }
       parts.push('')
@@ -369,6 +523,29 @@ export function formatConflictContextForPrompt(
 
   for (const file of context.files) {
     const safePath = sanitizeForMarkdown(file.path)
+
+    if (file.deleteConflict) {
+      const { deletedSide } = file.deleteConflict
+      const deletedLabel =
+        deletedSide === 'ours' ? context.ourLabel : context.theirLabel
+      const modifiedLabel =
+        deletedSide === 'ours' ? context.theirLabel : context.ourLabel
+
+      parts.push(`## File: ${safePath} (delete-vs-modify conflict)`)
+      parts.push('')
+      parts.push(
+        `Deleted on "${deletedLabel}" (${deletedSide}), modified on "${modifiedLabel}" (${
+          deletedSide === 'ours' ? 'theirs' : 'ours'
+        }).`
+      )
+      parts.push('')
+      parts.push(
+        'Respond with `"action": "keep"` to preserve the modified file, or `"action": "delete"` to accept the deletion.'
+      )
+      parts.push('')
+      continue
+    }
+
     parts.push(`## File: ${safePath}`)
     parts.push('')
 
@@ -414,6 +591,30 @@ export function formatConflictContextForPrompt(
   }
 
   return parts.join('\n')
+}
+
+/** Maximum number of characters of a PR body to include in the prompt. */
+const MAX_PR_BODY_LENGTH = 4000
+
+/** Append a single pull request's title and (truncated) body to the prompt. */
+function appendPullRequest(
+  parts: Array<string>,
+  pr: IConflictContextPullRequest
+): void {
+  parts.push(`PR #${pr.number}: ${pr.title}`)
+  if (pr.body) {
+    parts.push('Description:')
+    parts.push(makeFencedBlock(truncateBody(pr.body)))
+  }
+  parts.push('')
+}
+
+/** Truncate an over-long PR body so a single PR can't dominate the prompt. */
+function truncateBody(body: string): string {
+  if (body.length <= MAX_PR_BODY_LENGTH) {
+    return body
+  }
+  return `${body.slice(0, MAX_PR_BODY_LENGTH)}\n…(truncated)`
 }
 
 /** Extract a language identifier from a file path for use in code fences. */

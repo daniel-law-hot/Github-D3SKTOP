@@ -43,16 +43,16 @@ jobs:
           arch: ${{ matrix.arch }}
 
       - name: Build production app
-        run: yarn build:prod
+        run: npm run build:prod
         env:
           npm_config_arch: ${{ matrix.arch }}
           TARGET_ARCH: ${{ matrix.arch }}
 
       - name: Build updater.exe
-        run: yarn build:updater
+        run: npm run build:updater
 
       - name: Package production app
-        run: yarn package
+        run: npm run package
         env:
           npm_config_arch: ${{ matrix.arch }}
 

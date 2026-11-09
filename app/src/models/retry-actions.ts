@@ -1,8 +1,9 @@
 import { Repository } from './repository'
-import { CloneOptions } from './clone-options'
+import { CloneRepositoryOptions } from './clone-options'
 import { Branch } from './branch'
 import { Commit, CommitOneLine, ICommitContext } from './commit'
 import { WorkingDirectoryFileChange } from './status'
+import { IStashEntry } from './stash-entry'
 
 /** The types of actions that can be retried. */
 export enum RetryActionType {
@@ -18,6 +19,7 @@ export enum RetryActionType {
   Squash,
   Reorder,
   DiscardChanges,
+  PopStash,
 }
 
 /** The retriable actions and their associated data. */
@@ -30,7 +32,7 @@ export type RetryAction =
       name: string
       url: string
       path: string
-      options: CloneOptions
+      options: CloneRepositoryOptions
     }
   | {
       type: RetryActionType.Checkout
@@ -84,4 +86,9 @@ export type RetryAction =
       type: RetryActionType.DiscardChanges
       repository: Repository
       files: ReadonlyArray<WorkingDirectoryFileChange>
+    }
+  | {
+      type: RetryActionType.PopStash
+      repository: Repository
+      stashEntry: IStashEntry
     }

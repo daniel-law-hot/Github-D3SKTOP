@@ -27,6 +27,8 @@
 @import 'dialogs/push-protection';
 @import 'dialogs/hook-failed';
 @import 'dialogs/commit_progress';
+@import 'dialogs/copilot-conflicts-loading';
+@import 'dialogs/copilot-app-not-found';
 
 // The styles herein attempt to follow a flow where margins are only applied
 // to the bottom of elements (with the exception of the last child). This to
@@ -352,6 +354,14 @@ dialog {
     }
   }
 
+  &#delete-worktree-failed {
+    max-width: 750px;
+    .xterm {
+      padding: var(--spacing);
+      margin-bottom: var(--spacing);
+    }
+  }
+
   &#app-error {
     // Use wider dialogs for raw git errors, to make sure we can display lines
     // up to 80 characters long without wrapping them.
@@ -518,8 +528,21 @@ dialog {
   &#preferences {
     width: 600px;
 
+    @media (max-height: 650px) {
+      .dialog-content,
+      .tab-bar,
+      .tab-container {
+        overflow-y: auto;
+        max-height: calc(100vh - 150px) !important;
+      }
+
+      .dialog-content {
+        min-height: calc(100vh - 150px) !important;
+      }
+    }
+
     .dialog-content {
-      $default-tab-height: 440px;
+      $default-tab-height: 500px;
       min-height: $default-tab-height;
 
       &.accounts-tab {
@@ -531,9 +554,9 @@ dialog {
         padding: 0;
 
         .copilot-tab-content {
-          padding: var(--spacing-double);
+          padding: 0;
           max-height: $default-tab-height;
-          overflow: auto;
+          overflow: hidden;
         }
       }
     }
@@ -603,12 +626,6 @@ dialog {
 
       .button-component {
         width: 100%;
-      }
-    }
-
-    .existing-account-warning {
-      .ref-component {
-        word-break: break-word;
       }
     }
 

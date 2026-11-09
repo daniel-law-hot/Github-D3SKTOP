@@ -1,12 +1,12 @@
-import { Branch } from '../../models/branch'
+import { Branch, BranchType } from '../../models/branch'
 import { Commit } from '../../models/commit'
 import { PullRequest } from '../../models/pull-request'
-import { Repository } from '../../models/repository'
+import { Repository, getRepositoryStateKey } from '../../models/repository'
 import {
   WorkingDirectoryFileChange,
   WorkingDirectoryStatus,
 } from '../../models/status'
-import { TipState } from '../../models/tip'
+import { Tip, TipState } from '../../models/tip'
 import {
   HistoryTabMode,
   IBranchesState,
@@ -24,24 +24,67 @@ import {
 import { merge } from '../merge'
 import { IHotFlowState, defaultHotFlowState } from '../../models/hotflow'
 import { DefaultCommitMessage } from '../../models/commit-message'
+import { CommitMode } from '../../models/commit-mode'
 import { sendNonFatalException } from '../helpers/non-fatal-exception'
 import { IStatsStore } from '../stats'
 import { RepoRulesInfo } from '../../models/repo-rules'
+import { WorktreeEntry } from '../../models/worktree'
+import { getCommitMode } from './helpers/commit-mode-storage'
+import { getPushAfterAssistedCommit } from './helpers/assisted-commit-push-storage'
 
 export class RepositoryStateCache {
   private readonly repositoryState = new Map<string, IRepositoryState>()
+  private readonly commitModes = new Map<number | string, CommitMode>()
+  private readonly assistedPushPreferences = new Map<number | string, boolean>()
 
   public constructor(private readonly statsStore: IStatsStore) {}
 
+  /** Whether any state has been created for the repository. */
+  public has(repository: Repository): boolean {
+    return this.repositoryState.has(getRepositoryStateKey(repository))
+  }
+
   /** Get the state for the repository. */
   public get(repository: Repository): IRepositoryState {
-    const existing = this.repositoryState.get(repository.hash)
+    const stateKey = getRepositoryStateKey(repository)
+    const modeKey = repository.id < 0 ? stateKey : repository.id
+    const commitMode =
+      this.commitModes.get(modeKey) ?? getCommitMode(repository)
+    this.commitModes.set(modeKey, commitMode)
+    const pushAfterAssistedCommit =
+      this.assistedPushPreferences.get(modeKey) ??
+      getPushAfterAssistedCommit(repository)
+    this.assistedPushPreferences.set(modeKey, pushAfterAssistedCommit)
+
+    const existing = this.repositoryState.get(stateKey)
     if (existing != null) {
-      return existing
+      if (
+        existing.changesState.commitMode === commitMode &&
+        existing.changesState.pushAfterAssistedCommit ===
+          pushAfterAssistedCommit
+      ) {
+        return existing
+      }
+
+      // Worktrees retain separate state while sharing the repository's preference.
+      const reconciled = {
+        ...existing,
+        changesState: {
+          ...existing.changesState,
+          commitMode,
+          pushAfterAssistedCommit,
+        },
+      }
+      this.repositoryState.set(stateKey, reconciled)
+      return reconciled
     }
 
-    const newItem = getInitialRepositoryState()
-    this.repositoryState.set(repository.hash, newItem)
+    const initial = getInitialRepositoryState(commitMode)
+    const newItem = {
+      ...initial,
+      changesState: { ...initial.changesState, pushAfterAssistedCommit },
+    }
+    this.repositoryState.set(stateKey, newItem)
     return newItem
   }
 
@@ -52,6 +95,14 @@ export class RepositoryStateCache {
     const currentState = this.get(repository)
     const newValues = fn(currentState)
     const newState = merge(currentState, newValues)
+    this.commitModes.set(
+      repository.id < 0 ? getRepositoryStateKey(repository) : repository.id,
+      newState.changesState.commitMode
+    )
+    this.assistedPushPreferences.set(
+      repository.id < 0 ? getRepositoryStateKey(repository) : repository.id,
+      newState.changesState.pushAfterAssistedCommit
+    )
 
     const currentTip = currentState.branchesState.tip
     const newTip = newState.branchesState.tip
@@ -66,7 +117,7 @@ export class RepositoryStateCache {
       newTip.branch.tip.sha === newState.commitToAmend.sha &&
       newState.changesState.conflictState === null
 
-    this.repositoryState.set(repository.hash, {
+    this.repositoryState.set(getRepositoryStateKey(repository), {
       ...newState,
       commitToAmend: isAmending ? newState.commitToAmend : null,
     })
@@ -268,6 +319,71 @@ export class RepositoryStateCache {
     })
   }
 
+  /**
+   * Pre-seed the state for a target repository with shared data from a source
+   * repository. This is used when switching worktrees so that the UI has data
+   * to display immediately while the full refresh runs in the background.
+   *
+   * Only state that is shared across worktrees in the same git repository is
+   * copied. Worktree-specific state (working directory, checked-out branch,
+   * in-flight operations) is left at its initial values.
+   */
+  public seedFromWorktree(
+    target: Repository,
+    source: Repository,
+    worktree: WorktreeEntry
+  ) {
+    const sourceState = this.repositoryState.get(getRepositoryStateKey(source))
+    if (sourceState === undefined) {
+      return
+    }
+
+    const targetState = this.get(target)
+
+    this.repositoryState.set(getRepositoryStateKey(target), {
+      ...targetState,
+      branchesState: {
+        ...targetState.branchesState,
+        defaultBranch: sourceState.branchesState.defaultBranch,
+        upstreamDefaultBranch: sourceState.branchesState.upstreamDefaultBranch,
+        allBranches: sourceState.branchesState.allBranches,
+        recentBranches: sourceState.branchesState.recentBranches,
+        openPullRequests: sourceState.branchesState.openPullRequests,
+        forcePushBranches: sourceState.branchesState.forcePushBranches,
+        tip: tipFromWorkTreeEntry(worktree, sourceState.branchesState),
+      },
+      worktrees: sourceState.worktrees,
+      commitLookup: sourceState.commitLookup,
+      remote: sourceState.remote,
+      lastFetched: sourceState.lastFetched,
+      commitAuthor: sourceState.commitAuthor,
+      localTags: sourceState.localTags,
+    })
+  }
+
+  /**
+   * Move the entire cached state for a repository from one identity to another.
+   *
+   * This is used when a worktree is renamed: the repository's path (and
+   * therefore its hash) changes, but it still refers to the same working
+   * directory, so all of the existing in-memory state (working directory
+   * changes, commit message, history, etc.) should be carried over to the new
+   * identity rather than reset to its initial values.
+   */
+  public transferState(source: Repository, target: Repository) {
+    if (getRepositoryStateKey(source) === getRepositoryStateKey(target)) {
+      return
+    }
+
+    const sourceState = this.repositoryState.get(getRepositoryStateKey(source))
+    if (sourceState === undefined) {
+      return
+    }
+
+    this.repositoryState.set(getRepositoryStateKey(target), sourceState)
+    this.repositoryState.delete(getRepositoryStateKey(source))
+  }
+
   private sendPullRequestStateNotExistsException() {
     sendNonFatalException(
       'PullRequestState',
@@ -318,7 +434,7 @@ export class RepositoryStateCache {
   }
 }
 
-function getInitialRepositoryState(): IRepositoryState {
+function getInitialRepositoryState(commitMode: CommitMode): IRepositoryState {
   return {
     commitSelection: {
       shas: [],
@@ -338,6 +454,10 @@ function getInitialRepositoryState(): IRepositoryState {
         diff: null,
       },
       commitMessage: DefaultCommitMessage,
+      commitMode,
+      pushAfterAssistedCommit: false,
+      assistedCommit: { kind: 'idle' },
+      assistedCommitAvailable: false,
       coAuthors: [],
       showCoAuthoredBy: false,
       conflictState: null,
@@ -373,6 +493,7 @@ function getInitialRepositoryState(): IRepositoryState {
       selectedBranchName: null,
     },
     hotFlowState: defaultHotFlowState,
+    worktrees: [],
     compareState: {
       formState: {
         kind: HistoryTabMode.History,
@@ -400,6 +521,7 @@ function getInitialRepositoryState(): IRepositoryState {
     hookProgress: null,
     subscribeToCommitOutput: null,
     isGeneratingCommitMessage: false,
+    commitMessageGenerationAbortController: null,
     commitToAmend: null,
     lastFetched: null,
     checkoutProgress: null,
@@ -411,4 +533,32 @@ function getInitialRepositoryState(): IRepositoryState {
     signOffCommits: false,
     allowEmptyCommit: false,
   }
+}
+
+function tipFromWorkTreeEntry(
+  worktree: WorktreeEntry,
+  branchesState: IBranchesState
+): Tip {
+  if (worktree.branch && worktree.head) {
+    const branch =
+      branchesState.allBranches.find(b => b.ref === worktree.branch) ??
+      new Branch(
+        worktree.branch.replace(/^refs\/heads\//, ''),
+        null,
+        { sha: worktree.head },
+        BranchType.Local,
+        worktree.branch
+      )
+
+    return { kind: TipState.Valid, branch }
+  }
+
+  if (worktree.head) {
+    return {
+      kind: TipState.Detached,
+      currentSha: worktree.head,
+    }
+  }
+
+  return { kind: TipState.Unknown }
 }

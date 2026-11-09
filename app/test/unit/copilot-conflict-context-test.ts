@@ -4,27 +4,49 @@ import assert from 'node:assert'
 import {
   extractConflictHunks,
   formatConflictContextForPrompt,
+  getHunkSkipReason,
   ICopilotConflictContext,
-  IConflictCommitContext,
+  IConflictHunk,
+  IConflictResolutionContext,
+  IConflictContextCommit,
+  IConflictContextPullRequest,
 } from '../../src/lib/copilot-conflict-context'
-import { Commit } from '../../src/models/commit'
-import { CommitIdentity } from '../../src/models/commit-identity'
-import { PullRequest, PullRequestRef } from '../../src/models/pull-request'
-import { gitHubRepoFixture } from '../helpers/github-repo-builder'
 
-function makeCommit(shortSha: string, summary: string): Commit {
-  const identity = new CommitIdentity('test', 'test@test.com', new Date())
-  return new Commit(
-    shortSha.padEnd(40, '0'),
+/**
+ * Promote a file-level context into the unified resolution context the
+ * formatter now expects, defaulting the commit/PR fields to empty.
+ */
+function toResolutionContext(
+  context: ICopilotConflictContext,
+  overrides: Partial<IConflictResolutionContext> = {}
+): IConflictResolutionContext {
+  return {
+    pullRequests: [],
+    ourCommits: [],
+    theirCommits: [],
+    ...context,
+    ...overrides,
+  }
+}
+
+function makeContextCommit(
+  shortSha: string,
+  summary: string
+): IConflictContextCommit {
+  return {
+    sha: shortSha.padEnd(40, '0'),
     shortSha,
     summary,
-    '',
-    identity,
-    identity,
-    [],
-    [],
-    []
-  )
+    isOnRemote: false,
+  }
+}
+
+function makeContextPr(
+  prNumber: number,
+  title: string,
+  body: string
+): IConflictContextPullRequest {
+  return { number: prNumber, title, body }
 }
 
 describe('copilot-conflict-context', () => {
@@ -356,7 +378,9 @@ describe('copilot-conflict-context', () => {
         ],
       }
 
-      const result = formatConflictContextForPrompt(context)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
 
       assert.ok(result.includes('"main" (ours)'))
       assert.ok(result.includes('"feature" (theirs)'))
@@ -390,7 +414,9 @@ describe('copilot-conflict-context', () => {
         ],
       }
 
-      const result = formatConflictContextForPrompt(context)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
 
       assert.ok(result.includes('```ts'))
       assert.ok(!result.includes('Language hint'))
@@ -435,7 +461,9 @@ describe('copilot-conflict-context', () => {
         ],
       }
 
-      const result = formatConflictContextForPrompt(context)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
 
       assert.ok(result.includes('## File: src/a.ts'))
       assert.ok(result.includes('## File: src/b.tsx'))
@@ -466,7 +494,9 @@ describe('copilot-conflict-context', () => {
         ],
       }
 
-      const result = formatConflictContextForPrompt(context)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
 
       assert.ok(result.includes('Base (common ancestor)'))
       assert.ok(result.includes('original'))
@@ -492,7 +522,9 @@ describe('copilot-conflict-context', () => {
         ],
       }
 
-      const result = formatConflictContextForPrompt(context)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
 
       assert.ok(result.includes('## File: Makefile'))
       // Code fences should just be ``` with no language
@@ -519,7 +551,9 @@ describe('copilot-conflict-context', () => {
         ],
       }
 
-      const result = formatConflictContextForPrompt(context)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
 
       assert.ok(!result.includes('Context before'))
       assert.ok(!result.includes('Context after'))
@@ -550,7 +584,9 @@ describe('copilot-conflict-context', () => {
         ],
       }
 
-      const result = formatConflictContextForPrompt(context)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
 
       // Skipped file should show heading and reason
       assert.ok(result.includes('## File: src/big-file.ts'))
@@ -581,37 +617,15 @@ describe('copilot-conflict-context', () => {
       ],
     }
 
-    function makePullRequest(
-      prNumber: number,
-      title: string,
-      body: string
-    ): PullRequest {
-      const ghRepo = gitHubRepoFixture({ owner: 'owner', name: 'repo' })
-      return new PullRequest(
-        new Date(),
-        title,
-        prNumber,
-        new PullRequestRef('refs/heads/feature', 'aaa', ghRepo),
-        new PullRequestRef('refs/heads/main', 'bbb', ghRepo),
-        'author',
-        false,
-        body
-      )
-    }
-
     it('includes commit context in output', () => {
-      const commitCtx: IConflictCommitContext = {
-        ourCommits: [
-          makeCommit('abc1234', 'Add numeric IDs'),
-          makeCommit('def5678', 'Update schema'),
-        ],
-        theirCommits: [makeCommit('111aaaa', 'Add UUID support')],
-      }
-
       const result = formatConflictContextForPrompt(
-        baseContext,
-        commitCtx,
-        null
+        toResolutionContext(baseContext, {
+          ourCommits: [
+            makeContextCommit('abc1234', 'Add numeric IDs'),
+            makeContextCommit('def5678', 'Update schema'),
+          ],
+          theirCommits: [makeContextCommit('111aaaa', 'Add UUID support')],
+        })
       )
 
       assert.ok(result.includes('## Recent Commits'))
@@ -625,13 +639,17 @@ describe('copilot-conflict-context', () => {
     })
 
     it('includes PR context in output with body fenced', () => {
-      const pr = makePullRequest(
-        99,
-        'Migrate to UUIDs',
-        'This migrates all user IDs from integers to UUIDs.'
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(baseContext, {
+          pullRequests: [
+            makeContextPr(
+              99,
+              'Migrate to UUIDs',
+              'This migrates all user IDs from integers to UUIDs.'
+            ),
+          ],
+        })
       )
-
-      const result = formatConflictContextForPrompt(baseContext, null, pr)
 
       assert.ok(result.includes('## Pull Request Context'))
       assert.ok(result.includes('PR #99: Migrate to UUIDs'))
@@ -645,88 +663,73 @@ describe('copilot-conflict-context', () => {
       assert.ok(result.includes('## File: src/user.ts'))
 
       // PR body with backticks should be wrapped in a fence
-      const prBackticks = makePullRequest(
-        42,
-        'Docs update',
-        '## Changes\n- Updated ```code``` examples'
-      )
       const result2 = formatConflictContextForPrompt(
-        baseContext,
-        null,
-        prBackticks
+        toResolutionContext(baseContext, {
+          pullRequests: [
+            makeContextPr(
+              42,
+              'Docs update',
+              '## Changes\n- Updated ```code``` examples'
+            ),
+          ],
+        })
       )
       assert.ok(result2.includes('Description:'))
       // Body should be inside a fence longer than the triple backticks in content
       assert.ok(result2.includes('````'))
     })
 
-    it('includes both commit and PR context in output', () => {
-      const commitCtx: IConflictCommitContext = {
-        ourCommits: [makeCommit('aaa1111', 'Fix type error')],
-        theirCommits: [makeCommit('bbb2222', 'Add UUIDs')],
-      }
-      const pr = makePullRequest(50, 'UUID migration', 'Migrate IDs to UUIDs.')
-
-      const result = formatConflictContextForPrompt(baseContext, commitCtx, pr)
-
-      // PR section comes before commits
-      const prIdx = result.indexOf('## Pull Request Context')
-      const commitIdx = result.indexOf('## Recent Commits')
-      const fileIdx = result.indexOf('## File: src/user.ts')
-
-      assert.ok(prIdx !== -1, 'PR context should be present')
-      assert.ok(commitIdx !== -1, 'Commit context should be present')
-      assert.ok(fileIdx !== -1, 'File context should be present')
-      assert.ok(
-        prIdx < commitIdx,
-        'PR context should come before commit context'
+    it('includes multiple PR titles and bodies', () => {
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(baseContext, {
+          pullRequests: [
+            makeContextPr(
+              20,
+              'Add multilingual greetings',
+              'Adds translate() plus LANGUAGE constants so greetings can be localized.'
+            ),
+            makeContextPr(21, 'Tidy imports', ''),
+          ],
+        })
       )
+
+      assert.ok(result.includes('## Pull Request Context'))
+      assert.ok(result.includes('PR #20: Add multilingual greetings'))
       assert.ok(
-        commitIdx < fileIdx,
-        'Commit context should come before file context'
+        result.includes(
+          'Adds translate() plus LANGUAGE constants so greetings can be localized.'
+        )
       )
+      // Second PR has no body, so it gets a title but no Description block
+      assert.ok(result.includes('PR #21: Tidy imports'))
     })
 
-    it('is backward compatible when no enrichment is provided', () => {
-      const withoutEnrichment = formatConflictContextForPrompt(baseContext)
-      const withNulls = formatConflictContextForPrompt(baseContext, null, null)
-      const withUndefined = formatConflictContextForPrompt(
-        baseContext,
-        undefined,
-        undefined
+    it('truncates an over-long PR body', () => {
+      const longBody = 'x'.repeat(5000)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(baseContext, {
+          pullRequests: [makeContextPr(7, 'Big PR', longBody)],
+        })
       )
 
-      // All three should produce the same output
-      assert.equal(withoutEnrichment, withNulls)
-      assert.equal(withoutEnrichment, withUndefined)
-
-      // Should not include enrichment sections
-      assert.ok(!withoutEnrichment.includes('## Pull Request Context'))
-      assert.ok(!withoutEnrichment.includes('## Recent Commits'))
-
-      // Should still include file context
-      assert.ok(withoutEnrichment.includes('## File: src/user.ts'))
+      assert.ok(result.includes('…(truncated)'))
+      assert.ok(!result.includes('x'.repeat(5000)))
     })
 
     it('omits PR description section when body is empty', () => {
-      const pr = makePullRequest(10, 'Quick fix', '')
-
-      const result = formatConflictContextForPrompt(baseContext, null, pr)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(baseContext, {
+          pullRequests: [makeContextPr(10, 'Quick fix', '')],
+        })
+      )
 
       assert.ok(result.includes('PR #10: Quick fix'))
       assert.ok(!result.includes('Description:'))
     })
 
     it('omits commit sections when both sides have no commits', () => {
-      const commitCtx: IConflictCommitContext = {
-        ourCommits: [],
-        theirCommits: [],
-      }
-
       const result = formatConflictContextForPrompt(
-        baseContext,
-        commitCtx,
-        null
+        toResolutionContext(baseContext, { ourCommits: [], theirCommits: [] })
       )
 
       assert.ok(!result.includes('## Recent Commits'))
@@ -753,7 +756,9 @@ describe('copilot-conflict-context', () => {
         ],
       }
 
-      const result = formatConflictContextForPrompt(context)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
 
       // The fence delimiter should be longer than the 3-backtick runs in content
       assert.ok(result.includes('````'))
@@ -779,7 +784,9 @@ describe('copilot-conflict-context', () => {
         ],
       }
 
-      const result = formatConflictContextForPrompt(context)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
 
       // Newline and backtick should be stripped from the heading
       assert.ok(!result.includes('## File: src/evil\npath'))
@@ -807,7 +814,9 @@ describe('copilot-conflict-context', () => {
         ],
       }
 
-      const result = formatConflictContextForPrompt(context)
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
 
       // .c++ has non-alphanumeric '+' — should NOT appear as a language tag
       assert.ok(!result.includes('```c++'))
@@ -816,15 +825,11 @@ describe('copilot-conflict-context', () => {
     })
 
     it('handles one-sided commit context', () => {
-      const commitCtx: IConflictCommitContext = {
-        ourCommits: [makeCommit('aaa1111', 'Fix type error')],
-        theirCommits: [],
-      }
-
       const result = formatConflictContextForPrompt(
-        baseContext,
-        commitCtx,
-        null
+        toResolutionContext(baseContext, {
+          ourCommits: [makeContextCommit('aaa1111', 'Fix type error')],
+          theirCommits: [],
+        })
       )
 
       assert.ok(result.includes('## Recent Commits'))
@@ -832,6 +837,225 @@ describe('copilot-conflict-context', () => {
       assert.ok(result.includes('Fix type error'))
       // Their side heading should still appear but with no commits listed
       assert.ok(result.includes('(theirs)'))
+    })
+
+    it('does not include rawContent in prompt (used only for reassembly)', () => {
+      const rawFile = [
+        'import { foo } from "bar"',
+        '',
+        'const a = 1',
+        '<<<<<<< HEAD',
+        'const b = 2',
+        '=======',
+        'const b = 3',
+        '>>>>>>> feature',
+        '',
+        'export default a + b',
+      ].join('\n')
+
+      const context: ICopilotConflictContext = {
+        ourLabel: 'main',
+        theirLabel: 'feature',
+        files: [
+          {
+            path: 'src/math.ts',
+            hunks: [
+              {
+                oursContent: 'const b = 2',
+                theirsContent: 'const b = 3',
+                baseContent: null,
+                contextBefore: 'const a = 1',
+                contextAfter: '',
+              },
+            ],
+            rawContent: rawFile,
+          },
+        ],
+      }
+
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
+
+      // rawContent should NOT appear in prompt — it's for reassembly only
+      assert.ok(!result.includes('Full file content'))
+      assert.ok(!result.includes('import { foo } from "bar"'))
+      assert.ok(!result.includes('export default a + b'))
+      // Should still include hunk breakdown
+      assert.ok(result.includes('Conflict 1 of 1'))
+      assert.ok(result.includes('const b = 2'))
+    })
+  })
+
+  describe('formatConflictContextForPrompt with delete-vs-modify', () => {
+    it('renders delete-vs-modify conflict with scenario description', () => {
+      const context: ICopilotConflictContext = {
+        ourLabel: 'main',
+        theirLabel: 'feature',
+        files: [
+          {
+            path: 'utils.ts',
+            hunks: [],
+            deleteConflict: { deletedSide: 'theirs' },
+          },
+        ],
+      }
+
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
+
+      assert.ok(result.includes('File: utils.ts (delete-vs-modify conflict)'))
+      assert.ok(
+        result.includes(
+          'Deleted on "feature" (theirs), modified on "main" (ours)'
+        )
+      )
+      assert.ok(result.includes('"action": "keep"'))
+      assert.ok(result.includes('"action": "delete"'))
+    })
+
+    it('renders ours-deleted scenario correctly', () => {
+      const context: ICopilotConflictContext = {
+        ourLabel: 'main',
+        theirLabel: 'feature',
+        files: [
+          {
+            path: 'old-file.ts',
+            hunks: [],
+            deleteConflict: { deletedSide: 'ours' },
+          },
+        ],
+      }
+
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
+
+      assert.ok(
+        result.includes(
+          'Deleted on "main" (ours), modified on "feature" (theirs)'
+        )
+      )
+    })
+
+    it('renders mixed text and delete-vs-modify files', () => {
+      const context: ICopilotConflictContext = {
+        ourLabel: 'main',
+        theirLabel: 'feature',
+        files: [
+          {
+            path: 'text.ts',
+            hunks: [
+              {
+                oursContent: 'const a = 1',
+                theirsContent: 'const a = 2',
+                baseContent: null,
+                contextBefore: '',
+                contextAfter: '',
+              },
+            ],
+          },
+          {
+            path: 'deleted.ts',
+            hunks: [],
+            deleteConflict: { deletedSide: 'theirs' },
+          },
+        ],
+      }
+
+      const result = formatConflictContextForPrompt(
+        toResolutionContext(context)
+      )
+
+      // Text conflict rendered normally
+      assert.ok(result.includes('File: text.ts'))
+      assert.ok(result.includes('const a = 1'))
+      assert.ok(result.includes('const a = 2'))
+
+      // Delete conflict rendered with scenario
+      assert.ok(result.includes('File: deleted.ts (delete-vs-modify conflict)'))
+      assert.ok(result.includes('Deleted on "feature"'))
+    })
+  })
+
+  describe('getHunkSkipReason', () => {
+    function makeHunk(
+      oursContent: string,
+      theirsContent: string,
+      baseContent: string | null = null
+    ): IConflictHunk {
+      return {
+        oursContent,
+        theirsContent,
+        baseContent,
+        contextBefore: '',
+        contextAfter: '',
+      }
+    }
+
+    it('returns null for a small, resolvable conflict', () => {
+      const hunks = [makeHunk('our change\n', 'their change\n')]
+      assert.strictEqual(getHunkSkipReason(hunks), null)
+    })
+
+    it('returns null for no hunks', () => {
+      assert.strictEqual(getHunkSkipReason([]), null)
+    })
+
+    it('skips when a single line exceeds the max line length', () => {
+      const longLine = 'a'.repeat(5001)
+      const hunks = [makeHunk(`${longLine}\n`, 'their change\n')]
+      assert.strictEqual(
+        getHunkSkipReason(hunks),
+        'Conflict contains lines too long to resolve automatically'
+      )
+    })
+
+    it('does not skip a line exactly at the max line length', () => {
+      const atLimit = 'a'.repeat(5000)
+      const hunks = [makeHunk(`${atLimit}\n`, 'their change\n')]
+      assert.strictEqual(getHunkSkipReason(hunks), null)
+    })
+
+    it('detects a long line on the incoming (theirs) side', () => {
+      const longLine = 'b'.repeat(6000)
+      const hunks = [makeHunk('our change\n', `${longLine}\n`)]
+      assert.strictEqual(
+        getHunkSkipReason(hunks),
+        'Conflict contains lines too long to resolve automatically'
+      )
+    })
+
+    it('detects a long line in diff3 base content', () => {
+      const longLine = 'c'.repeat(6000)
+      const hunks = [makeHunk('ours\n', 'theirs\n', `${longLine}\n`)]
+      assert.strictEqual(
+        getHunkSkipReason(hunks),
+        'Conflict contains lines too long to resolve automatically'
+      )
+    })
+
+    it('skips when total conflict content exceeds the max content size', () => {
+      // Many short lines whose combined length exceeds 256KB but where no single
+      // line is over the per-line limit.
+      const line = 'x'.repeat(100) + '\n'
+      const bigSide = line.repeat(3000) // ~300KB
+      const hunks = [makeHunk(bigSide, 'their change\n')]
+      assert.strictEqual(
+        getHunkSkipReason(hunks),
+        'Conflict region too large to resolve automatically'
+      )
+    })
+
+    it('accumulates content across multiple hunks', () => {
+      const line = 'y'.repeat(100) + '\n'
+      const chunk = line.repeat(1000) // ~100KB per side
+      const hunks = [makeHunk(chunk, chunk), makeHunk(chunk, chunk)]
+      assert.strictEqual(
+        getHunkSkipReason(hunks),
+        'Conflict region too large to resolve automatically'
+      )
     })
   })
 })

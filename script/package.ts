@@ -27,6 +27,7 @@ import {
 } from './windows-sign'
 import { copyFileSync, existsSync, rmSync, writeFileSync } from 'fs'
 import { getVersion } from '../app/package-info'
+import { computeBundleHashSync } from '../app/src/lib/compute-bundle-hash'
 import { rename } from 'fs/promises'
 import { join } from 'path'
 import { assertNonNullable } from '../app/src/lib/fatal-error'
@@ -56,6 +57,14 @@ writeFileSync(
   JSON.stringify(getBundleSizes())
 )
 
+console.log('Writing bundle hash…')
+writeFileSync(
+  path.join(getDistRoot(), 'bundle-hash.json'),
+  JSON.stringify({
+    bundleHash: computeBundleHashSync(path.join(__dirname, '..', 'out')),
+  })
+)
+
 function packageOSX() {
   const dest = getOSXZipPath()
   rmSync(dest, { recursive: true, force: true })
@@ -74,13 +83,13 @@ function packageWindows() {
     process.exit(1)
   }
 
-  // Drop the bundled updater.exe (built by `yarn build:updater`) into the
+  // Drop the bundled updater.exe (built by `npm run build:updater`) into the
   // packaged app folder so it ships alongside GitHubDesktop.exe and is
   // available at runtime for self-updating.
   const updaterSource = join(getDistRoot(), 'updater.exe')
   if (!existsSync(updaterSource)) {
     console.error(
-      `expected updater.exe at ${updaterSource}. Run \`yarn build:updater\` before packaging.`
+      `expected updater.exe at ${updaterSource}. Run \`npm run build:updater\` before packaging.`
     )
     process.exit(1)
   }

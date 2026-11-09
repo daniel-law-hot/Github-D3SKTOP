@@ -36,6 +36,8 @@ import { DragType } from '../models/drag-drop'
 import { PullRequestSuggestedNextAction } from '../models/pull-request'
 import { clamp } from '../lib/clamp'
 import { Emoji } from '../lib/emoji'
+import { isAssistedCommitRepositoryLocked } from '../models/assisted-commit-run'
+import { isRepositoryAffectedByAssistedCommit } from '../lib/git/repository-operation'
 
 interface IRepositoryViewProps {
   readonly repository: Repository
@@ -370,6 +372,12 @@ export class RepositoryView extends React.Component<
         tagsToPush={tagsToPush}
         aheadBehindStore={aheadBehindStore}
         isMultiCommitOperationInProgress={mcos !== null}
+        isAssistedCommitRepositoryLocked={
+          isRepositoryAffectedByAssistedCommit(repository.path) ||
+          isAssistedCommitRepositoryLocked(
+            this.props.state.changesState.assistedCommit
+          )
+        }
         askForConfirmationOnCheckoutCommit={
           this.props.askForConfirmationOnCheckoutCommit
         }

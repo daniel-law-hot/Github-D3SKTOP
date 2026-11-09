@@ -16,15 +16,19 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
 
     - name: Use Node.js ${{ inputs.node-version }}
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: ${{ inputs.node-version }}
-        cache: yarn
+        cache: npm
+        cache-dependency-path: |
+          package-lock.json
+          app/package-lock.json
+          vendor/*/package-lock.json
 
     - name: Install ffmpeg
       if: ${{ runner.os == 'Windows' && inputs.install-ffmpeg == 'true' }}
@@ -33,7 +37,7 @@ runs:
 
     - name: Install and build dependencies
       shell: bash
-      run: yarn
+      run: npm ci
       env:
         npm_config_arch: ${{ inputs.arch }}
         TARGET_ARCH: ${{ inputs.arch }}

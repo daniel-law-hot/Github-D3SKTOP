@@ -73,7 +73,8 @@
       - [ ] If authentication error for Enterprise, user redirected to Preferences
     - [ ] Valid path can be entered or selected
       - [ ] Local path is prepopulated; if not unique then error surfaced
-    - [ ] All repos from both GitHub.com and Enterprise are populated -- your repos are listed first, followed by org(s)
+    - [ ] GitHub tab has an account picker listing GitHub.com and Enterprise accounts; URL tab is also present
+    - [ ] Repos for the selected account are populated -- your repos are listed first, followed by org(s)
       - [ ] User must be logged in to view list; else `Sign In` button present
       - [ ] Results are filterable, and can be selected for cloning
     - [ ] `Clone` creates repo at selected path
@@ -155,7 +156,7 @@
       - [ ] `Save` button saves any changes made
       - [ ] `Cancel` button does not save any changes made; modal closed
       - [ ] Shared usage data option; selection carried through from Welcome flow
-        - [ ] `anonymous usage data` link opens https://desktop.github.com/usage-data/
+        - [ ] `anonymous usage data` link opens https://github.com/desktop/desktop/blob/development/docs/process/usage-data.md
         - [ ] Verify positive `stats-opt-out` value in Dev Tools > Application > Local storage > file://
   - [ ] Install command line tool installs tool at `/usr/local/bin/github` (Mac only as Windows done automagically; Helper may require password, else error message)
     - [ ] If already installed, user sees: "The command line tool has been installed at /usr/local/bin/github"
