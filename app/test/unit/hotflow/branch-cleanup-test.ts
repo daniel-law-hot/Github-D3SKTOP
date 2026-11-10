@@ -8,6 +8,7 @@ import {
   ICleanupCandidate,
   isProtectedBranchName,
   selectCleanupBranches,
+  staleCleanupBranches,
 } from '../../../src/lib/hotflow/branch-cleanup'
 
 const day = 24 * 60 * 60 * 1000
@@ -125,6 +126,39 @@ describe('hotflow/branch-cleanup', () => {
       assert.deepStrictEqual(
         result.map(b => b.name),
         ['feature/1-both']
+      )
+    })
+
+    it('can ignore the release when told to', () => {
+      const result = selectCleanupBranches(
+        [
+          candidate('feature/1-both'),
+          candidate('feature/2-develop-only', { mergedIntoRelease: false }),
+          candidate('feature/3-release-only', { mergedIntoIntegration: false }),
+        ],
+        { ...context, requireRelease: false }
+      )
+
+      assert.deepStrictEqual(
+        result.map(b => b.name),
+        ['feature/1-both', 'feature/2-develop-only']
+      )
+    })
+
+    it('keeps only the branches old enough for a notification', () => {
+      const result = staleCleanupBranches(
+        selectCleanupBranches(
+          [
+            candidate('feature/1-old', { lastCommitAt: now - 15 * day }),
+            candidate('feature/2-young', { lastCommitAt: now - 2 * day }),
+          ],
+          context
+        )
+      )
+
+      assert.deepStrictEqual(
+        result.map(b => b.name),
+        ['feature/1-old']
       )
     })
 

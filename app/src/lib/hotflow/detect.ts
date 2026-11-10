@@ -15,6 +15,7 @@ import {
   ReleaseVerdict,
   defaultAdoState,
   defaultForgottenState,
+  defaultMergedBranchesState,
   defaultPipelineViewState,
   defaultHotFlowState,
 } from '../../models/hotflow'
@@ -236,6 +237,7 @@ export async function detectHotFlowState(
     ado: defaultAdoState,
     pipeline: defaultPipelineViewState,
     forgotten: defaultForgottenState,
+    merged: defaultMergedBranchesState,
   }
 }
 

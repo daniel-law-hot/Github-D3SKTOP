@@ -623,6 +623,14 @@ export class Dispatcher {
     )
   }
 
+  /** Turn deleting branches as soon as they are merged to develop on or off. */
+  public setAutoDeleteMergedBranches(
+    repository: Repository,
+    enabled: boolean
+  ): Promise<void> {
+    return this.appStore._setAutoDeleteMergedBranches(repository, enabled)
+  }
+
   /** Stop showing a forgotten branch in HotFlow. */
   public hideForgottenBranch(
     repository: Repository,

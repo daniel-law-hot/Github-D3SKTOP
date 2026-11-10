@@ -21,6 +21,7 @@ import { SidePanel } from './side-panel'
 import { getBoolean, setBoolean } from '../../lib/local-storage'
 import { maxEarlierReleases, ReleasePipeline } from './release-pipeline'
 import { ForgottenBranchesPanel } from './forgotten-branches-panel'
+import { MergedBranchesPanel } from './merged-branches-panel'
 import { RelativeTime } from '../relative-time'
 import {
   DiagramGeometry,
@@ -740,11 +741,11 @@ export class HotFlowView extends React.Component<
    * what is waiting on the user on the other.
    */
   private renderSidePanel() {
-    const { pipeline, forgotten } = this.props.hotFlowState
+    const { pipeline, forgotten, merged } = this.props.hotFlowState
 
     return (
       <SidePanel
-        notificationCount={forgotten.branches.length}
+        notificationCount={forgotten.branches.length + merged.branches.length}
         showPipeline={this.props.repository.gitHubRepository !== null}
         pipelineCount={pipeline.pipelines.length}
         maxEarlierReleases={maxEarlierReleases(pipeline.pipelines)}
@@ -803,13 +804,21 @@ export class HotFlowView extends React.Component<
     const { hotFlowState, repository, dispatcher } = this.props
 
     return (
-      <ForgottenBranchesPanel
-        repository={repository}
-        dispatcher={dispatcher}
-        forgotten={hotFlowState.forgotten}
-        integrationBranchName={this.integrationName}
-        onCheckout={this.onCheckoutForgotten}
-      />
+      <>
+        <MergedBranchesPanel
+          repository={repository}
+          dispatcher={dispatcher}
+          merged={hotFlowState.merged}
+          integrationBranchName={this.integrationName}
+        />
+        <ForgottenBranchesPanel
+          repository={repository}
+          dispatcher={dispatcher}
+          forgotten={hotFlowState.forgotten}
+          integrationBranchName={this.integrationName}
+          onCheckout={this.onCheckoutForgotten}
+        />
+      </>
     )
   }
 

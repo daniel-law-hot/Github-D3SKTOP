@@ -513,6 +513,8 @@ import {
   getBranchOverride,
   setBranchOverride,
   setMergeMethod,
+  getAutoDeleteMergedBranches,
+  setAutoDeleteMergedBranches,
 } from '../hotflow/settings-store'
 import { getAdoCredential, setStoredPat } from '../hotflow/ado-auth'
 import {
@@ -552,7 +554,11 @@ import {
   findForgottenBranches,
   makeHasAnyPullRequest,
 } from '../hotflow/forgotten-branches'
-import { findCleanupBranches, ICleanupBranch } from '../hotflow/branch-cleanup'
+import {
+  findCleanupBranches,
+  ICleanupBranch,
+  staleCleanupBranches,
+} from '../hotflow/branch-cleanup'
 import { parseReleaseBranchName } from '../hotflow/branch-patterns'
 import {
   getHiddenForgottenBranches,
@@ -957,6 +963,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
    * no need to persist it.
    */
   private readonly hotFlowSignatures = new Map<string, string>()
+
+  /** Branch names the automatic delete has already failed on, this session. */
+  private readonly autoDeleteFailed = new Set<string>()
 
   /** In-flight release reads, and the single read queued behind each. */
   private readonly hotFlowRefreshes = new Map<string, Promise<void>>()
@@ -5233,6 +5242,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         // should not blank them while it waits for them again.
         pipeline: existing.pipeline,
         forgotten: existing.forgotten,
+        merged: existing.merged,
         suppressAssignedNotMerged: getSuppressAssignedNotMerged(repository),
       }))
       this.emitUpdate()
@@ -5244,6 +5254,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         this._loadHotFlowMergeability(repository),
         this._refreshHotFlowPipeline(repository),
         this._refreshHotFlowForgotten(repository),
+        this._refreshHotFlowMerged(repository),
       ])
     } catch (e) {
       log.error('[AppStore] failed to refresh HotFlow state', e)
@@ -6438,7 +6449,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
    * delete things.
    */
   public async _findCleanupBranches(
-    repository: Repository
+    repository: Repository,
+    options: { readonly requireRelease?: boolean } = {}
   ): Promise<ReadonlyArray<ICleanupBranch>> {
     const state = this.repositoryStateCache.get(repository)
     const { integrationBranch, productionBranch, integrationBranchName } =
@@ -6489,6 +6501,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       productionBranchName,
       currentBranchName: tip.kind === TipState.Valid ? tip.branch.name : null,
       myEmails,
+      requireRelease: options.requireRelease,
     })
   }
 
@@ -6504,6 +6517,28 @@ export class AppStore extends TypedBaseStore<IAppState> {
    * This shouldn't be called directly. See `Dispatcher`.
    */
   public async _deleteCleanupBranches(
+    repository: Repository,
+    branches: ReadonlyArray<ICleanupBranch>,
+    options: { readonly local: boolean; readonly remote: boolean },
+    onProgress?: (done: number, total: number) => void
+  ): Promise<ICleanupResult> {
+    const result = await this.deleteBranches(
+      repository,
+      branches,
+      options,
+      onProgress
+    )
+
+    await this._refreshRepository(repository)
+
+    return result
+  }
+
+  /**
+   * The deleting itself, without the refresh after it. Split out so the
+   * automatic delete, which runs inside a refresh, can't start another one.
+   */
+  private async deleteBranches(
     repository: Repository,
     branches: ReadonlyArray<ICleanupBranch>,
     options: { readonly local: boolean; readonly remote: boolean },
@@ -6565,9 +6600,112 @@ export class AppStore extends TypedBaseStore<IAppState> {
       onProgress?.(done, branches.length)
     }
 
-    await this._refreshRepository(repository)
-
     return { deleted, failures }
+  }
+
+  /**
+   * Turns the delete-when-merged option on or off for a repository, and acts on
+   * it straight away: switching it on deletes what is already merged.
+   */
+  public async _setAutoDeleteMergedBranches(
+    repository: Repository,
+    enabled: boolean
+  ): Promise<void> {
+    setAutoDeleteMergedBranches(repository, enabled)
+    await this._refreshHotFlowMerged(repository)
+  }
+
+  /**
+   * Finds the user's branches merged into the integration branch, for the
+   * Notifications tab, and deletes them first if the repository asked for that.
+   *
+   * The tab lists those untouched for two weeks. The automatic delete takes
+   * anything merged, but only a branch that has had a pull request: git alone
+   * can't tell a merged branch from one just cut from develop, and the second has
+   * not been delivered to anybody. Without a GitHub account there is no pull
+   * request to look for, so nothing is deleted automatically.
+   */
+  private async _refreshHotFlowMerged(repository: Repository): Promise<void> {
+    const autoDelete = getAutoDeleteMergedBranches(repository)
+
+    this.repositoryStateCache.updateHotFlowState(repository, s => ({
+      merged: {
+        ...s.merged,
+        autoDelete,
+        status: s.merged.status === 'ok' ? s.merged.status : 'loading',
+      },
+    }))
+    this.emitUpdate()
+
+    try {
+      let found = await this._findCleanupBranches(repository, {
+        requireRelease: false,
+      })
+
+      if (autoDelete && found.length > 0) {
+        const account = isRepositoryWithGitHubRepository(repository)
+          ? getAccountForRepository(this.accounts, repository)
+          : null
+        const gitHubRepository =
+          account !== null && isRepositoryWithGitHubRepository(repository)
+            ? getNonForkGitHubRepository(repository)
+            : null
+
+        if (account !== null && gitHubRepository !== null) {
+          const hadPullRequest = makeHasAnyPullRequest(
+            account,
+            gitHubRepository.owner.login,
+            gitHubRepository.name
+          )
+          const key = (b: ICleanupBranch) => `${repository.hash}/${b.name}`
+          const toDelete: Array<ICleanupBranch> = []
+
+          for (const branch of found) {
+            if (
+              !this.autoDeleteFailed.has(key(branch)) &&
+              (await hadPullRequest(branch.name)) === true
+            ) {
+              toDelete.push(branch)
+            }
+          }
+
+          if (toDelete.length > 0) {
+            const result = await this.deleteBranches(repository, toDelete, {
+              local: true,
+              remote: true,
+            })
+
+            result.failures.forEach(f =>
+              this.autoDeleteFailed.add(`${repository.hash}/${f.name}`)
+            )
+
+            const gone = new Set(result.deleted)
+            found = found.filter(b => !gone.has(b.name))
+          }
+        }
+      }
+
+      this.repositoryStateCache.updateHotFlowState(repository, () => ({
+        merged: {
+          status: 'ok' as const,
+          branches: staleCleanupBranches(found),
+          autoDelete,
+          errorMessage: null,
+        },
+      }))
+    } catch (e) {
+      log.warn('[AppStore] HotFlow could not look for merged branches', e)
+
+      this.repositoryStateCache.updateHotFlowState(repository, s => ({
+        merged: {
+          ...s.merged,
+          status: 'error' as const,
+          errorMessage: e instanceof Error ? e.message : String(e),
+        },
+      }))
+    }
+
+    this.emitUpdate()
   }
 
   /** Stops showing a forgotten branch, until the user asks for them back. */

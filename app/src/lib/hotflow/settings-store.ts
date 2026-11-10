@@ -55,6 +55,13 @@ interface IStoredSettings {
    * Absent means off, which is the safe reading for a box that overwrites data.
    */
   readonly overwriteReleaseSequence?: boolean
+
+  /**
+   * Whether to delete the user's branches, locally and on the remote, as soon as
+   * they are merged into the integration branch. Absent means off: it deletes
+   * things, so it only happens when asked for.
+   */
+  readonly autoDeleteMergedBranches?: boolean
 }
 
 function storageKey(repository: Repository): string {
@@ -202,6 +209,19 @@ export function setOverwriteReleaseSequence(
     ...read(repository),
     overwriteReleaseSequence: overwrite,
   })
+}
+
+/** Whether merged branches of the user's are deleted without being asked. */
+export function getAutoDeleteMergedBranches(repository: Repository): boolean {
+  return read(repository).autoDeleteMergedBranches === true
+}
+
+/** Records that choice. */
+export function setAutoDeleteMergedBranches(
+  repository: Repository,
+  enabled: boolean
+): void {
+  write(repository, { ...read(repository), autoDeleteMergedBranches: enabled })
 }
 
 /** Forgets the override for a branch, returning it to the derived number. */

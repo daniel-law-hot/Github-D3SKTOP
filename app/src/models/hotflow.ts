@@ -2,6 +2,7 @@ import { Branch } from './branch'
 import { Commit } from './commit'
 import { IRepositoryPipeline } from '../lib/hotflow/ado-pipelines'
 import { IForgottenBranch } from '../lib/hotflow/forgotten-branches'
+import { ICleanupBranch } from '../lib/hotflow/branch-cleanup'
 
 /**
  * Candidate names for the integration branch, in priority order.
@@ -475,6 +476,9 @@ export interface IHotFlowState {
 
   /** The user's own feature branches that nobody has raised a pull request for. */
   readonly forgotten: IForgottenState
+
+  /** The user's branches merged into develop and left alone for two weeks. */
+  readonly merged: IMergedBranchesState
 }
 
 /** The release pipeline, and any approval being given from it. */
@@ -505,6 +509,17 @@ export interface IForgottenState {
   readonly errorMessage: string | null
 }
 
+export interface IMergedBranchesState {
+  readonly status: 'idle' | 'loading' | 'ok' | 'error'
+
+  /** Merged into the integration branch and untouched for `CleanupMinAgeDays`. */
+  readonly branches: ReadonlyArray<ICleanupBranch>
+
+  /** Whether they are deleted automatically, so the panel can say so. */
+  readonly autoDelete: boolean
+  readonly errorMessage: string | null
+}
+
 /** What a branch clean-up did: what went, and what could not be deleted and why. */
 export interface ICleanupResult {
   readonly deleted: ReadonlyArray<string>
@@ -519,6 +534,13 @@ export const defaultPipelineViewState: IPipelineViewState = {
   pipelines: [],
   errorMessage: null,
   approval: null,
+}
+
+export const defaultMergedBranchesState: IMergedBranchesState = {
+  status: 'idle',
+  branches: [],
+  autoDelete: false,
+  errorMessage: null,
 }
 
 export const defaultForgottenState: IForgottenState = {
@@ -586,4 +608,5 @@ export const defaultHotFlowState: IHotFlowState = {
   ado: defaultAdoState,
   pipeline: defaultPipelineViewState,
   forgotten: defaultForgottenState,
+  merged: defaultMergedBranchesState,
 }

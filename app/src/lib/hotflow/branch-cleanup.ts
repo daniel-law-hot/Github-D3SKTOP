@@ -86,6 +86,13 @@ export interface ICleanupSelectionContext {
 
   /** The time to measure age from, in epoch milliseconds. Defaults to now. */
   readonly now?: number
+
+  /**
+   * Whether a branch must also be in a release. Defaults to true, which is what
+   * the clean-up dialog wants; the merged-branch notification and auto-delete
+   * only need it to be in the integration branch.
+   */
+  readonly requireRelease?: boolean
 }
 
 /**
@@ -107,7 +114,7 @@ export function selectCleanupBranches(
     if (
       !isMine(candidate.authorEmail, context.myEmails) ||
       !candidate.mergedIntoIntegration ||
-      !candidate.mergedIntoRelease ||
+      (context.requireRelease !== false && !candidate.mergedIntoRelease) ||
       isProtectedBranchName(candidate.name, context.protectedNames) ||
       candidate.name === context.currentBranchName
     ) {
@@ -145,6 +152,9 @@ export interface IFindCleanupInput {
   readonly currentBranchName: string | null
   readonly myEmails: ReadonlySet<string>
   readonly now?: number
+
+  /** See `ICleanupSelectionContext.requireRelease`. */
+  readonly requireRelease?: boolean
 
   /**
    * Runs git and returns stdout. Defaults to the repository's own git; here so
@@ -368,6 +378,17 @@ export async function findCleanupBranches(
       protectedNames,
       currentBranchName: input.currentBranchName,
       now: input.now,
+      requireRelease: input.requireRelease,
     }
   )
+}
+
+/**
+ * Of the branches found, those left alone for `CleanupMinAgeDays` or more: the
+ * ones the Notifications tab offers to delete.
+ */
+export function staleCleanupBranches(
+  branches: ReadonlyArray<ICleanupBranch>
+): ReadonlyArray<ICleanupBranch> {
+  return branches.filter(b => b.preselected)
 }
