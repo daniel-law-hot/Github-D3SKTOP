@@ -7,6 +7,7 @@ import {
   getRepositoryPipelines,
   IPipelineStage,
   parseReleaseVersion,
+  releaseDefinitionUrl,
   stageTone,
 } from '../../../src/lib/hotflow/ado-pipelines'
 import { AdoError } from '../../../src/lib/hotflow/ado-client'
@@ -85,6 +86,27 @@ describe('hotflow/ado-pipelines', () => {
 
     it('leaves a stage that is none of them unbucketed', () => {
       assert.strictEqual(bucketForStage('Sandbox'), null)
+    })
+  })
+
+  describe('releaseDefinitionUrl', () => {
+    it('points at the pipeline’s releases in Azure DevOps', () => {
+      assert.strictEqual(
+        releaseDefinitionUrl(
+          { organisation: 'houseoftravel', project: 'Group' },
+          165
+        ),
+        'https://dev.azure.com/houseoftravel/Group/_release?_a=releases&view=mine&definitionId=165'
+      )
+    })
+
+    it('escapes a project name with a space in it', () => {
+      assert.ok(
+        releaseDefinitionUrl(
+          { organisation: 'houseoftravel', project: 'Hot Group' },
+          1
+        ).includes('/Hot%20Group/')
+      )
     })
   })
 

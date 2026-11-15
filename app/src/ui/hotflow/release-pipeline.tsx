@@ -7,9 +7,11 @@ import {
   IPipelineRelease,
   IPipelineStage,
   IRepositoryPipeline,
+  releaseDefinitionUrl,
   StageBucket,
   stageTone,
 } from '../../lib/hotflow/ado-pipelines'
+import { defaultAdoConfig } from '../../lib/hotflow/ado-client'
 import { Button } from '../lib/button'
 import { RelativeTime } from '../relative-time'
 import { TooltippedContent } from '../lib/tooltipped-content'
@@ -232,7 +234,15 @@ export class ReleasePipeline extends React.Component<
             className="hotflow-pl-name"
             tooltip={pipeline.name}
           >
-            {pipeline.name}
+            <LinkButton
+              uri={releaseDefinitionUrl(
+                defaultAdoConfig,
+                pipeline.definitionId
+              )}
+              title="Open this release pipeline in Azure DevOps"
+            >
+              {pipeline.name}
+            </LinkButton>
           </TooltippedContent>
           <span className="mono hotflow-pl-version">
             {releaseLabel(release)}

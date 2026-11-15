@@ -217,6 +217,21 @@ function vsrmBase(config: IAdoConfig): string {
   )
 }
 
+/**
+ * The page in Azure DevOps that lists a release pipeline's releases, for opening
+ * in a browser. The same address `pipeline-overrides` accepts when one is pasted.
+ */
+export function releaseDefinitionUrl(
+  config: IAdoConfig,
+  definitionId: number
+): string {
+  return (
+    `https://dev.azure.com/${encodeURIComponent(config.organisation)}/` +
+    `${encodeURIComponent(config.project)}/_release` +
+    `?_a=releases&view=mine&definitionId=${definitionId}`
+  )
+}
+
 function devBase(config: IAdoConfig): string {
   return (
     `https://dev.azure.com/${encodeURIComponent(config.organisation)}/` +
