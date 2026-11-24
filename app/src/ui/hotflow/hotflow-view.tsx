@@ -18,10 +18,11 @@ import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import { Button } from '../lib/button'
 import { SidePanel } from './side-panel'
-import { getBoolean, setBoolean } from '../../lib/local-storage'
 import { maxEarlierReleases, ReleasePipeline } from './release-pipeline'
 import { ForgottenBranchesPanel } from './forgotten-branches-panel'
 import { MergedBranchesPanel } from './merged-branches-panel'
+import { BranchAlignmentWidget } from './branch-alignment-widget'
+import { alignmentIndicator } from './branch-alignment-panel'
 import { RelativeTime } from '../relative-time'
 import {
   DiagramGeometry,
@@ -123,11 +124,18 @@ interface IHotFlowViewState {
    */
   readonly selectedHistoryTag: string | null
 
-  /** The side panel folded away to a thin bar. Remembered. */
+  /** The side panel folded away to a thin bar. */
   readonly sideCollapsed: boolean
 }
 
-const SideCollapsedKey = 'hotflow-side-collapsed'
+/**
+ * Whether the side panel is folded away, for the rest of this run of the app.
+ *
+ * Starts folded on every launch so the diagram and the work items get the room
+ * first. Kept for the session rather than in local storage, so opening the panel
+ * survives switching repository, which remounts this view, but not a restart.
+ */
+let sideCollapsedThisSession = true
 
 /**
  * The HotFlow release view.
@@ -155,7 +163,7 @@ export class HotFlowView extends React.Component<
       selectedTab: 'work-items',
       bandHeight: getStoredFlowBandHeight(),
       selectedHistoryTag: null,
-      sideCollapsed: getBoolean(SideCollapsedKey, false),
+      sideCollapsed: sideCollapsedThisSession,
     }
   }
 
@@ -514,6 +522,7 @@ export class HotFlowView extends React.Component<
           {repository.alias ?? repository.name}
         </span>
         {this.renderVerdict()}
+        {this.renderAlignmentPill()}
         <div className="hotflow-header-actions">
           {isLoading ? (
             <span className="dim">Refreshing…</span>
@@ -595,6 +604,32 @@ export class HotFlowView extends React.Component<
       default:
         return <span className="hotflow-verdict none">Unknown</span>
     }
+  }
+
+  /**
+   * Beside the verdict, when production has left integration's line. Absent when
+   * the branches are in line, which is the ordinary case and needs no badge.
+   *
+   * A separate pill rather than a change to the verdict: the verdict is about
+   * this release, and a drift between main and develop is about the repository.
+   * A release can be ready while the branches it ships between are out of line.
+   */
+  private renderAlignmentPill() {
+    const indicator = alignmentIndicator(this.props.hotFlowState.alignment)
+
+    if (indicator === null) {
+      return null
+    }
+
+    return indicator === 'stranded' ? (
+      <span className="hotflow-verdict bad">
+        <Octicon symbol={octicons.xCircle} /> Branch diverged · work missing
+      </span>
+    ) : (
+      <span className="hotflow-verdict warn">
+        <Octicon symbol={octicons.gitBranch} /> Branch diverged
+      </span>
+    )
   }
 
   private getReconciliation(release: IReleaseBranchState): IReconciliation {
@@ -695,33 +730,44 @@ export class HotFlowView extends React.Component<
             describe the release being switched away from. Dimmed rather than
             emptied: the shape of the flow doesn't change between releases, and
             blanking it would make the whole view flash on every branch switch. */}
-          <div
-            className={classNames('hotflow-flow-band', {
-              loading: hotFlowState.isLoading,
-            })}
-            style={{ height: this.state.bandHeight }}
-          >
-            {/* Diagram and actions share one scroll container so the buttons stay
+          {/* The band clips its contents to the height it's been dragged to, so
+            the alignment card that opens out of its corner lives in a wrapper
+            beside it rather than inside it, free to spill over what's below. */}
+          <div className="hotflow-flow-band-wrap">
+            <div
+              className={classNames('hotflow-flow-band', {
+                loading: hotFlowState.isLoading,
+              })}
+              style={{ height: this.state.bandHeight }}
+            >
+              {/* Diagram and actions share one scroll container so the buttons stay
               aligned with the nodes above them when the band is scrolled. */}
-            <div className="hotflow-flow-scroll">
-              <FlowDiagram
-                onShowBuddy={this.onShowBuddy}
-                hotFlowState={hotFlowState}
-                missingWorkItemCount={missingWorkItemCount}
-                lastShippedVersion={lastShippedVersion}
-                featureLane={this.featureLane}
-                isNetworkBusy={this.props.isNetworkBusy}
-                onFetchBranch={this.onFetchBranch}
-                maxStubs={this.maxStubs}
-                pullRequestKnowledge={this.pullRequestKnowledge}
-                approvals={hotFlowState.pullRequestApprovals}
-                onMergePullRequest={this.onMergePullRequest}
-                currentBranchName={this.currentBranchName}
-                onCheckoutBranch={this.onCheckoutFeatureBranch}
-                onCheckoutRef={this.onCheckoutRef}
-              />
-              {this.renderActions()}
+              <div className="hotflow-flow-scroll">
+                <FlowDiagram
+                  onShowBuddy={this.onShowBuddy}
+                  hotFlowState={hotFlowState}
+                  missingWorkItemCount={missingWorkItemCount}
+                  lastShippedVersion={lastShippedVersion}
+                  featureLane={this.featureLane}
+                  isNetworkBusy={this.props.isNetworkBusy}
+                  onFetchBranch={this.onFetchBranch}
+                  maxStubs={this.maxStubs}
+                  pullRequestKnowledge={this.pullRequestKnowledge}
+                  approvals={hotFlowState.pullRequestApprovals}
+                  onMergePullRequest={this.onMergePullRequest}
+                  currentBranchName={this.currentBranchName}
+                  onCheckoutBranch={this.onCheckoutFeatureBranch}
+                  onCheckoutRef={this.onCheckoutRef}
+                />
+                {this.renderActions()}
+              </div>
             </div>
+            <BranchAlignmentWidget
+              alignment={hotFlowState.alignment}
+              integrationName={this.integrationName}
+              productionName={hotFlowState.productionBranchName}
+              isLoading={hotFlowState.isLoading}
+            />
           </div>
 
           <FlowBandResizer
@@ -759,8 +805,8 @@ export class HotFlowView extends React.Component<
   }
 
   private onSideCollapsedChanged = (sideCollapsed: boolean) => {
+    sideCollapsedThisSession = sideCollapsed
     this.setState({ sideCollapsed })
-    setBoolean(SideCollapsedKey, sideCollapsed)
   }
 
   private renderPipelineSection = (earlierCount: number) => {

@@ -572,9 +572,10 @@ export class FlowDiagram extends React.Component<
 
     return (
       <div className="hotflow-diagram">
-        {/* Top right of the schematic, which is empty in every layout: the
+        {/* Bottom right of the schematic, which is empty in every layout: the
             boxes are centred on midY and the columns stop at the production
-            node, so nothing is drawn in that corner at any band height. */}
+            node, so nothing is drawn in that corner at any band height. The top
+            right belongs to the branch alignment button. */}
         <BuddyCompanion onShowBuddy={this.props.onShowBuddy} />
         {/* Explicit width and height, so one unit is one pixel and nothing is
             scaled. Resizing the band changes how many rows fit, not their size. */}

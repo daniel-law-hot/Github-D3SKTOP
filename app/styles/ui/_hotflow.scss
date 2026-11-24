@@ -240,6 +240,13 @@ body.theme-dark {
     border-color: var(--color-deleted);
   }
 
+  // The branches have diverged and merging back would change or conflict.
+  &.bad {
+    color: var(--hotflow-bad-color);
+    background: var(--hotflow-bad-background);
+    border-color: var(--hotflow-bad-line);
+  }
+
   &.shipped,
   &.none {
     color: var(--text-secondary-color);
@@ -2318,6 +2325,373 @@ body.theme-dark {
   }
 }
 
+// The alignment button floats in the flow band's top right corner and opens into
+// a card over the view. The wrapper is the positioning context, because the band
+// itself clips to its dragged height and the card needs to spill past it.
+.hotflow-flow-band-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+// Deliberately not a positioning context: the button and the card both place
+// themselves against the wrapper, so the card can take the band's full height.
+.hotflow-align-widget {
+  position: static;
+}
+
+.hotflow-align-toggle {
+  // Inset from the corner so it sits inside the band's padding, clear of the
+  // edges and the scrollbar.
+  position: absolute;
+  top: var(--spacing);
+  right: calc(var(--spacing) + 4px);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid var(--box-border-color);
+  border-radius: 10px;
+  background: var(--background-color);
+  color: var(--text-secondary-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--text-color);
+    border-color: var(--hotflow-focus-line);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  }
+
+  &.out-of-line {
+    color: var(--hotflow-warn-color);
+    border-color: var(--hotflow-warn-line);
+  }
+
+  &.stranded {
+    color: var(--hotflow-bad-color);
+    border-color: var(--hotflow-bad-line);
+  }
+
+  .octicon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .hotflow-align-widget.expanded & {
+    visibility: hidden;
+  }
+}
+
+// The marker on the button: amber when out of line, red when work is missing.
+.hotflow-align-indicator {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--hotflow-warn-background);
+  color: var(--hotflow-warn-color);
+  box-shadow: inset 0 0 0 1px var(--hotflow-warn-line);
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+
+  &.stranded {
+    background: var(--hotflow-bad-background);
+    color: var(--hotflow-bad-color);
+    box-shadow: inset 0 0 0 1px var(--hotflow-bad-line);
+  }
+}
+
+// Opens out of the button's corner, over the diagram and whatever is below it.
+// Opens out of the button's corner and fills the flow band's height exactly,
+// following the divider when it's dragged, so it never covers the work items
+// below. Wide rather than tall; anything that doesn't fit scrolls inside it.
+.hotflow-align-card {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  right: 6px;
+  z-index: 21;
+  width: min(680px, calc(100% - 12px));
+  box-sizing: border-box;
+  overflow-y: auto;
+  border: 1px solid var(--box-border-color);
+  border-radius: 8px;
+  background: var(--background-color);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  transform-origin: top right;
+  animation: hotflow-align-open 0.14s ease-out;
+
+  .hotflow-align {
+    padding: var(--spacing) var(--spacing-double) var(--spacing) var(--spacing);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes hotflow-align-open {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.hotflow-align-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius);
+  background: none;
+  color: var(--text-secondary-color);
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--text-color);
+    background: var(--hotflow-focus-background);
+  }
+}
+
+// The alignment card's contents: are production, the release and integration in line?
+
+.hotflow-align {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing);
+  padding: var(--spacing) var(--spacing) var(--spacing-double);
+}
+
+.hotflow-align-muted {
+  margin: 0;
+  color: var(--text-secondary-color);
+  font-size: var(--font-size-sm);
+}
+
+.hotflow-align-footnote {
+  font-size: var(--font-size-xs);
+}
+
+.hotflow-align-headline {
+  display: flex;
+  gap: var(--spacing-half);
+  padding: var(--spacing-half) var(--spacing);
+  border: 1px solid var(--hotflow-ok-line);
+  border-left-width: 3px;
+  border-radius: var(--border-radius);
+  background: var(--hotflow-ok-background);
+
+  .hotflow-align-headline-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--hotflow-ok-color);
+  }
+
+  &.out-of-line {
+    border-color: var(--hotflow-warn-line);
+    background: var(--hotflow-warn-background);
+
+    .hotflow-align-headline-icon {
+      color: var(--hotflow-warn-color);
+    }
+  }
+
+  &.stranded {
+    border-color: var(--hotflow-bad-line);
+    background: var(--hotflow-bad-background);
+
+    .hotflow-align-headline-icon {
+      color: var(--hotflow-bad-color);
+    }
+  }
+}
+
+.hotflow-align-headline-title {
+  font-weight: var(--font-weight-semibold);
+}
+
+.hotflow-align-headline-detail {
+  margin-top: 2px;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary-color);
+}
+
+.hotflow-align-graph {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+
+  .hotflow-align-trunk,
+  .hotflow-align-release,
+  .hotflow-align-off {
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+  }
+
+  .hotflow-align-trunk {
+    stroke: var(--hotflow-ok-line);
+  }
+
+  .hotflow-align-release {
+    stroke: var(--hotflow-edge-color);
+  }
+
+  .hotflow-align-off {
+    stroke: var(--hotflow-warn-line);
+  }
+
+  &.stranded .hotflow-align-off {
+    stroke: var(--hotflow-bad-line);
+  }
+
+  .hotflow-align-gap {
+    stroke: var(--hotflow-warn-line);
+    stroke-width: 1.5;
+    stroke-dasharray: 2 3;
+  }
+
+  &.stranded .hotflow-align-gap {
+    stroke: var(--hotflow-bad-line);
+  }
+
+  .hotflow-align-dot {
+    fill: var(--background-color);
+    stroke: var(--hotflow-ok-line);
+    stroke-width: 2.5;
+
+    &.off {
+      fill: var(--hotflow-warn-background);
+      stroke: var(--hotflow-warn-line);
+    }
+
+    &.bad {
+      fill: var(--hotflow-bad-background);
+      stroke: var(--hotflow-bad-line);
+    }
+
+    &.release {
+      stroke: var(--hotflow-edge-color);
+    }
+
+    &.release.warn {
+      stroke: var(--hotflow-warn-line);
+    }
+  }
+
+  .hotflow-align-tag,
+  .hotflow-align-lane-label {
+    fill: var(--text-secondary-color);
+    font-size: 9px;
+    font-family: var(--font-family-sans-serif);
+  }
+
+  .hotflow-align-tag {
+    font-family: var(--font-family-monospace);
+  }
+
+  .hotflow-align-pill {
+    fill: var(--hotflow-ok-background);
+    stroke: var(--hotflow-ok-line);
+
+    &.out-of-line {
+      fill: var(--hotflow-warn-background);
+      stroke: var(--hotflow-warn-line);
+    }
+
+    &.stranded {
+      fill: var(--hotflow-bad-background);
+      stroke: var(--hotflow-bad-line);
+    }
+  }
+
+  .hotflow-align-pill-text {
+    fill: var(--text-color);
+    font-size: 8.5px;
+    font-weight: 600;
+    font-family: var(--font-family-sans-serif);
+  }
+}
+
+.hotflow-align-subheading {
+  margin-bottom: var(--spacing-half);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary-color);
+}
+
+.hotflow-align-checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+
+  li {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 2px 0;
+
+    .octicon {
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    &.ok .octicon {
+      color: var(--hotflow-ok-color);
+    }
+
+    &.warn .octicon {
+      color: var(--hotflow-warn-color);
+    }
+
+    &.info .octicon {
+      color: var(--text-secondary-color);
+    }
+  }
+}
+
+.hotflow-align-fix {
+  p {
+    margin: 0;
+    font-size: var(--font-size-sm);
+  }
+
+  .hotflow-command-block {
+    white-space: pre;
+    overflow-x: auto;
+    font-size: var(--font-size-xs);
+  }
+}
+
 .hotflow-side-splitter {
   position: relative;
   flex-shrink: 0;
@@ -2753,4 +3127,109 @@ body.theme-dark {
 .hotflow-pipelines-error {
   margin: 0;
   color: var(--hotflow-bad-color);
+}
+
+// The graph across the top; the release and the fix side by side beneath it,
+// stacking when the card is too narrow for both.
+.hotflow-align-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing) var(--spacing-double);
+
+  @media (max-width: 900px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.hotflow-align-graph-cell {
+  grid-column: 1 / -1;
+}
+
+.hotflow-align-cell.left {
+  grid-column: 1;
+}
+
+.hotflow-align-cell.right {
+  grid-column: 2;
+
+  // Alone on its row when there's no release to sit beside.
+  &:first-child,
+  .hotflow-align-graph-cell + & {
+    grid-column: 1 / -1;
+  }
+
+  @media (max-width: 900px) {
+    grid-column: 1;
+  }
+}
+
+// Words drawn on the graph.
+.hotflow-align-graph {
+  .hotflow-align-lane-name {
+    fill: var(--text-secondary-color);
+    font-family: var(--font-family-sans-serif);
+    font-size: 11px;
+    font-weight: 600;
+
+    &.off {
+      fill: var(--hotflow-warn-color);
+    }
+  }
+
+  &.stranded .hotflow-align-lane-name.off {
+    fill: var(--hotflow-bad-color);
+  }
+
+  .hotflow-align-note {
+    fill: var(--text-color);
+    font-family: var(--font-family-sans-serif);
+    font-size: 10.5px;
+
+    &.strong {
+      font-weight: 600;
+    }
+
+    &.warn {
+      fill: var(--hotflow-warn-color);
+    }
+
+    &.muted {
+      fill: var(--text-secondary-color);
+    }
+  }
+
+  &.stranded .hotflow-align-note.warn {
+    fill: var(--hotflow-bad-color);
+  }
+
+  .hotflow-align-note-sha {
+    font-family: var(--font-family-monospace);
+    fill: var(--text-secondary-color);
+  }
+}
+
+// Copy link on the left, the fetch caveat on the right, on one line.
+.hotflow-align-fix-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-half) var(--spacing);
+}
+
+// In line: only as tall as its content, still never past the band.
+.hotflow-align-card.compact {
+  bottom: auto;
+  max-height: calc(100% - 12px);
+}
+
+// The release alone on its row when there's no fix beside it.
+.hotflow-align-cell.left.full {
+  grid-column: 1 / -1;
+}
+
+.hotflow-align-checks.inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--spacing-double);
 }

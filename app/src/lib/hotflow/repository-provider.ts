@@ -1,5 +1,6 @@
 import { Branch, IAheadBehind } from '../../models/branch'
 import { Commit } from '../../models/commit'
+import { IMergeSimulation } from '../../models/hotflow'
 
 /**
  * Everything HotFlow needs to read about a repository, expressed as questions
@@ -88,6 +89,19 @@ export interface IRepositoryProvider {
 
   /** The merge base of two refs, or null when they share no history. */
   getMergeBase(ref: string, otherRef: string): Promise<string | null>
+
+  /**
+   * What merging `fromRef` into `intoRef` would do, without touching either.
+   *
+   * This is the question that settles whether one branch is missing work from
+   * another. Commit-by-commit comparisons can't answer it: a squash or a
+   * cherry-pick of work already present looks missing by commit and isn't.
+   * Null when it can't be answered.
+   */
+  simulateMerge(
+    intoRef: string,
+    fromRef: string
+  ): Promise<IMergeSimulation | null>
 
   /**
    * Whether the working directory has no uncommitted changes.

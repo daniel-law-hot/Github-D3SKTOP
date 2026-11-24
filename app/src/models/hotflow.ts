@@ -479,6 +479,94 @@ export interface IHotFlowState {
 
   /** The user's branches merged into develop and left alone for two weeks. */
   readonly merged: IMergedBranchesState
+
+  /**
+   * Whether production, the current release and integration are still in line,
+   * or null when it couldn't be worked out. See `branch-alignment.ts`.
+   */
+  readonly alignment: IBranchAlignment | null
+}
+
+/**
+ * How production stands against integration.
+ *
+ * - `aligned`: integration contains production, so every release can
+ *   fast-forward onto it.
+ * - `out-of-line`: production holds commits integration lacks, but merging
+ *   it back would change no files. Nothing is missing, yet production can never
+ *   fast-forward again, every later tag sits off integration's history, and it
+ *   carries on until production is merged back.
+ * - `stranded`: merging production back would change files or conflict, so
+ *   integration really is missing something. Usually a hotfix never carried back.
+ */
+export type BranchAlignmentStatus = 'aligned' | 'out-of-line' | 'stranded'
+
+/** What a merge would do, simulated with `git merge-tree`. */
+export interface IMergeSimulation {
+  /**
+   * - `no-change`: the result is identical to the branch merged into.
+   * - `changes`: it would change `files`.
+   * - `conflicts`: it would stop with `files` in conflict.
+   */
+  readonly outcome: 'no-change' | 'changes' | 'conflicts'
+  readonly files: ReadonlyArray<string>
+}
+
+/** A shipped tag, and whether integration's history contains it. */
+export interface IAlignmentTag {
+  readonly name: string
+  readonly inIntegration: boolean
+}
+
+/** How the current release stands against the other two. */
+export interface IReleaseAlignment {
+  readonly branchName: string
+
+  /**
+   * Whether the release contains production. When it doesn't, shipping it can't
+   * fast-forward and has to add another merge commit to production.
+   */
+  readonly containsProduction: boolean
+
+  /** Commits on integration the release doesn't have yet. */
+  readonly behindIntegration: number
+
+  /** Non-merge commits on the release that integration doesn't have. */
+  readonly notInIntegrationCount: number
+}
+
+export interface IBranchAlignment {
+  readonly status: BranchAlignmentStatus
+
+  /** Every commit in `integration..production`, newest first, capped. */
+  readonly productionOnlyCommits: ReadonlyArray<Commit>
+
+  /** Whether the cap was reached, so the count is a floor. */
+  readonly productionOnlyCapped: boolean
+
+  /**
+   * The non-merge commits among them. Not necessarily missing from
+   * integration: a squash or cherry-pick of work integration already has looks
+   * the same by commit. `mergeBack` is what says whether anything is missing.
+   */
+  readonly strandedCommits: ReadonlyArray<Commit>
+
+  /**
+   * What merging production into integration would do, worked out without
+   * touching either branch. Null when in line, or when git couldn't say.
+   */
+  readonly mergeBack: IMergeSimulation | null
+
+  /** The most recent shipped tags, oldest first. */
+  readonly recentTags: ReadonlyArray<IAlignmentTag>
+
+  /** The newest shipped tag integration contains. */
+  readonly lastAlignedTag: string | null
+
+  /** The oldest shipped tag integration doesn't contain: where it went wrong. */
+  readonly firstUnalignedTag: string | null
+
+  readonly release: IReleaseAlignment | null
 }
 
 /** The release pipeline, and any approval being given from it. */
@@ -609,4 +697,5 @@ export const defaultHotFlowState: IHotFlowState = {
   pipeline: defaultPipelineViewState,
   forgotten: defaultForgottenState,
   merged: defaultMergedBranchesState,
+  alignment: null,
 }

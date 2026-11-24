@@ -17,6 +17,7 @@ import {
 import { getStatus } from '../git/status'
 import { getAllTags } from '../git/tag'
 import { IProviderTag, IRepositoryProvider } from './repository-provider'
+import { IMergeSimulation } from '../../models/hotflow'
 
 /**
  * The repository provider backed by a local clone, via dugite.
@@ -171,6 +172,49 @@ export class GitRepositoryProvider implements IRepositoryProvider {
 
   public getMergeBase(ref: string, otherRef: string): Promise<string | null> {
     return getMergeBase(this.repository, ref, otherRef)
+  }
+
+  public async simulateMerge(
+    intoRef: string,
+    fromRef: string
+  ): Promise<IMergeSimulation | null> {
+    try {
+      const merge = await git(
+        [
+          'merge-tree',
+          '--write-tree',
+          '--name-only',
+          '--no-messages',
+          '-z',
+          intoRef,
+          fromRef,
+        ],
+        this.repository.path,
+        'hotFlowSimulateMerge',
+        { successExitCodes: new Set([0, 1]) }
+      )
+
+      // "<tree>\0[<conflicted file>\0]*". Exit 1 means it conflicted.
+      const [tree, ...rest] = merge.stdout.split('\0').filter(x => x.length > 0)
+
+      if (merge.exitCode === 1) {
+        return { outcome: 'conflicts', files: rest }
+      }
+
+      const diff = await git(
+        ['diff', '--name-only', '-z', intoRef, tree, '--'],
+        this.repository.path,
+        'hotFlowSimulatedMergeChanges'
+      )
+
+      const files = diff.stdout.split('\0').filter(x => x.length > 0)
+
+      return files.length === 0
+        ? { outcome: 'no-change', files }
+        : { outcome: 'changes', files }
+    } catch {
+      return null
+    }
   }
 
   public async isWorkingTreeClean(): Promise<boolean | null> {

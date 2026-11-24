@@ -25,6 +25,7 @@ import {
   parseReleaseBranchName,
 } from './branch-patterns'
 import { resolveReleaseSequence } from './release-sequence'
+import { detectBranchAlignment } from './branch-alignment'
 import { isShipped, pickCurrentRelease } from './pick-release'
 import { IRepositoryProvider } from './repository-provider'
 import {
@@ -169,7 +170,7 @@ export async function detectHotFlowState(
   // they go together. Awaiting the current one first cost a whole round trip of
   // waiting for no reason — and with git processes contending rather than queuing,
   // a removed serial hop is worth more than a removed command.
-  const [currentRelease, otherOpenReleases] = await Promise.all([
+  const [currentRelease, otherOpenReleases, alignment] = await Promise.all([
     currentCandidate === null
       ? Promise.resolve(null)
       : buildReleaseState(
@@ -195,6 +196,14 @@ export async function detectHotFlowState(
           false
         )
       )
+    ),
+
+    detectBranchAlignment(
+      provider,
+      integrationBranch,
+      productionBranch,
+      currentCandidate?.branch ?? null,
+      releaseHistory
     ),
   ])
 
@@ -238,6 +247,7 @@ export async function detectHotFlowState(
     pipeline: defaultPipelineViewState,
     forgotten: defaultForgottenState,
     merged: defaultMergedBranchesState,
+    alignment,
   }
 }
 

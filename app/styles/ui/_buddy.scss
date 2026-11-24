@@ -249,6 +249,7 @@
 
 .hotflow-buddy-run {
   position: absolute;
+
   right: var(--spacing);
 
   // The sky a hat needs.
@@ -259,12 +260,16 @@
   // bottom of it, which puts the sky above the tallest hat any species can
   // wear — `HatRise` in hat-fit.ts, and the test that holds the two in step.
   //
-  // Taken inside the strip rather than by starting it higher up: the band above
-  // the schematic clips ten pixels in, so headroom borrowed from there is
-  // headroom a top hat loses.
-  top: 0;
+  // Taken inside the strip rather than by borrowing from outside it: the band
+  // clips ten pixels in, so headroom borrowed from there is headroom a top hat
+  // loses.
+  //
+  // Along the bottom rather than the top, which the branch alignment button
+  // floating in the band's top right corner now has. The boxes are centred on
+  // midY, so the bottom right is as empty as the top right was.
+  bottom: 0;
 
-  // A stretch of the top right rather than the whole width: the schematic is
+  // A stretch of the bottom right rather than the whole width: the schematic is
   // 1216px and usually scrolled, so a buddy that used all of it would spend
   // most of its walk somewhere nobody is looking.
   width: min(360px, 44%);
@@ -378,6 +383,7 @@
 #desktop-app-toolbar .hotflow-buddy-run {
   position: relative;
   top: auto;
+  bottom: auto;
   right: auto;
   flex: 1;
 
